@@ -32,7 +32,7 @@ type PreviewResponse = {
 const BANKS = [
   { code: "BBL", label: "BBL", enabled: true },
   { code: "KBANK", label: "KBank", enabled: true },
-  { code: "SCB", label: "SCB", enabled: false },
+  { code: "SCB", label: "SCB", enabled: true },
   { code: "KTB", label: "KTB", enabled: false },
   { code: "TTB", label: "TTB", enabled: false },
   { code: "BAY", label: "BAY", enabled: false },

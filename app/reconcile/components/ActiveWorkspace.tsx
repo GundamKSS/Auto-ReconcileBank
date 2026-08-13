@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RotateCcw,
+  RefreshCw,
   Sparkles,
   X,
   ArrowDownLeft,
@@ -462,6 +463,9 @@ function Panel({
   registerRowRef,
   highlightedDate,
   clusterOf,
+  onSync,
+  syncing,
+  syncDisabled,
 }: {
   title: string;
   allItems: LineItem[];
@@ -479,6 +483,9 @@ function Panel({
   registerRowRef: (date: string, el: HTMLDivElement | null) => void;
   highlightedDate: string | null;
   clusterOf: Map<string, number>;
+  onSync?: () => void;
+  syncing?: boolean;
+  syncDisabled?: boolean;
 }) {
   const byGroup = groupTab === "ALL" ? allItems : allItems.filter((i) => i.groupKey === groupTab);
   const filtered = byGroup.filter((item) => item.direction === filter);
@@ -502,7 +509,20 @@ function Panel({
             {selected.size} selected · {filtered.length} pending
           </span>
         </div>
-        <FilterTabs value={filter} onChange={onFilterChange} />
+        <div className="flex items-center gap-2 shrink-0">
+          {onSync && (
+            <button
+              onClick={onSync}
+              disabled={syncDisabled}
+              title="ดึงรายการ GL ล่าสุด 40 วันจาก Business Central (BC365) มาอัปเดต — ใช้หลังบัญชีแก้ไขข้อมูลใน ERP เสร็จแล้ว"
+              className="flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 px-2.5 py-1.5 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+              {syncing ? "กำลังซิงค์..." : "ซิงค์จาก BC365"}
+            </button>
+          )}
+          <FilterTabs value={filter} onChange={onFilterChange} />
+        </div>
       </div>
 
       <GroupTabs groups={groups} value={groupTab} onChange={onGroupTabChange} />
@@ -537,7 +557,7 @@ function Panel({
   );
 }
 
-function SuccessToast({ message, onClose }: { message: string; onClose: () => void }) {
+function SuccessToast({ title, message, onClose }: { title: string; message: string; onClose: () => void }) {
   const [leaving, setLeaving] = useState(false);
 
   useEffect(() => {
@@ -575,7 +595,7 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
       >
         <CheckCircle2 size={20} className="text-green-600 shrink-0 mt-0.5" />
         <div className="flex-1">
-          <p className="text-sm font-medium text-gray-900">จับคู่สำเร็จ</p>
+          <p className="text-sm font-medium text-gray-900">{title}</p>
           <p className="text-xs text-gray-500 mt-0.5">{message}</p>
         </div>
         <button onClick={() => setLeaving(true)} className="text-gray-300 hover:text-gray-500 active:scale-90 transition-transform shrink-0">
@@ -611,7 +631,8 @@ export default function ActiveWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
+  const [syncingGl, setSyncingGl] = useState(false);
   const [clusterOf, setClusterOf] = useState<Map<string, number>>(new Map());
   const [previewClusters, setPreviewClusters] = useState<Cluster[] | null>(null);
 
@@ -853,7 +874,7 @@ export default function ActiveWorkspace({
   }
 
   async function handleMatch() {
-    if (!canMatch || busy) return;
+    if (!canMatch || busy || syncingGl) return;
     setBusy(true);
     try {
       const grouped = groupSelectionByDateDirection();
@@ -871,11 +892,13 @@ export default function ActiveWorkspace({
         setError(data.error || "Match ไม่สำเร็จ");
         return;
       }
-      setToast(
-        groups.length === 1
-          ? `จับคู่สำเร็จ (MatchId ${data.matchId}) ยอด ${formatAmount(bankTotal)} บาท`
-          : `จับคู่สำเร็จ ${groups.length} กลุ่มย่อย ภายใต้ MatchId ${data.matchId}`
-      );
+      setToast({
+        title: "จับคู่สำเร็จ",
+        message:
+          groups.length === 1
+            ? `จับคู่สำเร็จ (MatchId ${data.matchId}) ยอด ${formatAmount(bankTotal)} บาท`
+            : `จับคู่สำเร็จ ${groups.length} กลุ่มย่อย ภายใต้ MatchId ${data.matchId}`,
+      });
       await loadData();
     } catch {
       setError("เชื่อมต่อ server ไม่ได้");
@@ -885,7 +908,7 @@ export default function ActiveWorkspace({
   }
 
   async function handleMoveToSuspense() {
-    if (!canMoveToSuspense || busy) return;
+    if (!canMoveToSuspense || busy || syncingGl) return;
     setBusy(true);
     try {
       const grouped = groupSelectionByDateDirection();
@@ -903,7 +926,10 @@ export default function ActiveWorkspace({
         setError(data.error || "ย้ายเข้าบัญชีพักไม่สำเร็จ");
         return;
       }
-      setToast(`ย้ายเข้าบัญชีพักโอนแล้ว (MatchId ${data.matchId}, ${groups.length} กลุ่มย่อย)`);
+      setToast({
+        title: "ย้ายเข้าบัญชีพักสำเร็จ",
+        message: `ย้ายเข้าบัญชีพักโอนแล้ว (MatchId ${data.matchId}, ${groups.length} กลุ่มย่อย)`,
+      });
       await loadData();
     } catch {
       setError("เชื่อมต่อ server ไม่ได้");
@@ -944,13 +970,34 @@ export default function ActiveWorkspace({
     }
   }
 
+  // ให้บัญชีกดหลังแก้ไขข้อมูลใน BC365 (ERP) เสร็จแล้ว — ดึงรายการ GL ล่าสุด 40 วันมาอัปเดต SQL แล้วโหลดหน้า reconcile ใหม่
+  async function handleSyncGl() {
+    if (loading || busy || syncingGl) return;
+    setSyncingGl(true);
+    setError("");
+    try {
+      const res = await fetch("/api/reconcile/sync-gl", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "ซิงค์ข้อมูลจาก BC365 ไม่สำเร็จ");
+        return;
+      }
+      await loadData();
+      setToast({ title: "ซิงค์ข้อมูลสำเร็จ", message: "ดึงรายการ GL ล่าสุดจาก BC365 มาอัปเดตแล้ว" });
+    } catch {
+      setError("เชื่อมต่อ BC365 sync service ไม่ได้");
+    } finally {
+      setSyncingGl(false);
+    }
+  }
+
   return (
     <div
       className={`flex-1 min-w-0 flex flex-col lg:overflow-hidden transition-all duration-500 ease-out ${
         mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
       }`}
     >
-      {toast && <SuccessToast message={toast} onClose={() => setToast(null)} />}
+      {toast && <SuccessToast title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
       {previewClusters && (
         <SuggestPreviewModal
           clusters={previewClusters}
@@ -959,7 +1006,7 @@ export default function ActiveWorkspace({
           onClose={() => setPreviewClusters(null)}
           onConfirmed={async (message) => {
             setPreviewClusters(null);
-            setToast(message);
+            setToast({ title: "จับคู่สำเร็จ", message });
             await loadData();
           }}
         />
@@ -990,14 +1037,14 @@ export default function ActiveWorkspace({
           </button>
           <button
             onClick={loadData}
-            disabled={loading || busy}
+            disabled={loading || busy || syncingGl}
             className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-3.5 py-2 rounded-full hover:bg-gray-50 disabled:opacity-50"
           >
             <RotateCcw size={14} /> Reset
           </button>
           <button
             onClick={handleSuggestMatches}
-            disabled={loading || busy}
+            disabled={loading || busy || syncingGl}
             className="flex items-center gap-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3.5 py-2 rounded-full hover:bg-blue-100 disabled:opacity-50"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
@@ -1095,6 +1142,9 @@ export default function ActiveWorkspace({
             highlightedDate={highlight?.side === "gl" ? highlight.date : null}
             matchReadyDates={matchReadyDates}
             clusterOf={clusterOf}
+            onSync={handleSyncGl}
+            syncing={syncingGl}
+            syncDisabled={loading || busy || syncingGl}
           />
         </div>
       </div>
@@ -1124,14 +1174,14 @@ export default function ActiveWorkspace({
             </button>
             <button
               onClick={handleMoveToSuspense}
-              disabled={!canMoveToSuspense || busy}
+              disabled={!canMoveToSuspense || busy || syncingGl}
               className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
             >
               Move to suspense
             </button>
             <button
               onClick={handleMatch}
-              disabled={!canMatch || busy}
+              disabled={!canMatch || busy || syncingGl}
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}

@@ -33,11 +33,11 @@ const menuItems = [
     href: '/reconcile',
     icon: GitCompareArrows,
   },
-  // {
-  //   name: 'Master Data',
-  //   href: '/master-data',
-  //   icon: Database,
-  // },
+  {
+    name: 'Master Data',
+    href: '/master-data/bank-statement',
+    icon: Database,
+  },
   {
     name: 'Suspense',
     href: '/suspense',
