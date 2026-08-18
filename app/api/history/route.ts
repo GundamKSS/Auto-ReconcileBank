@@ -6,32 +6,36 @@ import { getPool } from '../../../lib/db';
 export async function GET(req: NextRequest) {
   try {
     const bankCode = req.nextUrl.searchParams.get('bankCode');
+    const matchType = req.nextUrl.searchParams.get('matchType');
     const pool = await getPool();
 
     // 1) หัวบันทึกทุก match (ล่าสุดก่อน)
     const headerRequest = pool.request();
     if (bankCode) headerRequest.input('bankCode', sql.NVarChar, bankCode);
+    if (matchType) headerRequest.input('matchType', sql.NVarChar, matchType);
     const headerResult = await headerRequest.query(`
       SELECT MatchId, BankCode, MatchType, CreatedBy, CreatedAt
       FROM ReconciliationMatch
-      WHERE 1=1 ${bankCode ? 'AND BankCode = @bankCode' : ''}
+      WHERE 1=1 ${bankCode ? 'AND BankCode = @bankCode' : ''} ${matchType ? 'AND MatchType = @matchType' : ''}
       ORDER BY CreatedAt DESC, MatchId DESC
     `);
 
     // 2) รายละเอียดฝั่ง Bank ของทุก match (join กลับ BankStatementLine) — ดึง Num มาด้วยเพื่อรู้ว่าอยู่กลุ่มย่อยไหน
     const bankLinesRequest = pool.request();
     if (bankCode) bankLinesRequest.input('bankCode', sql.NVarChar, bankCode);
+    if (matchType) bankLinesRequest.input('matchType', sql.NVarChar, matchType);
     const bankLinesResult = await bankLinesRequest.query(`
       SELECT rm.MatchId, rml.Num, bsl.LineId, bsl.TranDate, bsl.Description, bsl.Debit, bsl.Credit
       FROM ReconciliationMatch rm
       JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'BANK'
       JOIN BankStatementLine bsl ON bsl.LineId = rml.BankLineId
-      WHERE 1=1 ${bankCode ? 'AND rm.BankCode = @bankCode' : ''}
+      WHERE 1=1 ${bankCode ? 'AND rm.BankCode = @bankCode' : ''} ${matchType ? 'AND rm.MatchType = @matchType' : ''}
     `);
 
     // 3) รายละเอียดฝั่ง GL ของทุก match (join กลับ BankAccountLedgerEntries) — ดึง Num มาด้วยเช่นกัน
     const glLinesRequest = pool.request();
     if (bankCode) glLinesRequest.input('bankCode', sql.NVarChar, bankCode);
+    if (matchType) glLinesRequest.input('matchType', sql.NVarChar, matchType);
     const glLinesResult = await glLinesRequest.query(`
       SELECT rm.MatchId, rml.Num, e.Entry_No, e.Posting_Date, e.Document_No, e.Bank_Account_No,
              m.BankAccountName, e.Debit_Amount_LCY, e.Credit_Amount_LCY
@@ -39,7 +43,7 @@ export async function GET(req: NextRequest) {
       JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'GL'
       JOIN BankAccountLedgerEntries e ON e.Entry_No = rml.GLEntryNo
       LEFT JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
-      WHERE 1=1 ${bankCode ? 'AND rm.BankCode = @bankCode' : ''}
+      WHERE 1=1 ${bankCode ? 'AND rm.BankCode = @bankCode' : ''} ${matchType ? 'AND rm.MatchType = @matchType' : ''}
     `);
 
     // รวมทั้ง 3 query เข้าด้วยกัน กลุ่มตาม MatchId
