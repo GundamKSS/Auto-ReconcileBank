@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { clearReconcileSession } from '../lib/reconcileSession';
 
 const TIMEOUT_MS = 30 * 60 * 1000; // 30 นาที
 
@@ -13,6 +14,7 @@ export function useInactivityLogout() {
     function logout() {
       localStorage.removeItem('user');
       localStorage.removeItem('lastActivity');
+      clearReconcileSession();
       router.push('/login');
     }
 

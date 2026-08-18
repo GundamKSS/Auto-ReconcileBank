@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Search, Bell, Plus, PanelLeft } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
+import { loadReconcileSession, saveReconcileSession } from "../../../lib/reconcileSession";
 import { ReconcileSession } from "./types";
 import EmptyState from "./EmptyState";
 import NewReconciliationModal from "./NewReconciliationModal";
@@ -12,10 +13,32 @@ export default function ReconcileWorkspace() {
   const { toggleMobileOpen } = useSidebar();
   const [session, setSession] = useState<ReconcileSession | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  // ตอนเปิด modal จากปุ่ม "New reconciliation" ให้เริ่มฟอร์มเปล่าๆ (ไม่ prefill ของเดิม)
+  // ตอนเปิดจากปุ่ม "Edit" ในตัวงานที่ทำอยู่ ให้ prefill ค่าปัจจุบันไว้แก้ไขต่อ
+  const [modalSeed, setModalSeed] = useState<ReconcileSession | null>(null);
+
+  useEffect(() => {
+    // กู้คืน session ที่ค้างไว้จาก localStorage ตอน mount ผู้ใช้จะได้ทำงานต่อจากจุดเดิมได้
+    // (เคลียร์เฉพาะตอน logout/auto-logout หรือกด "New reconciliation" เท่านั้น)
+    const saved = loadReconcileSession();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (saved) setSession(saved);
+  }, []);
 
   function handleConfirm(newSession: ReconcileSession) {
     setSession(newSession);
+    saveReconcileSession(newSession);
     setModalOpen(false);
+  }
+
+  function openNewReconciliation() {
+    setModalSeed(null);
+    setModalOpen(true);
+  }
+
+  function openEditFilters() {
+    setModalSeed(session);
+    setModalOpen(true);
   }
 
   return (
@@ -48,7 +71,7 @@ export default function ReconcileWorkspace() {
           <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
         </button>
         <button
-          onClick={() => setModalOpen(true)}
+          onClick={openNewReconciliation}
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0 whitespace-nowrap"
         >
           <Plus size={16} /> New reconciliation
@@ -56,15 +79,15 @@ export default function ReconcileWorkspace() {
       </div>
 
       {/* Step 1: Empty state */}
-      {!session && <EmptyState onStart={() => setModalOpen(true)} />}
+      {!session && <EmptyState onStart={openNewReconciliation} />}
 
       {/* Step 3: Active workspace */}
-      {session && <ActiveWorkspace session={session} onEditFilters={() => setModalOpen(true)} />}
+      {session && <ActiveWorkspace session={session} onEditFilters={openEditFilters} />}
 
       {/* Step 2: Setup modal — ลอยทับได้ทุกสเต็ป (เปิดจากปุ่มบน chrome bar, empty state, หรือปุ่ม Edit ใน filter bar) */}
       {modalOpen && (
         <NewReconciliationModal
-          initialSession={session}
+          initialSession={modalSeed}
           onCancel={() => setModalOpen(false)}
           onConfirm={handleConfirm}
         />

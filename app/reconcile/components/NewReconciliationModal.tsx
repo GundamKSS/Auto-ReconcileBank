@@ -58,7 +58,7 @@ export default function NewReconciliationModal({
     async function loadImports() {
       setLoadingImports(true);
       try {
-        const res = await fetch(`/api/bank-statement/imports?bankCode=${bankCode}`);
+        const res = await fetch(`/api/master/bank-statement/imports?bankCode=${bankCode}`);
         const data = await res.json();
         if (!cancelled && res.ok) setImports(data.imports);
       } finally {

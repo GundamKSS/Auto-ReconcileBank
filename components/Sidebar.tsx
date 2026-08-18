@@ -16,6 +16,7 @@ import {
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSidebar } from './SidebarContext';
+import { clearReconcileSession } from '../lib/reconcileSession';
 
 const menuItems = [
   // {
@@ -107,6 +108,7 @@ export default function Sidebar() {
   function handleLogout() {
     localStorage.removeItem('user');
     localStorage.removeItem('lastActivity');
+    clearReconcileSession();
 
     router.push('/login');
   }
