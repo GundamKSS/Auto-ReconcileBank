@@ -839,7 +839,8 @@ export default function ActiveWorkspace({
 
   const amountMatches = Math.abs(difference) < 0.005;
   const canMatch = selectedBank.size > 0 && selectedGl.size > 0 && amountMatches;
-  const canMoveToSuspense = selectedBank.size > 0 || selectedGl.size > 0;
+  // Suspense พักได้แค่ฝั่ง GL (BC365) เท่านั้น — Bank Statement เป็นข้อมูลหลักจากธนาคาร ห้ามแก้ไข/ห้ามพัก
+  const canMoveToSuspense = selectedGl.size > 0;
 
   function handleClear() {
     setSelectedBank(new Set());
@@ -912,9 +913,10 @@ export default function ActiveWorkspace({
     setBusy(true);
     try {
       const grouped = groupSelectionByDateDirection();
+      // ส่งเฉพาะฝั่ง GL เข้ากลุ่ม suspense — ไม่ส่ง bankLineIds แม้จะมีฝั่ง Bank ถูกเลือกอยู่ด้วยก็ตาม
       const groups = [...grouped.values()]
-        .filter((g) => g.bankIds.length > 0 || g.glIds.length > 0)
-        .map((g) => ({ bankLineIds: g.bankIds, glEntryNos: g.glIds }));
+        .filter((g) => g.glIds.length > 0)
+        .map((g) => ({ bankLineIds: [], glEntryNos: g.glIds }));
 
       const res = await fetch("/api/reconcile/match", {
         method: "POST",

@@ -2,13 +2,33 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 
+type UnsuspendItem = {
+  matchId: number;
+  sourceType: 'BANK' | 'GL';
+  refId: number; // BankLineId (SourceType='BANK') หรือ GLEntryNo (SourceType='GL')
+};
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const matchId = Number(body?.matchId);
+    const items: UnsuspendItem[] = body?.items;
 
-    if (!Number.isInteger(matchId)) {
-      return NextResponse.json({ error: 'matchId ไม่ถูกต้อง' }, { status: 400 });
+    if (!Array.isArray(items) || items.length === 0) {
+      return NextResponse.json({ error: 'ไม่มีรายการที่เลือก' }, { status: 400 });
+    }
+    for (const it of items) {
+      const validSource = it?.sourceType === 'BANK' || it?.sourceType === 'GL';
+      if (!Number.isInteger(it?.matchId) || !Number.isInteger(it?.refId) || !validSource) {
+        return NextResponse.json({ error: 'รูปแบบรายการที่เลือกไม่ถูกต้อง' }, { status: 400 });
+      }
+    }
+
+    const byMatch = new Map<number, { bank: number[]; gl: number[] }>();
+    for (const it of items) {
+      const g = byMatch.get(it.matchId) ?? { bank: [], gl: [] };
+      if (it.sourceType === 'BANK') g.bank.push(it.refId);
+      else g.gl.push(it.refId);
+      byMatch.set(it.matchId, g);
     }
 
     const pool = await getPool();
@@ -16,46 +36,61 @@ export async function POST(req: NextRequest) {
     await transaction.begin();
 
     try {
-      const matchRequest = new sql.Request(transaction);
-      const matchResult = await matchRequest
-        .input('matchId', sql.Int, matchId)
-        .query(`SELECT MatchId, MatchType FROM ReconciliationMatch WHERE MatchId = @matchId`);
+      let revertedBankLineCount = 0;
+      const clearedMatchIds: number[] = [];
 
-      if (matchResult.recordset.length === 0) {
-        await transaction.rollback();
-        return NextResponse.json({ error: 'ไม่พบรายการที่พักไว้นี้' }, { status: 404 });
+      for (const [matchId, group] of byMatch) {
+        const matchCheck = new sql.Request(transaction);
+        const matchResult = await matchCheck
+          .input('matchId', sql.Int, matchId)
+          .query(`SELECT MatchType FROM ReconciliationMatch WHERE MatchId = @matchId`);
+
+        if (matchResult.recordset.length === 0) {
+          throw new Error(`ไม่พบ MatchId ${matchId} — อาจถูกดึงกลับไปแล้ว กรุณารีเฟรชหน้าใหม่`);
+        }
+        if (matchResult.recordset[0].MatchType !== 'SUSPENSE') {
+          throw new Error(`MatchId ${matchId} ไม่ใช่รายการ Suspense`);
+        }
+
+        for (const lineId of group.bank) {
+          const del = new sql.Request(transaction);
+          await del
+            .input('matchId', sql.Int, matchId)
+            .input('lineId', sql.BigInt, lineId)
+            .query(
+              `DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'BANK' AND BankLineId = @lineId`
+            );
+          const upd = new sql.Request(transaction);
+          await upd
+            .input('lineId', sql.BigInt, lineId)
+            .query(`UPDATE BankStatementLine SET MatchStatus = 'UNMATCHED' WHERE LineId = @lineId`);
+          revertedBankLineCount += 1;
+        }
+
+        for (const entryNo of group.gl) {
+          const del = new sql.Request(transaction);
+          await del
+            .input('matchId', sql.Int, matchId)
+            .input('entryNo', sql.BigInt, entryNo)
+            .query(
+              `DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'GL' AND GLEntryNo = @entryNo`
+            );
+        }
+
+        const remain = new sql.Request(transaction);
+        const remainResult = await remain
+          .input('matchId', sql.Int, matchId)
+          .query(`SELECT COUNT(*) AS cnt FROM ReconciliationMatchLine WHERE MatchId = @matchId`);
+
+        if (remainResult.recordset[0].cnt === 0) {
+          const delMatch = new sql.Request(transaction);
+          await delMatch.input('matchId', sql.Int, matchId).query(`DELETE FROM ReconciliationMatch WHERE MatchId = @matchId`);
+          clearedMatchIds.push(matchId);
+        }
       }
-      if (matchResult.recordset[0].MatchType !== 'SUSPENSE') {
-        await transaction.rollback();
-        return NextResponse.json({ error: 'รายการนี้ไม่ใช่ Suspense' }, { status: 400 });
-      }
-
-      const bankLinesRequest = new sql.Request(transaction);
-      const bankLinesResult = await bankLinesRequest
-        .input('matchId', sql.Int, matchId)
-        .query(`SELECT BankLineId FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'BANK'`);
-      const bankLineIds: number[] = bankLinesResult.recordset.map((r) => Number(r.BankLineId));
-
-      for (const lineId of bankLineIds) {
-        const r = new sql.Request(transaction);
-        await r
-          .input('lineId', sql.BigInt, lineId)
-          .query(`UPDATE BankStatementLine SET MatchStatus = 'UNMATCHED' WHERE LineId = @lineId`);
-      }
-
-      const deleteLinesRequest = new sql.Request(transaction);
-      await deleteLinesRequest
-        .input('matchId', sql.Int, matchId)
-        .query(`DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId`);
-
-      const deleteMatchRequest = new sql.Request(transaction);
-      await deleteMatchRequest
-        .input('matchId', sql.Int, matchId)
-        .query(`DELETE FROM ReconciliationMatch WHERE MatchId = @matchId`);
 
       await transaction.commit();
-
-      return NextResponse.json({ matchId, revertedBankLineCount: bankLineIds.length });
+      return NextResponse.json({ revertedBankLineCount, clearedMatchIds });
     } catch (err) {
       await transaction.rollback();
       throw err;
