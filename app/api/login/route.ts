@@ -20,8 +20,10 @@ export async function POST(req: NextRequest) {
       .query('SELECT TOP 1 No, PasswordHash FROM Employee WHERE No = @username');
 
     const user = userResult.recordset[0];
+
     console.log('User result:', user);
 
+    // return false;
     if (!user) {
       return NextResponse.json({ error: 'ไม่พบผู้ใช้งาน' }, { status: 401 });
     }
