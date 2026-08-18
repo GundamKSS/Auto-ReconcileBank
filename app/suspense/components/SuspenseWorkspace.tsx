@@ -15,6 +15,7 @@ import {
   X,
   Layers,
 } from "lucide-react";
+import { useSidebar } from "@/components/SidebarContext";
 import UnsuspendConfirmModal, { ConfirmLine } from "./UnsuspendConfirmModal";
 
 type RawBankLine = {
@@ -360,6 +361,7 @@ function MatchCard({
 }
 
 export default function SuspenseWorkspace() {
+  const { collapsed } = useSidebar();
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -599,37 +601,45 @@ export default function SuspenseWorkspace() {
         ))}
       </div>
 
-      <AnimatePresence>
-        {selectedCount > 0 && (
-          <motion.div
-            initial={{ y: 90, opacity: 0 }}
-            animate={{ y: 0, opacity: 1 }}
-            exit={{ y: 90, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeOut" }}
-            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-40 flex items-center gap-4 bg-gray-900 text-white rounded-full pl-5 pr-2 py-2 shadow-xl"
-          >
-            <div className="flex items-center gap-2 text-sm">
-              <Layers size={14} className="text-gray-300" />
-              <span className="font-medium">เลือกไว้ {selectedCount} รายการ</span>
-              <span className="text-gray-400">·</span>
-              <span className="tabular-nums text-gray-200">{formatAmount(selectedTotal)} บาท</span>
-            </div>
-            <button
-              onClick={() => setSelected(new Set())}
-              className="text-xs text-gray-300 hover:text-white px-2 py-1.5 transition-colors"
+      {/* กล่องเต็มความกว้างจอ เว้น padding-left เท่ากับความกว้าง sidebar ปัจจุบัน (คู่กับ MainContent)
+          แล้วค่อย flex-center อยู่ข้างใน ปุ่มเลยไปจัดกึ่งกลาง "พื้นที่เนื้อหา/ตาราง" แทนกึ่งกลางทั้งจอ */}
+      <div
+        className={`fixed bottom-5 inset-x-0 z-40 flex justify-center pointer-events-none transition-[padding] duration-300 ${
+          collapsed ? "lg:pl-[82px]" : "lg:pl-[300px]"
+        }`}
+      >
+        <AnimatePresence>
+          {selectedCount > 0 && (
+            <motion.div
+              initial={{ y: 90, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 90, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="pointer-events-auto flex items-center gap-4 bg-gray-900 text-white rounded-full pl-5 pr-2 py-2 shadow-xl"
             >
-              ล้างเลือก
-            </button>
-            <button
-              onClick={openConfirmForSelection}
-              className="flex items-center gap-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 active:scale-95 px-4 py-2 rounded-full transition-all"
-            >
-              <Undo2 size={14} />
-              ดึงกลับไป Reconcile
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <div className="flex items-center gap-2 text-sm">
+                <Layers size={14} className="text-gray-300" />
+                <span className="font-medium">เลือกไว้ {selectedCount} รายการ</span>
+                <span className="text-gray-400">·</span>
+                <span className="tabular-nums text-gray-200">{formatAmount(selectedTotal)} บาท</span>
+              </div>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="text-xs text-gray-300 hover:text-white px-2 py-1.5 transition-colors"
+              >
+                ล้างเลือก
+              </button>
+              <button
+                onClick={openConfirmForSelection}
+                className="flex items-center gap-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 active:scale-95 px-4 py-2 rounded-full transition-all"
+              >
+                <Undo2 size={14} />
+                ดึงกลับไป Reconcile
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <AnimatePresence>
         {confirmLines && (
