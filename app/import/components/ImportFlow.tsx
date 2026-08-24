@@ -2,7 +2,7 @@
 import React, { useRef, useState } from "react";
 import {
   FileText, UploadCloud, CheckCircle2,
-  AlertTriangle, ArrowRight, ArrowLeft, Loader2, Menu
+  AlertTriangle, ArrowRight, ArrowLeft, Loader2, Menu, RefreshCw
 } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
 
@@ -53,7 +53,18 @@ export default function ImportFlow() {
   const [importError, setImportError] = useState("");
   const [importSuccess, setImportSuccess] = useState<{ rowCount: number } | null>(null);
 
+  const [syncingGl, setSyncingGl] = useState(false);
+  const [glSyncError, setGlSyncError] = useState("");
+  const [glSyncSuccess, setGlSyncSuccess] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ขั้นตอนของฝั่ง GL มีแค่ 2 ขั้น (เลือก source แล้วกดซิงค์) ไม่มี upload/validate เหมือนฝั่ง bank
+  const steps =
+    selectedSource === "gl"
+      ? ["Source", "Sync from BC365"]
+      : ["Source", "Upload & preview", "Validate & import"];
+  const activeStep = selectedSource === "gl" ? (glSyncSuccess ? 2 : 1) : step;
 
   async function handleFileSelected(selected: File) {
     setFile(selected);
@@ -112,6 +123,30 @@ export default function ImportFlow() {
     }
   }
 
+  // ซิงค์ GL ทั้งหมดจาก BC365 (ไม่ใช่แค่ 40 วันล่าสุดแบบที่หน้า reconcile ใช้)
+  // ใช้ตอนต้องการให้ข้อมูล GL ครบทั้งชุด เช่น เพิ่งตั้งระบบ หรือย้อนไปกระทบยอดเดือนเก่า
+  async function handleSyncGl() {
+    if (syncingGl) return;
+    setSyncingGl(true);
+    setGlSyncError("");
+    setGlSyncSuccess(false);
+
+    try {
+      const res = await fetch("/api/import/sync-gl", { method: "POST" });
+      const data = await res.json();
+
+      if (!res.ok) {
+        setGlSyncError(data.error || "ซิงค์ข้อมูลจาก BC365 ไม่สำเร็จ");
+        return;
+      }
+      setGlSyncSuccess(true);
+    } catch {
+      setGlSyncError("เชื่อมต่อ BC365 sync service ไม่ได้");
+    } finally {
+      setSyncingGl(false);
+    }
+  }
+
   function resetAll() {
     setStep(1);
     setFile(null);
@@ -119,6 +154,8 @@ export default function ImportFlow() {
     setPreviewError("");
     setImportError("");
     setImportSuccess(null);
+    setGlSyncError("");
+    setGlSyncSuccess(false);
   }
 
   return (
@@ -142,20 +179,17 @@ export default function ImportFlow() {
 
       {/* Stepper */}
       <div className="flex items-center gap-3 text-sm font-medium text-slate-500 mb-6">
-        <div className={`flex items-center gap-2 ${step >= 1 ? "text-blue-600" : ""}`}>
-          <span className={`flex items-center justify-center w-6 h-6 rounded-full text-white text-xs ${step >= 1 ? "bg-blue-600" : "bg-slate-300"}`}>1</span>
-          Source
-        </div>
-        <ArrowRight size={14} className="text-slate-300" />
-        <div className={`flex items-center gap-2 ${step >= 2 ? "text-blue-600" : ""}`}>
-          <span className={`flex items-center justify-center w-6 h-6 rounded-full text-white text-xs ${step >= 2 ? "bg-blue-600" : "bg-slate-300"}`}>2</span>
-          Upload & preview
-        </div>
-        <ArrowRight size={14} className="text-slate-300" />
-        <div className={`flex items-center gap-2 ${step === 3 ? "text-blue-600" : ""}`}>
-          <span className={`flex items-center justify-center w-6 h-6 rounded-full text-white text-xs ${step === 3 ? "bg-blue-600" : "bg-slate-300"}`}>3</span>
-          Validate & import
-        </div>
+        {steps.map((label, i) => (
+          <React.Fragment key={label}>
+            {i > 0 && <ArrowRight size={14} className="text-slate-300" />}
+            <div className={`flex items-center gap-2 ${activeStep >= i + 1 ? "text-blue-600" : ""}`}>
+              <span className={`flex items-center justify-center w-6 h-6 rounded-full text-white text-xs ${activeStep >= i + 1 ? "bg-blue-600" : "bg-slate-300"}`}>
+                {i + 1}
+              </span>
+              {label}
+            </div>
+          </React.Fragment>
+        ))}
       </div>
 
       <div className="bg-white/80 backdrop-blur-xl border border-white rounded-3xl shadow-sm p-8 min-h-[500px] flex flex-col">
@@ -167,15 +201,16 @@ export default function ImportFlow() {
 
             <div className="grid grid-cols-2 gap-4 mb-8">
               <div
-                onClick={() => {}}
-                className="p-5 rounded-xl border-2 border-slate-200 opacity-50 cursor-not-allowed"
-                title="ยังไม่รองรับ เร็วๆ นี้"
+                onClick={() => setSelectedSource("gl")}
+                className={`p-5 rounded-xl border-2 cursor-pointer transition-all ${
+                  selectedSource === "gl" ? "border-blue-300 bg-blue-50/50" : "border-slate-200 hover:border-blue-200"
+                }`}
               >
                 <div className="flex items-start gap-3">
-                  <FileText className="text-slate-400" />
+                  <FileText className={selectedSource === "gl" ? "text-blue-600" : "text-slate-400"} />
                   <div>
                     <h3 className="font-semibold text-slate-800">General Ledger (GL)</h3>
-                    <p className="text-sm text-slate-500 mt-1">ยังไม่รองรับ เร็วๆ นี้</p>
+                    <p className="text-sm text-slate-500 mt-1">ซิงค์จาก Business Central (BC365)</p>
                   </div>
                 </div>
               </div>
@@ -221,13 +256,57 @@ export default function ImportFlow() {
               </div>
             )}
 
+            {selectedSource === "gl" && (
+              <div className="mb-auto flex flex-col gap-4">
+                <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <p className="text-sm font-semibold text-slate-800 mb-1">ซิงค์ GL ทั้งหมดจาก BC365</p>
+                  <p className="text-sm text-slate-500">
+                    ดึงรายการ BankAccountLedgerEntries <span className="font-medium text-slate-700">ทั้งหมด</span> จาก
+                    Business Central มาอัปเดตลงฐานข้อมูล ไม่ต้องอัปโหลดไฟล์
+                  </p>
+                  <p className="text-xs text-slate-400 mt-3">
+                    หมายเหตุ: ปุ่ม &quot;ซิงค์จาก BC365&quot; ในหน้า Reconcile จะดึงเฉพาะ 40 วันล่าสุดเพื่อความเร็ว
+                    ส่วนหน้านี้ดึงทั้งหมดจึงใช้เวลานานกว่ามาก
+                  </p>
+                </div>
+
+                {glSyncError && (
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-xl text-sm text-red-700">
+                    {glSyncError}
+                  </div>
+                )}
+
+                {glSyncSuccess && (
+                  <div className="p-3 bg-green-50 border border-green-100 rounded-xl text-sm text-green-700 flex items-center gap-2">
+                    <CheckCircle2 size={16} />
+                    ซิงค์ข้อมูล GL ทั้งหมดจาก BC365 สำเร็จแล้ว
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="mt-auto flex justify-end">
-              <button
-                onClick={() => setStep(2)}
-                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors"
-              >
-                Continue <ArrowRight size={16} />
-              </button>
+              {selectedSource === "gl" ? (
+                <button
+                  onClick={handleSyncGl}
+                  disabled={syncingGl}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {syncingGl ? (
+                    <Loader2 size={16} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={16} />
+                  )}
+                  {syncingGl ? "กำลังซิงค์ทั้งหมด..." : "ซิงค์ GL ทั้งหมด"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => setStep(2)}
+                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors"
+                >
+                  Continue <ArrowRight size={16} />
+                </button>
+              )}
             </div>
           </div>
         )}
