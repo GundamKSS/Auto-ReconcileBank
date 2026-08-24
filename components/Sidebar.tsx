@@ -19,11 +19,11 @@ import { useSidebar } from './SidebarContext';
 import { clearReconcileSession } from '../lib/reconcileSession';
 
 const menuItems = [
-  // {
-  //   name: 'Dashboard',
-  //   href: '/dashboard',
-  //   icon: LayoutDashboard,
-  // },
+  {
+    name: 'Dashboard',
+    href: '/dashboard',
+    icon: LayoutDashboard,
+  },
   {
     name: 'Import',
     href: '/import',
