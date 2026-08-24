@@ -17,6 +17,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSidebar } from './SidebarContext';
 import { clearReconcileSession } from '../lib/reconcileSession';
+import type { UserSession } from '../lib/trwApi';
 
 const menuItems = [
   {
@@ -63,7 +64,7 @@ export default function Sidebar() {
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
-  const [user, setUser] = useState<{ name: string; email: string; initials: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; subtitle: string; initials: string } | null>(null);
 
 
   useEffect(() => {
@@ -75,19 +76,16 @@ export default function Sidebar() {
       return;
     }
     try {
-      const parsed = JSON.parse(u);
-      const emp = parsed.employee;
-      const name = emp
-        ? `${emp.First_Name ?? ''} ${emp.Last_Name ?? ''}`.trim() || parsed.username
-        : parsed.username;
-      const email = emp?.E_Mail ?? parsed.email ?? '';
-      let initials = 'NA';
-      if (emp?.First_Name || emp?.Last_Name) {
-        initials = `${(emp.First_Name?.[0] ?? '')}${(emp.Last_Name?.[0] ?? '')}`.toUpperCase();
-      } else if (parsed.username) {
-        initials = parsed.username.slice(0, 2).toUpperCase();
-      }
-      setUser({ name, email, initials });
+      const parsed = JSON.parse(u) as UserSession;
+      const name = parsed.displayName || parsed.username;
+      // /auth/login ไม่ได้ส่งอีเมลมา — ใช้ตำแหน่ง (role) เป็นบรรทัดรองแทน
+      const subtitle = parsed.role ?? '';
+      // ย่อจากคำแรกของแต่ละคำในชื่อ ถ้าไม่มีชื่อค่อยถอยไปใช้ username
+      const words = name.split(/\s+/).filter(Boolean).slice(0, 2);
+      const initials = words.length
+        ? words.map((w) => w[0]).join('').toUpperCase()
+        : (parsed.username?.slice(0, 2).toUpperCase() ?? 'NA');
+      setUser({ name, subtitle, initials });
       setAuthorized(true);
     } catch (err) {
       console.error('Failed to parse user from localStorage', err);
@@ -252,7 +250,7 @@ export default function Sidebar() {
                 </p>
 
                 <p className="truncate text-xs text-slate-500">
-                  {user?.email}
+                  {user?.subtitle}
                 </p>
               </div>
 

@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-
-const SYNC_API_BASE = process.env.BC365_SYNC_API_URL || 'http://192.168.2.109:8000';
+import { TRW_API_BASE } from './trwApi';
 
 // สอง endpoint ของ TRW Data Center sync service (BC365 -> SQL) ที่ระบบ reconcile ใช้:
 //   RECENT — ดึงเฉพาะ 40 วันล่าสุด เร็ว ใช้ที่หน้า reconcile ซึ่งทำงานกันแค่เดือนนั้น
@@ -17,7 +16,7 @@ export async function runGlSync(
   timeoutMs: number
 ) {
   try {
-    const res = await fetch(`${SYNC_API_BASE}${endpoint}`, {
+    const res = await fetch(`${TRW_API_BASE}${endpoint}`, {
       method: 'GET',
       cache: 'no-store',
       signal: AbortSignal.timeout(timeoutMs),

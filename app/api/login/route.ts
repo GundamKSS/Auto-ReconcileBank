@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getPool } from '../../../lib/db';
-import sql from 'mssql';
-import bcrypt from 'bcryptjs';
+import { TRW_API_BASE, UserSession } from '../../../lib/trwApi';
 
-// ตาราง Employee ไม่ได้อยู่ใน database หลักของระบบ reconcile (Reconcile_Bank) — ยังอยู่ที่ DATA_CENTER
-// ทั้งสอง query ด้านล่างจึงต้องระบุชื่อ database เต็มเพื่อ query ข้าม database ไป
-// (จำกัดให้เป็นชื่อ identifier ล้วนๆ เพราะค่านี้ถูกต่อเข้า SQL ตรงๆ ไม่ได้ผ่าน parameter)
-const EMPLOYEE_DB = /^[A-Za-z0-9_]+$/.test(process.env.DB_EMPLOYEE_NAME || '')
-  ? process.env.DB_EMPLOYEE_NAME
-  : 'DATA_CENTER';
-const EMPLOYEE_TABLE = `[${EMPLOYEE_DB}].[dbo].[Employee]`;
+// กัน Next.js cache response ของ route นี้ไว้ — ต้องยิงเช็คของจริงทุกครั้ง
+export const dynamic = 'force-dynamic';
 
+// การตรวจสอบ login ย้ายไปอยู่ที่ TRW Data Center API (/auth/login) แล้ว
+// ไม่ได้เช็คกับตาราง Employee ใน SQL เองอีกต่อไป — route นี้ทำหน้าที่เป็น proxy
+// เพื่อให้ browser ไม่ต้องต่อตรงเข้า service ใน LAN และ base URL อยู่ฝั่ง server ที่เดียว
 export async function POST(req: NextRequest) {
   try {
     const { username, password } = await req.json();
@@ -18,49 +14,40 @@ export async function POST(req: NextRequest) {
     if (!username || !password) {
       return NextResponse.json({ error: 'กรุณากรอก username และ password' }, { status: 400 });
     }
-    console.log('Received login request for username:', username);
 
-    const pool = await getPool();
-    const userResult = await pool
-      .request()
-      .input('username', sql.NVarChar, username)
-      .query(`SELECT TOP 1 [No], [PasswordHash] FROM ${EMPLOYEE_TABLE} WHERE [No] = @username`);
-
-    const user = userResult.recordset[0];
-
-    if (!user) {
-      return NextResponse.json({ error: 'ไม่พบผู้ใช้งาน' }, { status: 401 });
-    }
-
-    const isValid = await bcrypt.compare(password, user.PasswordHash);
-    if (!isValid) {
-      return NextResponse.json({ error: 'รหัสผ่านไม่ถูกต้อง' }, { status: 401 });
-    }
-
-    const empResult = await pool
-      .request()
-      .input('empNo', sql.NVarChar, user.No)
-      .query(`
-        SELECT
-          [No],
-          [First_Name],
-          [Last_Name],
-          [E_Mail],
-          [Mobile_Phone_No],
-          [Job_Title],
-          [Role]
-        FROM ${EMPLOYEE_TABLE}
-        WHERE [No] = @empNo
-      `);
-
-    const employee = empResult.recordset[0];
-
-    return NextResponse.json({
-      username: user.No,
-      employee: employee || null,
+    const res = await fetch(`${TRW_API_BASE}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(15_000),
     });
+
+    if (!res.ok) {
+      // 401/403 = username/รหัสผ่านไม่ถูกต้อง — service ตอบเป็นข้อความอังกฤษกลางๆ ("Invalid credentials")
+      // ซึ่งไม่ได้บอกอะไรเพิ่ม เลยแสดงข้อความไทยของเราเองให้เข้ากับหน้าอื่นในระบบ
+      if (res.status === 401 || res.status === 403) {
+        return NextResponse.json({ error: 'username หรือรหัสผ่านไม่ถูกต้อง' }, { status: 401 });
+      }
+      return NextResponse.json(
+        { error: `ตรวจสอบผู้ใช้งานไม่สำเร็จ (HTTP ${res.status})` },
+        { status: 502 }
+      );
+    }
+
+    const data = await res.json();
+
+    const session: UserSession = {
+      username,
+      displayName: data.display_name || username,
+      employeeNo: data.employee_no ?? null,
+      role: data.role ?? null,
+      accessToken: data.access_token ?? null,
+    };
+
+    return NextResponse.json(session);
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ error: 'เกิดข้อผิดพลาดในระบบ' }, { status: 500 });
+    return NextResponse.json({ error: 'เชื่อมต่อระบบตรวจสอบผู้ใช้งานไม่ได้' }, { status: 502 });
   }
 }
