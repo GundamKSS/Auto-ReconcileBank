@@ -49,11 +49,11 @@ const menuItems = [
     href: '/reports',
     icon: BarChart3,
   },
-  {
-    name: 'Settings',
-    href: '/settings',
-    icon: Settings,
-  },
+  // {
+  //   name: 'Settings',
+  //   href: '/settings',
+  //   icon: Settings,
+  // },
 ];
 
 export default function Sidebar() {
@@ -157,12 +157,9 @@ export default function Sidebar() {
 
             <div className={collapsed ? 'lg:hidden' : ''}>
               <h1 className="text-[17px] font-bold leading-none text-slate-900">
-                Auto Recon
+                Auto Reconcile Bank
               </h1>
 
-              <span className="text-sm font-medium tracking-[0.18em] text-slate-500">
-                365
-              </span>
             </div>
 
           </div>

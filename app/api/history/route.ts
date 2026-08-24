@@ -19,6 +19,15 @@ export async function GET(req: NextRequest) {
       WHERE 1=1 ${bankCode ? 'AND BankCode = @bankCode' : ''} ${matchType ? 'AND MatchType = @matchType' : ''}
       ORDER BY CreatedAt DESC, MatchId DESC
     `);
+     const queryString = `
+      SELECT MatchId, BankCode, MatchType, CreatedBy, CreatedAt
+      FROM ReconciliationMatch
+      WHERE 1=1 ${bankCode ? 'AND BankCode = @bankCode' : ''} ${matchType ? 'AND MatchType = @matchType' : ''}
+      ORDER BY CreatedAt DESC, MatchId DESC
+    `;
+
+      console.log('Header Query:', queryString);
+
 
     // 2) รายละเอียดฝั่ง Bank ของทุก match (join กลับ BankStatementLine) — ดึง Num มาด้วยเพื่อรู้ว่าอยู่กลุ่มย่อยไหน
     const bankLinesRequest = pool.request();
@@ -92,4 +101,5 @@ export async function GET(req: NextRequest) {
     const detail = err instanceof Error ? err.message : String(err);
     return NextResponse.json({ error: `ดึงประวัติการจับคู่ไม่สำเร็จ: ${detail}` }, { status: 500 });
   }
+
 }
