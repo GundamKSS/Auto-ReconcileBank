@@ -21,6 +21,8 @@ import UnmatchConfirmModal, { UnmatchTarget } from "./UnmatchConfirmModal";
 type LineStatus = "ACTIVE" | "REVERSED";
 
 type LineItem = {
+  lineId?: number;
+  entryNo?: number;
   num: number;
   date: string;
   description?: string;
@@ -48,6 +50,16 @@ type MatchRecord = {
   glLines: LineItem[];
 };
 
+// แถวในตารางรวมของกลุ่มย่อย — เอา Bank กับ GL มาเรียงในตารางเดียวกันแบบเดียวกับหน้า Suspense
+type UnifiedLine = {
+  key: string;
+  sourceType: "BANK" | "GL";
+  date: string;
+  detail: string;
+  direction: "IN" | "OUT";
+  amount: number;
+};
+
 // กลุ่มย่อย (Num) = 1 cluster ที่บาลานซ์กันเอง ไม่ว่าจะ 1:1, 1:N, N:1 — เป็นหน่วยที่ติ๊กเลือก/ยกเลิกได้
 type SubGroup = {
   key: string;
@@ -55,6 +67,7 @@ type SubGroup = {
   num: number;
   bankLines: LineItem[];
   glLines: LineItem[];
+  lines: UnifiedLine[];
   bankTotal: number;
   glTotal: number;
   status: LineStatus;
@@ -117,6 +130,24 @@ function toSubGroups(match: MatchRecord): SubGroup[] {
     const glLines = match.glLines.filter((l) => l.num === num);
     const lines = [...bankLines, ...glLines];
     const reversedLine = lines.find((l) => l.status === "REVERSED");
+    const unifiedLines: UnifiedLine[] = [
+      ...bankLines.map((l, i) => ({
+        key: `${match.matchId}:${num}:BANK:${l.lineId ?? i}`,
+        sourceType: "BANK" as const,
+        date: l.date,
+        detail: l.description || "-",
+        direction: l.direction,
+        amount: l.amount,
+      })),
+      ...glLines.map((l, i) => ({
+        key: `${match.matchId}:${num}:GL:${l.entryNo ?? i}`,
+        sourceType: "GL" as const,
+        date: l.date,
+        detail: [l.ref, l.accountName].filter(Boolean).join(" · ") || "-",
+        direction: l.direction,
+        amount: l.amount,
+      })),
+    ];
     // ถือว่ากลุ่มถูกยกเลิกเมื่อทุกบรรทัดในกลุ่มถูกยกเลิก — เผื่อกรณีข้อมูลเก่าที่ยกเลิกไว้ที่หัว Match เท่านั้น
     // ให้ดูสถานะหัว Match ประกอบด้วย
     const reversed = match.status === "REVERSED" || (lines.length > 0 && lines.every((l) => l.status === "REVERSED"));
@@ -126,6 +157,7 @@ function toSubGroups(match: MatchRecord): SubGroup[] {
       num,
       bankLines,
       glLines,
+      lines: unifiedLines,
       bankTotal: bankLines.reduce((s, l) => s + l.amount, 0),
       glTotal: glLines.reduce((s, l) => s + l.amount, 0),
       status: reversed ? "REVERSED" : "ACTIVE",
@@ -163,6 +195,21 @@ function DirectionBadge({ direction }: { direction: "IN" | "OUT" }) {
   );
 }
 
+function SourceTag({ sourceType }: { sourceType: "BANK" | "GL" }) {
+  return (
+    <span
+      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${
+        sourceType === "BANK" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"
+      }`}
+    >
+      {sourceType}
+    </span>
+  );
+}
+
+// ตารางรวม Bank/GL ของกลุ่มย่อยหนึ่งกลุ่ม หน้าตาเดียวกับหน้า Suspense — ต่างกันตรงที่ "หน่วยที่เลือก"
+// คือทั้งกลุ่ม ไม่ใช่รายบรรทัด (Unmatch ต้องยกทั้งกลุ่มเสมอ ไม่งั้นกลุ่มที่เหลือจะยอดไม่บาลานซ์)
+// เลยทำให้ติ๊กช่องไหนก็ติ๊ก/ปลดครบทั้งกลุ่มพร้อมกัน
 function SubGroupBlock({
   group,
   colorIdx,
@@ -205,7 +252,7 @@ function SubGroupBlock({
           กลุ่ม {group.num}
         </span>
         <span className="text-xs text-gray-500">
-          {group.bankLines.length} bank : {group.glLines.length} GL
+          {group.lines.length} รายการ ({group.bankLines.length} bank : {group.glLines.length} GL)
         </span>
         {!balanced && <span className="text-[11px] text-red-500 font-medium">ยอดไม่ตรง!</span>}
         {reversed && (
@@ -232,29 +279,44 @@ function SubGroupBlock({
         </p>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1.5">
-          {group.bankLines.map((l, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm">
-              <span className="text-xs text-gray-400 w-16 shrink-0">{formatDate(l.date)}</span>
-              <DirectionBadge direction={l.direction} />
-              <span className="flex-1 min-w-0 truncate text-gray-700">{l.description}</span>
-              <span className="tabular-nums text-gray-900">{formatAmount(l.amount)}</span>
-            </div>
-          ))}
-        </div>
-        <div className="flex flex-col gap-1.5">
-          {group.glLines.map((l, i) => (
-            <div key={i} className="flex items-center gap-2 text-sm">
-              <span className="text-xs text-gray-400 w-16 shrink-0">{formatDate(l.date)}</span>
-              <DirectionBadge direction={l.direction} />
-              <span className="flex-1 min-w-0 truncate text-gray-700">
-                {l.ref} · {l.accountName}
-              </span>
-              <span className="tabular-nums text-gray-900">{formatAmount(l.amount)}</span>
-            </div>
-          ))}
-        </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[520px]">
+          <tbody className="divide-y divide-black/5">
+            {group.lines.map((l) => (
+              <tr
+                key={l.key}
+                onClick={() => !reversed && onToggleSelect()}
+                className={`transition-colors ${reversed ? "" : "cursor-pointer hover:bg-white/60"}`}
+              >
+                <td className="py-1.5 pr-2 w-8">
+                  {!reversed && (
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={onToggleSelect}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded border-gray-300 cursor-pointer"
+                      aria-label={`เลือกกลุ่มย่อยที่ ${group.num} ของ Match #${group.matchId}`}
+                    />
+                  )}
+                </td>
+                <td className="py-1.5 pr-3 text-xs text-gray-400 whitespace-nowrap">{formatDate(l.date)}</td>
+                <td className="py-1.5 pr-3">
+                  <SourceTag sourceType={l.sourceType} />
+                </td>
+                <td className="py-1.5 pr-3">
+                  <DirectionBadge direction={l.direction} />
+                </td>
+                <td className="py-1.5 pr-3 text-gray-700 truncate max-w-[280px]" title={l.detail}>
+                  {l.detail}
+                </td>
+                <td className="py-1.5 text-right tabular-nums text-gray-900 whitespace-nowrap">
+                  {formatAmount(l.amount)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );

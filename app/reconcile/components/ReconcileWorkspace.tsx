@@ -52,24 +52,11 @@ export default function ReconcileWorkspace() {
         >
           <PanelLeft size={18} />
         </button>
-        <div className="flex items-center gap-1.5 text-sm text-gray-500 shrink-0">
-          <span>Home</span>
-          <span>/</span>
-          <span className="text-gray-900 font-medium">Reconcile</span>
-        </div>
+       
         <div className="flex-1 min-w-[160px] order-3 sm:order-none">
-          <div className="flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 max-w-md">
-            <Search size={16} className="text-gray-400 shrink-0" />
-            <input
-              placeholder="Search transactions, references..."
-              className="bg-transparent text-sm outline-none w-full placeholder:text-gray-400"
-            />
-          </div>
+          
         </div>
-        <button className="relative p-2 text-gray-400 hover:text-gray-600 shrink-0" aria-label="Notifications">
-          <Bell size={18} />
-          <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full" />
-        </button>
+        
         <button
           onClick={openNewReconciliation}
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0 whitespace-nowrap"

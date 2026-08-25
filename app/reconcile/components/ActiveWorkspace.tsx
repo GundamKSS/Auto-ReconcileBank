@@ -1044,6 +1044,7 @@ export default function ActiveWorkspace({
           {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          
           <button
             onClick={() => setFocusMode((v) => !v)}
             className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-full border transition-colors ${
