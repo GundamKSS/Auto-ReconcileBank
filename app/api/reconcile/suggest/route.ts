@@ -112,7 +112,8 @@ export async function POST(req: NextRequest) {
         WHERE m.BankCode = @bankCode
           AND NOT EXISTS (
             SELECT 1 FROM ReconciliationMatchLine rml
-            WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No
+            JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
+            WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No AND rml.Status = 'ACTIVE'
           )
           ${fromDate ? 'AND e.Posting_Date >= @from' : ''}
           ${glToDate ? 'AND e.Posting_Date <= @to' : ''}

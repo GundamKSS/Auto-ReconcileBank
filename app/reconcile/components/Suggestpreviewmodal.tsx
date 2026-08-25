@@ -13,6 +13,7 @@ import {
   Loader2,
   Link2,
 } from "lucide-react";
+import { getCurrentUsername } from "../../../lib/currentUser";
 
 type Direction = "IN" | "OUT";
 type ClusterType = "ONE_TO_ONE" | "ONE_TO_MANY" | "MANY_TO_ONE";
@@ -437,7 +438,7 @@ export default function SuggestPreviewModal({
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode, matchType, groups }),
+        body: JSON.stringify({ bankCode, matchType, groups, createdBy: getCurrentUsername() }),
       });
       const data = await res.json();
       if (!res.ok) {

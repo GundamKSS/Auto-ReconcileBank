@@ -58,7 +58,8 @@ export async function GET(req: NextRequest) {
       WHERE m.BankCode IS NOT NULL
         AND NOT EXISTS (
               SELECT 1 FROM ReconciliationMatchLine rml
-              WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No
+              JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
+              WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No AND rml.Status = 'ACTIVE'
             )
         ${bankCode ? 'AND m.BankCode = @bankCode' : ''}
         ${fromDate ? 'AND e.Posting_Date >= @from' : ''}

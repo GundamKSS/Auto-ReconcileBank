@@ -11,6 +11,7 @@ import {
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  History,
 } from 'lucide-react';
 
 import { usePathname, useRouter } from 'next/navigation';
@@ -36,15 +37,21 @@ const menuItems = [
     icon: GitCompareArrows,
   },
   {
-    name: 'Master Data',
-    href: '/master-data/bank-statement',
-    icon: Database,
+    name: 'Match History',
+    href: '/reconcile/history',
+    icon: History,
   },
-  {
+    {
     name: 'Suspense',
     href: '/suspense',
     icon: WalletCards,
   },
+  {
+    name: 'Master Data',
+    href: '/master-data/bank-statement',
+    icon: Database,
+  },
+
   {
     name: 'Reports',
     href: '/reports',

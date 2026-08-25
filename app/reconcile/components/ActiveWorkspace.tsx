@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { ReconcileSession } from "./types";
 import SuggestPreviewModal, { Cluster } from "./Suggestpreviewmodal";
+import { getCurrentUsername } from "../../../lib/currentUser";
 
 type Direction = "IN" | "OUT";
 
@@ -315,6 +316,7 @@ function DateGroupRow({
   rowRef,
   highlighted,
   clusterOf,
+  dateClusterNumbering,
 }: {
   date: string;
   items: LineItem[];
@@ -326,22 +328,17 @@ function DateGroupRow({
   rowRef?: (el: HTMLDivElement | null) => void;
   highlighted?: boolean;
   clusterOf: Map<string, number>;
+  dateClusterNumbering: Map<string, Map<number, number>>;
 }) {
   const total = items.reduce((sum, i) => sum + i.amount, 0);
   const selectedInGroup = items.filter((i) => selected.has(i.id)).length;
   const allSelected = selectedInGroup === items.length && items.length > 0;
   const someSelected = selectedInGroup > 0 && !allSelected;
 
-  // เลขกลุ่มดิบ (จาก computeReadyIds) ไม่เรียงสวยและใช้ร่วมกันทั้งหน้า — ที่นี่แปลงเป็นเลขกลุ่มท้องถิ่น
-  // เฉพาะภายในวันนี้ (1, 2, 3, ...) ให้อ่านง่าย พร้อมสีวนตามเลข ใช้สีเดียวกันได้ทั้ง 2 ฝั่ง (bank/GL)
-  // เพราะ clusterOf ใช้ id เดียวกันข้าม panel
-  const localClusterNo = new Map<number, number>();
-  for (const item of items) {
-    const raw = clusterOf.get(item.id);
-    if (raw !== undefined && !localClusterNo.has(raw)) {
-      localClusterNo.set(raw, localClusterNo.size + 1);
-    }
-  }
+  // เลขกลุ่มที่แสดง (1, 2, 3, ...) ต้องมาจาก map กลางที่คำนวณครั้งเดียวใน ActiveWorkspace แล้วส่งลงมา
+  // ห้ามคำนวณแยกในแต่ละ panel เอง — เพราะฝั่ง bank/GL ดึงข้อมูลมาคนละ query เรียงคนละลำดับ
+  // ถ้าต่างฝั่งคำนวณเลขกลุ่มเอง raw cluster เดียวกันจะได้เลขกำกับไม่ตรงกันข้ามฝั่ง (ดูสีผิด ดูเหมือนยอดไม่ตรง)
+  const localClusterNo = dateClusterNumbering.get(date) ?? new Map<number, number>();
 
   function toggleGroup(e: React.MouseEvent) {
     e.stopPropagation();
@@ -463,6 +460,7 @@ function Panel({
   registerRowRef,
   highlightedDate,
   clusterOf,
+  dateClusterNumbering,
   onSync,
   syncing,
   syncDisabled,
@@ -483,6 +481,7 @@ function Panel({
   registerRowRef: (date: string, el: HTMLDivElement | null) => void;
   highlightedDate: string | null;
   clusterOf: Map<string, number>;
+  dateClusterNumbering: Map<string, Map<number, number>>;
   onSync?: () => void;
   syncing?: boolean;
   syncDisabled?: boolean;
@@ -550,6 +549,7 @@ function Panel({
               rowRef={(el) => registerRowRef(date, el)}
               highlighted={highlightedDate === date}
               clusterOf={clusterOf}
+              dateClusterNumbering={dateClusterNumbering}
             />
           ))}
       </div>
@@ -815,6 +815,25 @@ export default function ActiveWorkspace({
 
   const matchReadyDates = matchReadyDatesByDirection[directionFilter];
 
+  // เลขกลุ่ม "กลุ่ม N" ที่โชว์บนจอต้องคำนวณครั้งเดียวใช้ร่วมกันทั้งฝั่ง bank และ GL ของวันเดียวกัน
+  // ไล่จาก bankLines พอ เพราะทุก cluster ที่ computeReadyIds สร้างมีฝั่ง bank อย่างน้อย 1 รายการเสมอ
+  // (ดู recordCluster ใน computeReadyIds — เรียกพร้อม bankIds/glIds ทั้งคู่ทุกครั้ง)
+  const dateClusterNumbering = useMemo(() => {
+    const map = new Map<string, Map<number, number>>();
+    for (const l of bankLines) {
+      const raw = clusterOf.get(l.id);
+      if (raw === undefined) continue;
+      const d = formatDate(l.date);
+      let perDate = map.get(d);
+      if (!perDate) {
+        perDate = new Map<number, number>();
+        map.set(d, perDate);
+      }
+      if (!perDate.has(raw)) perDate.set(raw, perDate.size + 1);
+    }
+    return map;
+  }, [bankLines, clusterOf]);
+
   function toggleBank(id: string) {
     setSelectedBank((prev) => {
       const next = new Set(prev);
@@ -886,7 +905,7 @@ export default function ActiveWorkspace({
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode: session.bankCode, matchType: "MATCHED", groups }),
+        body: JSON.stringify({ bankCode: session.bankCode, matchType: "MATCHED", groups, createdBy: getCurrentUsername() }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -921,7 +940,7 @@ export default function ActiveWorkspace({
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode: session.bankCode, matchType: "SUSPENSE", groups }),
+        body: JSON.stringify({ bankCode: session.bankCode, matchType: "SUSPENSE", groups, createdBy: getCurrentUsername() }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1126,6 +1145,7 @@ export default function ActiveWorkspace({
             registerRowRef={registerBankRowRef}
             highlightedDate={highlight?.side === "bank" ? highlight.date : null}
             clusterOf={clusterOf}
+            dateClusterNumbering={dateClusterNumbering}
           />
           <Panel
             title="General Ledger (BC365)"
@@ -1144,6 +1164,7 @@ export default function ActiveWorkspace({
             highlightedDate={highlight?.side === "gl" ? highlight.date : null}
             matchReadyDates={matchReadyDates}
             clusterOf={clusterOf}
+            dateClusterNumbering={dateClusterNumbering}
             onSync={handleSyncGl}
             syncing={syncingGl}
             syncDisabled={loading || busy || syncingGl}
