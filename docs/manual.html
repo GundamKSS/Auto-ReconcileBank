@@ -1,0 +1,847 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>คู่มือการใช้งาน Auto Reconcile Bank</title>
+<style>
+  @page { size: A4 portrait; margin: 16mm 14mm 18mm 14mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Thonburi", "Noto Sans Thai", "Sukhumvit Set", -apple-system, "Helvetica Neue", sans-serif;
+    font-size: 10.5pt; line-height: 1.62; color: #16202e; margin: 0;
+  }
+  h1, h2, h3, h4 { line-height: 1.35; margin: 0; }
+  p { margin: 0 0 7pt; }
+  ul, ol { margin: 0 0 8pt; padding-left: 17pt; }
+  li { margin-bottom: 3.5pt; }
+  code { font-family: "SF Mono", Menlo, monospace; font-size: 9pt; background:#eef2f7; padding:1px 4px; border-radius:3px; }
+
+  .page-break { page-break-before: always; }
+  .avoid-break { page-break-inside: avoid; }
+
+  /* ---------- cover ---------- */
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; page-break-after: always; }
+  .cover .badge { display:inline-block; background: linear-gradient(135deg,#0ea5e9,#2563eb); color:#fff;
+      font-size: 9.5pt; font-weight:700; letter-spacing:.14em; padding: 5pt 12pt; border-radius: 99pt; }
+  .cover h1 { font-size: 34pt; font-weight: 800; letter-spacing:-.02em; margin: 14pt 0 6pt; color:#0b1727; }
+  .cover .sub { font-size: 14pt; color:#475569; margin-bottom: 26pt; }
+  .cover .meta { border-top: 2px solid #e2e8f0; padding-top: 12pt; font-size: 10pt; color:#64748b; }
+  .cover .meta b { color:#0b1727; }
+
+  /* ---------- headings ---------- */
+  h2.chapter {
+    font-size: 19pt; font-weight: 800; color:#0b1727; margin: 0 0 3pt;
+    padding-bottom: 6pt; border-bottom: 3px solid #2563eb;
+  }
+  .chapter-no { display:inline-block; background:#2563eb; color:#fff; font-size:11pt; font-weight:800;
+     width: 22pt; height: 22pt; line-height: 22pt; text-align:center; border-radius: 6pt; margin-right: 7pt; }
+  .chapter-lead { color:#475569; font-size: 10.5pt; margin: 8pt 0 12pt; }
+  h3 { font-size: 13pt; font-weight: 700; color:#0f2748; margin: 16pt 0 6pt;
+       padding-left: 8pt; border-left: 4px solid #93c5fd; }
+  h4 { font-size: 11pt; font-weight: 700; color:#1e3a5f; margin: 11pt 0 4pt; }
+
+  /* ---------- figure ---------- */
+  figure { margin: 10pt 0 12pt; page-break-inside: avoid; }
+  figure img { width: 100%; display:block; border: 1px solid #dbe3ec; border-radius: 5pt; }
+  figcaption { font-size: 9pt; color:#64748b; margin-top: 4pt; text-align: left; }
+  figcaption b { color:#1d4ed8; }
+  figure.narrow img { width: 66%; margin: 0 auto; }
+  figure.narrow figcaption { text-align: center; }
+  figure.xnarrow img { width: 47%; margin: 0 auto; }
+  figure.xnarrow figcaption { text-align: center; }
+  figure.mid img { width: 82%; margin: 0 auto; }
+  figure.mid figcaption { text-align: center; }
+
+  /* ---------- tables ---------- */
+  table { width: 100%; border-collapse: collapse; margin: 6pt 0 12pt; font-size: 9.6pt; page-break-inside: auto; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th { background:#eff6ff; color:#1e3a5f; text-align:left; font-weight:700; font-size:9.4pt;
+       padding: 5pt 7pt; border-bottom: 1.5px solid #bfdbfe; }
+  td { padding: 5pt 7pt; border-bottom: 1px solid #e8edf3; vertical-align: top; }
+  tr:nth-child(even) td { background: #fafcfe; }
+  td.k { font-weight: 700; color:#0f2748; white-space: nowrap; width: 33%; }
+
+  /* ---------- callouts ---------- */
+  .note, .warn, .tip {
+    border-radius: 5pt; padding: 8pt 11pt; margin: 9pt 0 12pt; font-size: 9.8pt; page-break-inside: avoid;
+  }
+  .note { background:#f1f5fb; border-left: 4px solid #64748b; }
+  .warn { background:#fff4f2; border-left: 4px solid #e11d48; }
+  .tip  { background:#f0fdf6; border-left: 4px solid #16a34a; }
+  .note b, .warn b, .tip b { display:block; margin-bottom: 2pt; }
+  .warn b { color:#be123c; } .tip b { color:#15803d; } .note b { color:#334155; }
+
+  /* ---------- pills ---------- */
+  .pill { display:inline-block; font-size:8.5pt; font-weight:700; padding:1.5pt 6pt; border-radius:99pt; white-space:nowrap; }
+  .p-green { background:#dcfce7; color:#15803d; }
+  .p-amber { background:#fef3c7; color:#b45309; }
+  .p-red   { background:#ffe4e6; color:#be123c; }
+  .p-blue  { background:#dbeafe; color:#1d4ed8; }
+  .p-gray  { background:#e9eef5; color:#475569; }
+
+  /* ---------- toc ---------- */
+  .toc { margin-top: 10pt; }
+  .toc div { display:flex; gap: 8pt; padding: 5pt 0; border-bottom: 1px dotted #cbd5e1; font-size: 10.5pt; }
+  .toc span.n { color:#2563eb; font-weight:800; width: 20pt; }
+  .toc span.t { flex:1; font-weight:600; color:#0f2748; }
+  .toc span.d { color:#64748b; font-size: 9.3pt; font-weight:400; }
+
+  .flow { display:flex; gap:5pt; flex-wrap:wrap; margin: 8pt 0 12pt; }
+  .flow div { background:#eff6ff; border:1px solid #bfdbfe; border-radius:5pt; padding:5pt 9pt; font-size:9.3pt; font-weight:600; color:#1e3a5f; }
+  .flow span { align-self:center; color:#93c5fd; font-weight:800; }
+</style>
+</head>
+<body>
+
+<!-- ================= COVER ================= -->
+<section class="cover">
+  <div><span class="badge">คู่มือการใช้งาน · ฉบับผู้ใช้งาน</span></div>
+  <h1>Auto Reconcile Bank</h1>
+  <div class="sub">ระบบกระทบยอดเงินฝากธนาคารกับบัญชีแยกประเภท (Bank ↔ BC365)</div>
+
+  <p style="color:#475569; font-size:11pt; max-width: 135mm;">
+    คู่มือฉบับนี้อธิบาย <b>ทุกปุ่มบนหน้าจอว่ากดแล้วเกิดอะไรขึ้น</b> พร้อมภาพหน้าจอจริงของระบบ
+    เรียงตามลำดับการทำงานจริงตั้งแต่เข้าสู่ระบบ นำเข้าข้อมูล จับคู่รายการ จนถึงออกรายงาน
+  </p>
+
+  <div class="meta" style="margin-top: 30mm;">
+    <p><b>ระบบ</b> &nbsp; Auto Reconcile Bank (Next.js + SQL Server + BC365 Sync API)</p>
+    <p><b>ธนาคารที่รองรับ</b> &nbsp; BBL · KBank · SCB &nbsp;<span style="color:#94a3b8">(KTB / TTB / BAY ยังไม่เปิดใช้งาน)</span></p>
+    <p><b>ผู้ใช้งานเป้าหมาย</b> &nbsp; ฝ่ายบัญชี / ผู้ตรวจสอบการกระทบยอด</p>
+    <p><b>จัดทำเมื่อ</b> &nbsp; 25 สิงหาคม 2569</p>
+  </div>
+</section>
+
+<!-- ================= TOC ================= -->
+<section>
+  <h2 class="chapter">สารบัญ</h2>
+  <div class="toc">
+    <div><span class="n">1</span><span class="t">ภาพรวมระบบและแนวคิดการกระทบยอด <span class="d">— ระบบทำอะไร ข้อมูลมาจากไหน</span></span></div>
+    <div><span class="n">2</span><span class="t">การเข้าสู่ระบบ (Login) <span class="d">— หน้าจอเข้าใช้งานและการออกจากระบบอัตโนมัติ</span></span></div>
+    <div><span class="n">3</span><span class="t">เมนูด้านซ้าย (Sidebar) <span class="d">— ทุกเมนูและปุ่มพับ/ขยาย</span></span></div>
+    <div><span class="n">4</span><span class="t">Dashboard — สรุปประจำเดือน <span class="d">— การ์ด KPI กราฟ และตัวกรอง</span></span></div>
+    <div><span class="n">5</span><span class="t">Import — นำเข้าข้อมูล <span class="d">— อัปโหลด Statement และซิงค์ GL จาก BC365</span></span></div>
+    <div><span class="n">6</span><span class="t">Reconcile — หน้าจับคู่รายการ <span class="d">★ หัวใจของระบบ</span></span></div>
+    <div><span class="n">7</span><span class="t">Match History — ประวัติการจับคู่ <span class="d">— ตรวจย้อนหลังและ Unmatch</span></span></div>
+    <div><span class="n">8</span><span class="t">Suspense — บัญชีพักโอน <span class="d">— ดึงรายการที่พักไว้กลับมาจับคู่ใหม่</span></span></div>
+    <div><span class="n">9</span><span class="t">Master Data — จัดการไฟล์ Statement <span class="d">— ดู แก้ไข ลบ เพิ่มรายการด้วยมือ</span></span></div>
+    <div><span class="n">10</span><span class="t">Reports — รายงานการกระทบยอด <span class="d">— ดูบนจอและ Export Excel</span></span></div>
+    <div><span class="n">11</span><span class="t">ภาคผนวก <span class="d">— ตารางสถานะ/สี ข้อควรระวัง และคำถามที่พบบ่อย</span></span></div>
+  </div>
+
+  <div class="note" style="margin-top:16pt;">
+    <b>วิธีอ่านคู่มือนี้</b>
+    ทุกบทจะมีภาพหน้าจอจริงตามด้วยตาราง <b>“ปุ่ม / สิ่งที่กด” → “กดแล้วเกิดอะไรขึ้น”</b>
+    ถ้าต้องการรู้แค่ว่าปุ่มไหนทำอะไร ให้ดูที่ตารางได้เลย ส่วนคำอธิบายรอบๆ ตารางคือเหตุผลและลำดับการทำงานที่ถูกต้อง
+  </div>
+</section>
+
+<!-- ================= 1 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">1</span>ภาพรวมระบบและแนวคิดการกระทบยอด</h2>
+  <p class="chapter-lead">ก่อนกดปุ่มใดๆ ควรเข้าใจก่อนว่าระบบเอาข้อมูลมาจากไหน และ “จับคู่สำเร็จ” หมายความว่าอย่างไร</p>
+
+  <h3>1.1 ระบบนี้ทำอะไร</h3>
+  <p>
+    Auto Reconcile Bank ใช้เปรียบเทียบรายการเดินบัญชีจาก <b>ใบแจ้งยอดธนาคาร (Bank Statement)</b>
+    กับรายการทางบัญชีจาก <b>Business Central 365 (BC365 / GL)</b> แล้วจับคู่รายการที่เป็นรายการเดียวกันเข้าด้วยกัน
+    รายการที่จับคู่แล้วจะถูกบันทึกเป็น <b>Match</b> พร้อมชื่อผู้ทำและเวลา เพื่อให้ตรวจสอบย้อนหลังได้
+  </p>
+
+  <h3>1.2 แหล่งข้อมูล 2 ฝั่ง</h3>
+  <table>
+    <thead><tr><th>ฝั่ง</th><th>มาจากไหน</th><th>แก้ไขได้ไหม</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Bank Statement</td><td>อัปโหลดไฟล์ Excel/CSV จากธนาคาร ที่หน้า <b>Import</b></td>
+          <td>แก้ไข/ลบได้ที่หน้า <b>Master Data</b> เท่านั้น และเฉพาะรายการที่ยังไม่ถูกจับคู่</td></tr>
+      <tr><td class="k">General Ledger (BC365)</td><td>ดึงอัตโนมัติจาก Business Central ผ่านปุ่ม “ซิงค์จาก BC365”</td>
+          <td>แก้ไขในระบบนี้ไม่ได้ — ต้องไปแก้ที่ BC365 แล้วกดซิงค์ใหม่</td></tr>
+    </tbody>
+  </table>
+
+  <h3>1.3 กฎการจับคู่ที่ระบบยึด</h3>
+  <ul>
+    <li><b>ทิศทางตรงข้ามกัน</b> — เงินเข้าฝั่งธนาคาร (Bank Cr) คู่กับเดบิตฝั่ง GL (GL Dr) และในทางกลับกัน
+        บนหน้าจอจะเห็นเป็นป้าย <span class="pill p-green">IN</span> (เงินเข้า) และ <span class="pill p-red">OUT</span> (เงินออก)</li>
+    <li><b>วันที่เดียวกัน</b> — ระบบจัดกลุ่มรายการตามวันที่ ทั้ง 2 ฝั่งต้องเป็นวันเดียวกัน</li>
+    <li><b>ยอดรวมต้องเท่ากันพอดี</b> — ยอมให้ต่างกันได้ไม่เกิน 0.005 บาท ถ้าไม่เท่ากันปุ่ม Match จะกดไม่ได้</li>
+    <li><b>จับคู่ได้หลายรูปแบบ</b> — 1:1 (หนึ่งต่อหนึ่ง), 1:N (ธนาคาร 1 รายการ ต่อ GL หลายรายการ)
+        และ N:1 (ธนาคารหลายรายการ ต่อ GL 1 รายการ)</li>
+    <li><b>ฝั่ง GL แยกตามเลขบัญชี</b> — ในหน้า Reconcile ฝั่งขวาจะมีแท็บแยกตามเลขบัญชีให้เลือกดูทีละบัญชีได้</li>
+  </ul>
+
+  <h3>1.4 สถานะของแต่ละรายการ</h3>
+  <table>
+    <thead><tr><th>สถานะ</th><th>ความหมาย</th><th>ทำอะไรต่อได้</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill p-red">UNMATCHED</span></td><td>ยังไม่ถูกจับคู่ ยังค้างอยู่</td><td>ไปจับคู่ที่หน้า Reconcile</td></tr>
+      <tr><td><span class="pill p-green">MATCHED</span></td><td>จับคู่เรียบร้อยแล้ว</td><td>ดูได้ที่ Match History / กด Unmatch เพื่อคืนสถานะ</td></tr>
+      <tr><td><span class="pill p-amber">SUSPENSE</span></td><td>พักไว้ก่อน (บัญชีพักโอน) ยังหาคู่ไม่ได้</td><td>ดูได้ที่หน้า Suspense / ดึงกลับไป Reconcile</td></tr>
+    </tbody>
+  </table>
+
+  <h3>1.5 ลำดับการทำงานที่แนะนำ</h3>
+  <div class="flow">
+    <div>1. Import — อัปโหลด Statement</div><span>›</span>
+    <div>2. ซิงค์ GL จาก BC365</div><span>›</span>
+    <div>3. Reconcile — จับคู่</div><span>›</span>
+    <div>4. รายการที่เหลือ → Suspense</div><span>›</span>
+    <div>5. Reports — ออกรายงาน</div>
+  </div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">2</span>การเข้าสู่ระบบ (Login)</h2>
+  <p class="chapter-lead">ใช้ชื่อผู้ใช้และรหัสผ่านชุดเดียวกับระบบ TRW Data Center — ระบบไม่ได้เก็บรหัสผ่านไว้เอง</p>
+
+  <figure class="xnarrow">
+    <img src="web/01-login.png" alt="หน้าเข้าสู่ระบบ">
+    <figcaption><b>รูปที่ 2.1</b> หน้าเข้าสู่ระบบ — เปิดโปรแกรมครั้งแรกจะมาที่หน้านี้เสมอ</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>สิ่งที่กด / กรอก</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ช่อง Username</td><td>กรอกชื่อผู้ใช้ของพนักงาน (ชุดเดียวกับที่ใช้เข้าระบบกลางของบริษัท)</td></tr>
+      <tr><td class="k">ช่อง Password</td><td>กรอกรหัสผ่าน ระบบจะซ่อนเป็นจุดไว้</td></tr>
+      <tr><td class="k">ไอคอนรูปตา 👁 ท้ายช่องรหัสผ่าน</td><td>สลับเปิด/ปิดการแสดงรหัสผ่านเป็นตัวอักษร ใช้ตรวจว่าพิมพ์ถูกไหม</td></tr>
+      <tr><td class="k">ปุ่ม <b>Sign in</b></td><td>ส่งข้อมูลไปตรวจสอบกับระบบกลาง ถ้าถูกต้องจะเข้าสู่หน้า <b>Dashboard</b> ทันที
+          ระหว่างรอปุ่มจะเปลี่ยนเป็น “Signing in...” และกดซ้ำไม่ได้</td></tr>
+    </tbody>
+  </table>
+
+  <h4>ข้อความแจ้งเตือนที่อาจพบ</h4>
+  <table>
+    <thead><tr><th>ข้อความ</th><th>สาเหตุและวิธีแก้</th></tr></thead>
+    <tbody>
+      <tr><td class="k">username หรือรหัสผ่านไม่ถูกต้อง</td><td>พิมพ์ผิด หรือบัญชีถูกปิดใช้งาน — ตรวจตัวพิมพ์ใหญ่/เล็กและลองใหม่</td></tr>
+      <tr><td class="k">ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้</td><td>เครื่องไม่ได้ต่อเครือข่ายภายใน หรือระบบกลางปิดอยู่ — ติดต่อฝ่าย IT</td></tr>
+      <tr><td class="k">ตรวจสอบผู้ใช้งานไม่สำเร็จ (HTTP …)</td><td>ระบบตรวจสอบผู้ใช้งานตอบกลับผิดปกติ — แจ้งฝ่าย IT พร้อมเลข HTTP ที่เห็น</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">
+    <b>ระบบจะออกจากระบบให้อัตโนมัติเมื่อไม่มีการใช้งาน 30 นาที</b>
+    นับจากการขยับเมาส์ กดแป้นพิมพ์ หรือเลื่อนหน้าจอครั้งล่าสุด เมื่อครบเวลาระบบจะพากลับไปหน้า Login
+    และ <b>ล้างงานกระทบยอดที่ค้างอยู่ (ธนาคาร/ช่วงวันที่ที่เลือกไว้)</b> ทิ้ง — รายการที่กด Match ไปแล้วยังอยู่ครบ ไม่หายไปไหน
+  </div>
+
+  <div class="tip">
+    <b>ออกจากระบบเอง</b>
+    กดไอคอนลูกศรออกจากกล่อง (Log out) ที่มุมล่างซ้ายของเมนู ข้างชื่อผู้ใช้
+  </div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">3</span>เมนูด้านซ้าย (Sidebar)</h2>
+  <p class="chapter-lead">แถบเมนูนี้อยู่ทุกหน้า ใช้สลับไปมาระหว่างงานแต่ละส่วน — เมนูที่กำลังเปิดอยู่จะเป็นพื้นหลังฟ้า</p>
+
+  <table>
+    <thead><tr><th>เมนู</th><th>กดแล้วไปที่ไหน / ใช้ทำอะไร</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Dashboard</td><td>หน้าสรุปภาพรวมประจำเดือน — ดูว่าเดือนนี้กระทบยอดไปกี่ % เหลือค้างเท่าไร</td></tr>
+      <tr><td class="k">Import</td><td>นำเข้าไฟล์ Bank Statement และซิงค์รายการ GL ทั้งหมดจาก BC365</td></tr>
+      <tr><td class="k">Reconcile</td><td>หน้าจับคู่รายการ — งานหลักที่ใช้ทุกวัน</td></tr>
+      <tr><td class="k">Match History</td><td>ประวัติการจับคู่ทั้งหมด ใช้ตรวจย้อนหลังและยกเลิกการจับคู่ (Unmatch)</td></tr>
+      <tr><td class="k">Master Data</td><td>จัดการไฟล์ Statement ที่นำเข้าไว้ — ดูรายบรรทัด แก้ไข ลบ เพิ่มรายการด้วยมือ</td></tr>
+      <tr><td class="k">Suspense</td><td>รายการที่พักไว้ (บัญชีพักโอน) และปุ่มดึงกลับไปจับคู่ใหม่</td></tr>
+      <tr><td class="k">Reports</td><td>รายงานการกระทบยอดแบบเทียบ 2 ฝั่ง พร้อมปุ่ม Export Excel</td></tr>
+    </tbody>
+  </table>
+
+  <h3>ปุ่มอื่นๆ บนแถบเมนู</h3>
+  <table>
+    <thead><tr><th>ปุ่ม</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่มกลมเล็กขอบขวาของแถบเมนู</td>
+          <td><b>พับ/ขยายเมนู</b> — พับแล้วเมนูจะเหลือแต่ไอคอน ได้พื้นที่ตารางกว้างขึ้น เหมาะกับหน้า Reconcile
+              (จำค่าที่เลือกไว้ให้ ไม่ต้องกดใหม่ทุกครั้ง)</td></tr>
+      <tr><td class="k">ไอคอน ☰ (บนจอมือถือ/จอแคบ)</td><td>เปิด–ปิดแถบเมนูแบบลิ้นชัก กดพื้นที่มืดด้านข้างเพื่อปิด</td></tr>
+      <tr><td class="k">ชื่อผู้ใช้ + ตำแหน่ง (มุมล่างซ้าย)</td><td>แสดงว่าใครกำลังใช้งานอยู่ — ชื่อนี้จะถูกบันทึกเป็นผู้ทำรายการทุกครั้งที่กด Match / พักรายการ / Unmatch</td></tr>
+      <tr><td class="k">ไอคอน Log out ข้างชื่อผู้ใช้</td><td>ออกจากระบบทันที และล้างงานกระทบยอดที่ค้างอยู่</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 4 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">4</span>Dashboard — สรุปประจำเดือน</h2>
+  <p class="chapter-lead">ใช้ตอบคำถามว่า “เดือนนี้กระทบยอดไปถึงไหนแล้ว และเหลืออะไรค้างบ้าง” ก่อนลงมือทำงานจริง</p>
+
+  <figure>
+    <img src="web/02a-dashboard-top.png" alt="หน้า Dashboard ส่วนบน">
+    <figcaption><b>รูปที่ 4.1</b> ส่วนบนของ Dashboard — แถบเลือกเดือน/ตัวกรอง และการ์ดสรุปหลัก</figcaption>
+  </figure>
+
+  <h3>4.1 แถบด้านบนสุด</h3>
+  <table>
+    <thead><tr><th>ปุ่ม / สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">อัปเดตเมื่อ HH:MM</td><td>ไม่ใช่ปุ่ม — บอกเวลาที่ดึงข้อมูลชุดที่เห็นอยู่</td></tr>
+      <tr><td class="k">ปุ่ม <b>รีเฟรช</b></td><td>ดึงข้อมูลสรุปใหม่ทั้งหมดจากฐานข้อมูล ใช้หลังเพิ่งจับคู่รายการเสร็จ</td></tr>
+      <tr><td class="k">ปุ่ม <b>ปรับมุมมอง</b></td><td>เปิดเมนูเลือกว่าจะให้หน้านี้แสดงส่วนไหนบ้าง (ดูข้อ 4.4)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.2 แถบเลือกเดือนและตัวกรอง</h3>
+  <table>
+    <thead><tr><th>ปุ่ม / สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ลูกศร ‹ / ›</td><td>ย้อนกลับ / เดินหน้าไปทีละ 1 เดือน แล้วโหลดตัวเลขของเดือนนั้นใหม่</td></tr>
+      <tr><td class="k">ช่องเลือกเดือน</td><td>กระโดดไปเดือนที่ต้องการโดยตรง</td></tr>
+      <tr><td class="k">ปุ่ม <b>เดือนนี้</b></td><td>โผล่มาเฉพาะตอนที่ดูเดือนอื่นอยู่ — กดแล้วกลับมาเดือนปัจจุบัน</td></tr>
+      <tr><td class="k"><b>วันที่ Bank</b> / <b>วันที่ BC</b></td>
+          <td>เลือกว่าจะใช้ “วันที่ตามใบแจ้งยอดธนาคาร” หรือ “วันที่ที่บันทึกใน BC365” เป็นเกณฑ์คัดรายการเข้าเดือน
+              ผลรวมทั้งหน้าจะเปลี่ยนตาม</td></tr>
+      <tr><td class="k">ปุ่มชื่อธนาคาร (ทุกธนาคาร / BBL / KBank / SCB)</td><td>กรองให้เหลือเฉพาะธนาคารที่เลือก</td></tr>
+      <tr><td class="k">ปุ่ม <b>6 เดือน</b> / <b>12 เดือน</b></td><td>เลือกความยาวของกราฟแนวโน้มย้อนหลัง (แสดงเฉพาะเมื่อเปิดส่วน “แนวโน้มย้อนหลัง” ไว้)</td></tr>
+    </tbody>
+  </table>
+  <div class="note"><b>ระบบจำค่าที่เลือกไว้ให้</b> ทั้งตัวกรอง เกณฑ์วันที่ และส่วนที่เลือกแสดง — ครั้งหน้าที่เปิดหน้านี้จะได้มุมมองเดิม</div>
+
+  <h3>4.3 การ์ดสรุปหลัก (KPI)</h3>
+  <table>
+    <thead><tr><th>การ์ด</th><th>อ่านอย่างไร</th></tr></thead>
+    <tbody>
+      <tr><td class="k">บรรทัดทั้งหมด</td><td>จำนวนบรรทัดทั้ง 2 ฝั่งรวมกันในเดือนนี้ พร้อมแยกว่ามาจาก Bank กี่บรรทัด GL กี่บรรทัด</td></tr>
+      <tr><td class="k">จับคู่แล้ว</td><td>จำนวนบรรทัดที่จับคู่สำเร็จ และคิดเป็นกี่คู่การจับคู่</td></tr>
+      <tr><td class="k">ค้างอยู่</td><td>ยังไม่จับคู่ + พักไว้ รวมกัน — ตัวเลขนี้คือ “งานที่ยังเหลือ”</td></tr>
+      <tr><td class="k">อัตรากระทบยอด</td><td>% ของบรรทัดที่จับคู่แล้วเทียบกับทั้งหมด</td></tr>
+      <tr><td class="k">ลูกศรเขียว/แดงมุมขวาการ์ด</td><td>เปรียบเทียบกับเดือนก่อนหน้า สีเขียว = ดีขึ้น สีแดง = แย่ลง</td></tr>
+      <tr><td class="k">เงินเข้า / เงินออก / ผลต่างสุทธิ Bank − GL</td>
+          <td>ยอดเงินรวมของเดือน — ถ้า “ผลต่างสุทธิ” ไม่เป็น 0 แสดงว่ายังมีรายการที่ 2 ฝั่งไม่ตรงกัน</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="page-break">
+  <figure>
+    <img src="web/02b-dashboard-mid.png" alt="กราฟรายวัน สัดส่วนสถานะ และแยกตามธนาคาร">
+    <figcaption><b>รูปที่ 4.2</b> ความเคลื่อนไหวรายวัน · สัดส่วนสถานะ · แยกตามธนาคาร</figcaption>
+  </figure>
+
+  <figure>
+    <img src="web/02d-dashboard-bottom.png" alt="อายุรายการค้างและรายการค้างยอดสูง">
+    <figcaption><b>รูปที่ 4.3</b> อายุรายการค้าง · รายการค้างยอดสูง — ใช้เลือกว่าจะไล่เคลียร์ตัวไหนก่อน</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>ส่วนที่แสดง</th><th>บอกอะไร</th></tr></thead>
+    <tbody>
+      <tr><td class="k">แนวโน้มย้อนหลัง</td><td>แท่ง = จำนวนบรรทัดแต่ละเดือน, เส้นน้ำเงิน = อัตรากระทบยอด ใช้ดูว่าเดือนไหนตกหล่น</td></tr>
+      <tr><td class="k">ความเคลื่อนไหวรายวัน</td><td>จำนวนบรรทัดแต่ละวันในเดือน แยกสีตามสถานะ — เห็นวันที่รายการเยอะผิดปกติ</td></tr>
+      <tr><td class="k">สัดส่วนสถานะ</td><td>วงกลมแยก จับคู่แล้ว / พักไว้ / ยังไม่จับคู่ พร้อม % ด้านข้าง</td></tr>
+      <tr><td class="k">แยกตามธนาคาร</td><td>เทียบยอดสุทธิ Bank กับ GL รายธนาคาร ช่อง “ผลต่าง” เป็นสีแดงเมื่อไม่ตรงกัน</td></tr>
+      <tr><td class="k">อายุรายการค้าง</td><td>รายการค้างแบ่งตามช่วงอายุ 0–7 / 8–30 / 31–60 / 61–90 / เกิน 90 วัน — ยิ่งค้างนานยิ่งควรรีบเคลียร์</td></tr>
+      <tr><td class="k">รายการค้างยอดสูง</td><td>12 รายการค้างที่มีจำนวนเงินสูงสุด เรียงจากมากไปน้อย</td></tr>
+    </tbody>
+  </table>
+
+  <h3>4.4 ปุ่ม “ปรับมุมมอง”</h3>
+  <figure>
+    <img src="web/03-dashboard-viewpicker.png" alt="เมนูปรับมุมมอง">
+    <figcaption><b>รูปที่ 4.4</b> เมนูเลือกส่วนที่จะแสดงบนหน้า Dashboard</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ติ๊กถูกหน้าแต่ละหัวข้อ</td><td>เปิด/ปิดการแสดงส่วนนั้นบนหน้า Dashboard (ลำดับบนหน้าจอคงเดิมเสมอ)</td></tr>
+      <tr><td class="k"><b>ทั้งหมด</b></td><td>เปิดแสดงทุกส่วน</td></tr>
+      <tr><td class="k"><b>ล้าง</b></td><td>ปิดทุกส่วน หน้าจะว่างและขึ้นข้อความให้กลับมาเลือกใหม่</td></tr>
+      <tr><td class="k">ตัวเลข 7/7 บนปุ่ม</td><td>บอกว่ากำลังเปิดอยู่กี่ส่วนจากทั้งหมดกี่ส่วน</td></tr>
+      <tr><td class="k">กดนอกกรอบเมนู หรือปุ่ม Esc</td><td>ปิดเมนู</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 5 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">5</span>Import — นำเข้าข้อมูล</h2>
+  <p class="chapter-lead">ทุกเดือนต้องทำ 2 อย่าง คือ อัปโหลดไฟล์ Statement ของธนาคาร และซิงค์รายการ GL จาก BC365</p>
+
+  <figure>
+    <img src="web/04-import-source.png" alt="หน้า Import ขั้นที่ 1 เลือกแหล่งข้อมูล">
+    <figcaption><b>รูปที่ 5.1</b> ขั้นที่ 1 — เลือกว่าจะนำเข้าอะไร (ในภาพเลือก Bank statement อยู่)</figcaption>
+  </figure>
+
+  <h3>5.1 ขั้นที่ 1 — เลือกแหล่งข้อมูล</h3>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">การ์ด <b>General Ledger (GL)</b></td><td>สลับไปโหมดซิงค์จาก BC365 แถบขั้นตอนด้านบนจะเหลือ 2 ขั้น และไม่ต้องอัปโหลดไฟล์</td></tr>
+      <tr><td class="k">การ์ด <b>Bank statement</b></td><td>สลับไปโหมดอัปโหลดไฟล์ธนาคาร แถบขั้นตอนจะมี 3 ขั้น</td></tr>
+      <tr><td class="k">ปุ่มชื่อธนาคาร BBL / KBank / SCB</td><td>เลือกว่าไฟล์ที่จะอัปโหลดเป็นของธนาคารไหน — <b>สำคัญมาก เพราะระบบอ่านโครงสร้างคอลัมน์ตามธนาคารที่เลือก</b></td></tr>
+      <tr><td class="k">ปุ่ม KTB / TTB / BAY (สีจาง)</td><td>กดไม่ได้ ยังไม่รองรับ</td></tr>
+      <tr><td class="k">ปุ่ม <b>Continue</b></td><td>ไปขั้นที่ 2 (อัปโหลดไฟล์)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.2 โหมด GL — ซิงค์จาก BC365</h3>
+  <figure>
+    <img src="web/05-import-gl.png" alt="โหมดซิงค์ GL จาก BC365">
+    <figcaption><b>รูปที่ 5.2</b> เลือก General Ledger (GL) แล้วจะมีปุ่ม “ซิงค์ GL ทั้งหมด”</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่ม <b>ซิงค์ GL ทั้งหมด</b></td>
+          <td>ดึงรายการ BankAccountLedgerEntries <b>ทั้งหมด</b> จาก Business Central มาอัปเดตลงฐานข้อมูล
+              ระหว่างทำปุ่มจะเปลี่ยนเป็น “กำลังซิงค์ทั้งหมด...” และกดซ้ำไม่ได้ เสร็จแล้วขึ้นแถบเขียวยืนยัน</td></tr>
+    </tbody>
+  </table>
+  <div class="warn">
+    <b>ปุ่มนี้ใช้เวลานาน — ใช้เฉพาะเมื่อจำเป็น</b>
+    “ซิงค์ GL ทั้งหมด” ในหน้านี้ดึงข้อมูลย้อนหลังทั้งชุด เหมาะกับตอนตั้งระบบใหม่ หรือย้อนไปกระทบยอดเดือนเก่า<br>
+    งานประจำวันให้ใช้ปุ่ม <b>“ซิงค์จาก BC365”</b> ในหน้า Reconcile แทน ซึ่งดึงเฉพาะ <b>40 วันล่าสุด</b> จึงเร็วกว่ามาก
+  </div>
+
+  <h3>5.3 ขั้นที่ 2 — อัปโหลดและดูตัวอย่าง</h3>
+  <figure>
+    <img src="web/06-import-upload.png" alt="ขั้นที่ 2 อัปโหลดไฟล์">
+    <figcaption><b>รูปที่ 5.3</b> ขั้นที่ 2 — ลากไฟล์มาวาง หรือคลิกเพื่อเลือกไฟล์</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">กรอบเส้นประ (คลิก หรือ ลากไฟล์มาวาง)</td>
+          <td>เลือกไฟล์ <code>.xlsx</code> <code>.xls</code> หรือ <code>.csv</code> ระบบจะอ่านไฟล์ทันที
+              (ขึ้นวงกลมหมุน + ข้อความ “กำลังอ่านไฟล์...”) <b>ยังไม่บันทึกลงฐานข้อมูลในขั้นนี้</b></td></tr>
+      <tr><td class="k">กล่องสรุปไฟล์ (ใต้กรอบอัปโหลด)</td><td>แสดงชื่อไฟล์ ขนาด และจำนวนแถวที่อ่านได้ พร้อมเครื่องหมายถูกสีเขียว</td></tr>
+      <tr><td class="k">ตาราง Preview · first 5 rows</td><td>แสดง 5 แถวแรกของไฟล์ ใช้ตรวจว่าอ่านคอลัมน์ถูกต้องไหม มุมขวาบนบอกช่วงวันที่ของทั้งไฟล์</td></tr>
+      <tr><td class="k">ปุ่ม <b>Back</b></td><td>กลับไปขั้นที่ 1</td></tr>
+      <tr><td class="k">ปุ่ม <b>Map columns</b></td><td>ไปขั้นที่ 3 — กดได้ก็ต่อเมื่ออ่านไฟล์สำเร็จแล้ว</td></tr>
+    </tbody>
+  </table>
+
+  <h3>5.4 ขั้นที่ 3 — ตรวจสอบและนำเข้า</h3>
+  <table>
+    <thead><tr><th>สิ่งที่เห็น / กด</th><th>ความหมาย</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ตาราง Column mapping</td><td>แสดงว่าคอลัมน์ในไฟล์ถูกจับคู่กับช่องข้อมูลใด — ของแต่ละธนาคารกำหนดไว้ตายตัว แก้ไม่ได้</td></tr>
+      <tr><td class="k">กล่อง Validation ✓ เขียว</td><td>อ่านได้กี่แถว และช่วงวันที่ของไฟล์</td></tr>
+      <tr><td class="k">⚠ possible duplicate rows</td><td>เตือนว่าอาจมีแถวซ้ำในไฟล์ — ยังนำเข้าได้ แต่ควรตรวจก่อน</td></tr>
+      <tr><td class="k">⚠ ไฟล์นี้เคยนำเข้าไปแล้ว (สีแดง)</td><td>ระบบเคยนำเข้าไฟล์ชื่อนี้แล้ว <b>ปุ่ม Import จะถูกปิด</b> เพื่อกันข้อมูลซ้ำ ถ้าต้องการนำเข้าใหม่ให้ไปลบชุดเดิมที่หน้า Master Data ก่อน</td></tr>
+      <tr><td class="k">ปุ่ม <b>Import N rows</b></td><td>บันทึกข้อมูลทั้งไฟล์ลงฐานข้อมูลจริง เสร็จแล้วขึ้นข้อความ “นำเข้าสำเร็จ N รายการ”</td></tr>
+      <tr><td class="k">ปุ่ม <b>Back</b></td><td>กลับไปขั้นที่ 2 เพื่อเปลี่ยนไฟล์</td></tr>
+      <tr><td class="k">ปุ่ม <b>นำเข้าไฟล์อื่นต่อ</b></td><td>โผล่มาหลังนำเข้าสำเร็จ — ล้างฟอร์มทั้งหมดกลับไปขั้นที่ 1</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 6 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">6</span>Reconcile — หน้าจับคู่รายการ</h2>
+  <p class="chapter-lead">หน้าที่ใช้งานหลัก แบ่งเป็น 3 สเต็ป: เริ่มงานใหม่ → ตั้งค่าขอบเขต → จับคู่</p>
+
+  <h3>6.1 สเต็ปที่ 1 — ยังไม่ได้เลือกรายการ</h3>
+  <figure class="mid">
+    <img src="web/07-reconcile-empty.png" alt="หน้า Reconcile ก่อนเริ่มงาน">
+    <figcaption><b>รูปที่ 6.1</b> เข้าหน้า Reconcile ครั้งแรกจะเจอหน้านี้</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่ม <b>New reconciliation</b> (ตรงกลาง หรือมุมขวาบน)</td><td>เปิดกล่องตั้งค่าขอบเขตงาน (สเต็ปที่ 2)</td></tr>
+      <tr><td class="k">ช่อง Search transactions…</td><td>ช่องค้นหาบนแถบด้านบน (ยังไม่เปิดใช้งานในเวอร์ชันนี้)</td></tr>
+      <tr><td class="k">ไอคอนกระดิ่ง 🔔</td><td>พื้นที่แจ้งเตือน (ยังไม่เปิดใช้งาน)</td></tr>
+    </tbody>
+  </table>
+
+  <h3>6.2 สเต็ปที่ 2 — กล่อง New reconciliation</h3>
+  <figure class="narrow">
+    <img src="web/08-reconcile-modal.png" alt="กล่องตั้งค่า New reconciliation">
+    <figcaption><b>รูปที่ 6.2</b> เลือกธนาคารและช่วงวันที่ที่ต้องการกระทบยอด</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>ช่อง / ปุ่ม</th><th>ผลของการเลือก</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ธนาคาร</td><td>ล็อกว่างานรอบนี้ทำของธนาคารไหน ตารางฝั่งซ้ายจะดึงเฉพาะ Statement ของธนาคารนั้น</td></tr>
+      <tr><td class="k">ไฟล์ Statement ที่นำเข้าไว้</td>
+          <td>เลือกไฟล์ที่เคยนำเข้า → ระบบจะ <b>เติมช่วงวันที่ให้อัตโนมัติ</b> ตามช่วงของไฟล์นั้น<br>
+              เลือก “-- กำหนดวันที่เอง / รวมทุกไฟล์ --” ถ้าอยากระบุช่วงวันที่เอง</td></tr>
+      <tr><td class="k">จากวันที่ / ถึงวันที่</td><td>กำหนดขอบเขตวันที่เอง — แก้ช่องนี้เมื่อไร ช่องเลือกไฟล์จะเด้งกลับเป็น “กำหนดวันที่เอง” ทันที</td></tr>
+      <tr><td class="k">☑ ขยายวันที่ฝั่ง GL (BC365) ไปอีก 7 วัน</td>
+          <td>ค้นรายการฝั่ง GL เผื่อไปอีก 7 วันของเดือนถัดไป <b>เฉพาะฝั่ง GL เท่านั้น ฝั่ง Bank ยังใช้ช่วงเดิม</b>
+              ใช้ตามหารายการบัญชีพักโอนที่บันทึกข้ามเดือน — เมื่อเปิดไว้จะมีป้ายเหลือง “GL +7 วัน” โชว์บนแถบสรุป</td></tr>
+      <tr><td class="k">ปุ่ม <b>ยกเลิก</b> / ✕ / กดพื้นที่มืดรอบกล่อง</td><td>ปิดกล่องโดยไม่เปลี่ยนอะไร</td></tr>
+      <tr><td class="k">ปุ่ม <b>Start Reconcile</b></td><td>เริ่มงาน — กดได้เมื่อเลือกครบทั้งธนาคารและวันที่ทั้ง 2 ช่อง</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">
+    <b>ระบบจำงานที่ค้างไว้ให้</b> ถ้าสลับไปหน้าอื่นหรือรีเฟรชหน้าจอ กลับมาที่ Reconcile จะได้ขอบเขตเดิม
+    ไม่ต้องตั้งค่าใหม่ — ล้างเฉพาะตอนออกจากระบบ หรือกด New reconciliation อีกครั้ง
+  </div>
+</section>
+
+<section class="page-break">
+  <h3>6.3 สเต็ปที่ 3 — หน้าจับคู่ (Reconciliation workspace)</h3>
+  <figure>
+    <img src="web/09-reconcile-active.png" alt="หน้าจับคู่รายการ">
+    <figcaption><b>รูปที่ 6.3</b> ฝั่งซ้าย = Bank statement, ฝั่งขวา = General Ledger (BC365), ด้านล่าง = แถบสรุปและปุ่มบันทึก</figcaption>
+  </figure>
+
+  <h4>แถบด้านบน</h4>
+  <table>
+    <thead><tr><th>ปุ่ม</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k"><b>โฟกัสตาราง</b></td><td>ซ่อนแถบข้อมูลด้านบนและย่อแถบสรุปด้านล่าง เพื่อให้เห็นตาราง 2 ฝั่งใหญ่ขึ้น กดซ้ำ (ปุ่มจะเปลี่ยนเป็น “ย่อกลับ”) เพื่อกลับมุมมองเดิม</td></tr>
+      <tr><td class="k"><b>Reset</b></td><td>โหลดข้อมูลทั้ง 2 ฝั่งใหม่จากฐานข้อมูล และล้างรายการที่ติ๊กเลือกไว้</td></tr>
+      <tr><td class="k"><b>Suggest matches</b> ✨</td><td>ให้ระบบหาคู่ที่ชัดเจน (1:1, 1:N, N:1) ให้อัตโนมัติ แล้วเปิดหน้าตรวจก่อนบันทึก — ดูข้อ 6.4</td></tr>
+    </tbody>
+  </table>
+
+  <h4>แถบสรุปขอบเขต (แถบฟ้า)</h4>
+  <table>
+    <thead><tr><th>สิ่งที่เห็น / กด</th><th>ความหมาย</th></tr></thead>
+    <tbody>
+      <tr><td class="k">Bank / Period / ชื่อไฟล์</td><td>ย้ำว่ากำลังทำงานกับธนาคารและช่วงวันที่ไหนอยู่</td></tr>
+      <tr><td class="k">สวิตช์ <b>ลิงค์วันที่ 2 ฝั่ง</b></td>
+          <td><b>เปิด</b> = คลี่ดูวันไหนฝั่งหนึ่ง อีกฝั่งจะคลี่วันเดียวกันและเลื่อนตามให้อัตโนมัติ (สะดวกตอนเทียบ)<br>
+              <b>ปิด</b> = ทั้ง 2 ฝั่งคลี่/เลื่อนอิสระต่อกัน</td></tr>
+      <tr><td class="k">ปุ่ม <b>Edit</b> ✎</td><td>เปิดกล่องตั้งค่าเดิมกลับมาแก้ไขช่วงวันที่/ธนาคาร โดยเติมค่าปัจจุบันไว้ให้แล้ว</td></tr>
+    </tbody>
+  </table>
+
+  <h4>ตารางทั้ง 2 ฝั่ง</h4>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่ม <span class="pill p-green">IN</span> / <span class="pill p-red">OUT</span></td>
+          <td>สลับดูเฉพาะเงินเข้า หรือเฉพาะเงินออก — <b>กดฝั่งไหนก็เปลี่ยนพร้อมกันทั้ง 2 ฝั่ง</b> เพื่อให้เทียบกันได้เสมอ</td></tr>
+      <tr><td class="k">แท็บ All / เลขบัญชี (ฝั่ง GL)</td><td>กรองรายการ GL ให้เหลือเฉพาะบัญชีที่เลือก ตัวเลขบนแท็บคือจำนวนรายการ</td></tr>
+      <tr><td class="k">ปุ่ม <b>ซิงค์จาก BC365</b> (มุมขวาบนฝั่ง GL)</td>
+          <td>ดึงรายการ GL <b>ล่าสุด 40 วัน</b> จาก Business Central มาอัปเดต แล้วโหลดหน้าใหม่ให้
+              ใช้หลังจากบัญชีเพิ่งไปแก้ข้อมูลใน BC365 เสร็จ</td></tr>
+      <tr><td class="k">คลิกที่แถววันที่</td><td>คลี่/พับดูรายการย่อยของวันนั้น</td></tr>
+      <tr><td class="k">วงกลมติ๊กหน้าแถววันที่</td><td>เลือก/ยกเลิกทั้งวันในครั้งเดียว ถ้าเลือกไว้บางส่วนจะแสดงเป็นขีดกลาง</td></tr>
+      <tr><td class="k">วงกลมติ๊กหน้ารายการย่อย</td><td>เลือก/ยกเลิกทีละรายการ</td></tr>
+      <tr><td class="k">วงกลมติ๊ก<b>สีเขียว</b></td><td>วันนั้นยอดรวมของ 2 ฝั่ง <b>เท่ากันพอดี</b> ระบบติ๊กให้ล่วงหน้าแล้ว ตรวจแล้วกด Match ได้เลย</td></tr>
+      <tr><td class="k">วงกลมติ๊ก<b>สีน้ำเงิน</b></td><td>เป็นรายการที่เลือกเอง ยอดยังไม่ยืนยันว่าตรง</td></tr>
+      <tr><td class="k">ป้ายสี “กลุ่ม 1 / 2 / 3…”</td><td>ระบบชี้ว่ารายการไหนกับรายการไหนของอีกฝั่งจับกลุ่มกันได้ — <b>สีเดียวกัน = คู่กัน</b> ทั้ง 2 ฝั่ง</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section class="page-break">
+  <figure>
+    <img src="web/10-reconcile-expanded.png" alt="คลี่ดูรายการย่อยในวันที่เลือก">
+    <figcaption><b>รูปที่ 6.4</b> คลี่แถววันที่แล้วจะเห็นรายการย่อยพร้อมเลขอ้างอิงและจำนวนเงิน</figcaption>
+  </figure>
+
+  <h4>แถบสรุปด้านล่างและปุ่มบันทึก</h4>
+  <table>
+    <thead><tr><th>สิ่งที่เห็น / กด</th><th>ความหมาย</th></tr></thead>
+    <tbody>
+      <tr><td class="k">BANK TOTAL / GL TOTAL</td><td>ยอดรวมของรายการที่ติ๊กเลือกไว้แต่ละฝั่ง</td></tr>
+      <tr><td class="k">DIFFERENCE</td><td>ผลต่างของ 2 ฝั่ง — <b style="color:#16a34a">สีเขียวเมื่อเป็น 0.00</b> และ <b style="color:#dc2626">สีแดงเมื่อไม่ตรง</b></td></tr>
+      <tr><td class="k">ปุ่ม <b>Clear</b></td><td>ยกเลิกรายการที่ติ๊กเลือกไว้ทั้งหมด (ไม่กระทบข้อมูลในฐานข้อมูล)</td></tr>
+      <tr><td class="k">ปุ่ม <b>Move to suspense</b></td>
+          <td>ย้ายรายการ <b>ฝั่ง GL ที่เลือกไว้</b> เข้าบัญชีพักโอน กดได้เมื่อเลือกฝั่ง GL อย่างน้อย 1 รายการ
+              รายการจะหายจากหน้านี้ไปโผล่ที่หน้า Suspense</td></tr>
+      <tr><td class="k">ปุ่ม <b>Match n:m</b></td>
+          <td>บันทึกการจับคู่ ตัวเลขบนปุ่มบอกว่ากำลังจับ Bank กี่รายการต่อ GL กี่รายการ<br>
+              <b>กดได้เมื่อ:</b> เลือกทั้ง 2 ฝั่ง และ DIFFERENCE = 0.00 เท่านั้น<br>
+              บันทึกแล้วรายการจะหายไปจากหน้านี้และขึ้นแถบเขียว “จับคู่สำเร็จ” พร้อมเลข MatchId</td></tr>
+    </tbody>
+  </table>
+
+  <div class="warn">
+    <b>Bank Statement พักไว้ไม่ได้</b>
+    ปุ่ม Move to suspense จะส่งเฉพาะรายการฝั่ง GL เท่านั้น แม้จะติ๊กฝั่ง Bank ไว้ด้วยก็ตาม
+    เพราะ Bank Statement คือข้อมูลหลักที่ได้จากธนาคาร ห้ามแก้ไขหรือพักไว้
+  </div>
+
+  <div class="note">
+    <b>ระบบแยก MatchId ตามกลุ่มย่อยให้เอง</b>
+    ถ้าเลือกหลายวัน/หลายกลุ่มพร้อมกันแล้วกด Match ครั้งเดียว ระบบจะแตกเป็นกลุ่มย่อยตามวันที่และทิศทางให้
+    เพื่อให้ตรวจย้อนหลังได้ชัดเจนว่ารายการไหนคู่กับรายการไหน
+  </div>
+
+  <h3>6.4 Suggest matches — ให้ระบบหาคู่ให้</h3>
+  <figure>
+    <img src="web/11-reconcile-suggest.png" alt="หน้าต่าง Preview: Suggest matches">
+    <figcaption><b>รูปที่ 6.5</b> หน้าตรวจก่อนบันทึก — ทุกกลุ่มถูกติ๊กเลือกไว้ให้แล้ว ยังไม่มีอะไรถูกบันทึก</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">วงกลมติ๊กหน้ารายการ</td>
+          <td><b>ทุกกลุ่มเริ่มต้นถูกติ๊กไว้แล้ว</b> — กดเพื่อ “เอาออก” กลุ่มที่ไม่ต้องการ วงกลมจะกลายเป็น
+              <span class="pill p-red">✕ สีแดง</span> แปลว่ากลุ่มนั้นจะไม่ถูกบันทึก</td></tr>
+      <tr><td class="k">สีวงกลม <span class="pill p-green">เขียว</span></td><td>กลุ่มแบบ 1:1 — ตรงตัว มั่นใจได้สูง</td></tr>
+      <tr><td class="k">สีวงกลม <span class="pill p-amber">เหลือง</span></td><td>กลุ่มแบบ lump sum (1:N หรือ N:1) — ควรตรวจก่อนยืนยัน</td></tr>
+      <tr><td class="k">ปุ่ม <b>เลือกทั้งหมด · 1:1 (n)</b></td><td>ติ๊ก/ยกเลิกกลุ่ม 1:1 ทั้งหมดในครั้งเดียว</td></tr>
+      <tr><td class="k">ปุ่ม <b>เลือกทั้งหมด · lump sum (n)</b></td><td>ติ๊ก/ยกเลิกกลุ่ม lump sum ทั้งหมดในครั้งเดียว</td></tr>
+      <tr><td class="k">ปุ่ม <b>เอาเฉพาะ 1:1 (ยกเลิก lump sum ทั้งหมด)</b></td><td>ทางลัดสำหรับคนที่ต้องการบันทึกเฉพาะคู่ที่ชัดเจนที่สุด</td></tr>
+      <tr><td class="k">สวิตช์ <b>ลิงค์วันที่ 2 ฝั่ง</b></td><td>เหมือนหน้าหลัก — คลี่ฝั่งหนึ่งแล้วอีกฝั่งคลี่ตาม</td></tr>
+      <tr><td class="k">ปุ่ม <b>ยกเลิก</b> / ✕</td><td>ปิดหน้าต่างโดยไม่บันทึกอะไรเลย</td></tr>
+      <tr><td class="k">ปุ่ม <b>Move to suspense</b></td><td>ส่งกลุ่มที่ยังติ๊กอยู่เข้าบัญชีพักโอนแทนการจับคู่</td></tr>
+      <tr><td class="k">ปุ่ม <b>ยืนยัน Match (n)</b></td><td>บันทึกการจับคู่ทุกกลุ่มที่ยังติ๊กอยู่ — กดได้เมื่อ DIFFERENCE = 0.00</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>ถ้าขึ้นข้อความสีแดงว่า “ไม่พบรายการที่จับคู่กันได้แบบชัดเจน”</b>
+    แปลว่าในช่วงวันที่และทิศทาง (IN/OUT) ที่กำลังดูอยู่ ไม่มีกลุ่มที่ระบบมั่นใจพอ — ลองสลับ IN ↔ OUT
+    หรือจับคู่เองด้วยมือจากตารางหลัก
+  </div>
+</section>
+
+<!-- ================= 7 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">7</span>Match History — ประวัติการจับคู่</h2>
+  <p class="chapter-lead">ย้อนดูได้ว่า Match แต่ละครั้งจับรายการไหนกับรายการไหน ใครทำ เมื่อไร และยกเลิกได้ถ้าจับผิด</p>
+
+  <figure>
+    <img src="web/12-history.png" alt="หน้า Match History">
+    <figcaption><b>รูปที่ 7.1</b> รายการ Match ทั้งหมด เรียงจากใหม่ไปเก่า</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>สิ่งที่เห็น / กด</th><th>ความหมาย</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่ม ALL / ชื่อธนาคาร</td><td>กรองให้เหลือเฉพาะธนาคารที่เลือก</td></tr>
+      <tr><td class="k">Match #nnn</td><td>เลขอ้างอิงของการจับคู่ครั้งนั้น ใช้อ้างอิงข้ามหน้าและในรายงานได้</td></tr>
+      <tr><td class="k">ป้าย <span class="pill p-green">MATCHED</span></td><td>จับคู่สำเร็จ</td></tr>
+      <tr><td class="k">ป้าย <span class="pill p-amber">SUSPENSE</span></td><td>เป็นรายการที่พักไว้ ไม่ใช่การจับคู่</td></tr>
+      <tr><td class="k">ป้าย <span class="pill p-red">ยกเลิกแล้ว</span></td><td>เคยจับคู่แล้วถูก Unmatch ไป การ์ดจะจางลง และแสดงว่าใครยกเลิก เมื่อไร ด้วยเหตุผลอะไร</td></tr>
+      <tr><td class="k">ป้าย “n กลุ่มย่อย”</td><td>ภายใน Match นี้แตกเป็นกี่คู่ย่อย</td></tr>
+      <tr><td class="k">บรรทัดวันเวลา · โดย …</td><td>เวลาที่บันทึกและชื่อผู้ทำรายการ</td></tr>
+      <tr><td class="k">ยอดเงินมุมขวา</td><td>ยอดรวมฝั่ง Bank — ถ้ายอด GL ไม่ตรงจะมีบรรทัดสีแดงบอกยอด GL กำกับ</td></tr>
+      <tr><td class="k">คลิกที่การ์ด (หรือลูกศร ›)</td><td>คลี่ดูรายละเอียดทุกกลุ่มย่อย</td></tr>
+      <tr><td class="k">ปุ่ม <b>Unmatch</b> (สีแดง)</td><td>เปิดกล่องยืนยันยกเลิกการจับคู่ — มีเฉพาะการ์ดที่เป็น MATCHED และยังไม่ถูกยกเลิก</td></tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <img src="web/13-history-expanded.png" alt="คลี่ดูกลุ่มย่อยใน Match">
+    <figcaption><b>รูปที่ 7.2</b> คลี่การ์ดแล้วเห็นแต่ละกลุ่มย่อย — ฝั่งซ้ายคือ Bank ฝั่งขวาคือ GL
+      ถ้ากลุ่มไหนยอดไม่เท่ากันจะขึ้นคำว่า <b style="color:#dc2626">ยอดไม่ตรง!</b></figcaption>
+  </figure>
+</section>
+
+<section class="page-break">
+  <h3>7.1 การยกเลิกการจับคู่ (Unmatch)</h3>
+  <figure class="mid">
+    <img src="web/14-history-unmatch-modal.png" alt="กล่องยืนยันยกเลิกการจับคู่">
+    <figcaption><b>รูปที่ 7.3</b> กล่องยืนยัน — ต้องกรอกเหตุผลก่อนจึงจะกดยืนยันได้</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">กล่อง Bank statement / General Ledger</td><td>แสดงทุกบรรทัดที่จะถูกคืนสถานะ พร้อมยอดรวมของแต่ละฝั่ง — ใช้ตรวจก่อนกดจริง</td></tr>
+      <tr><td class="k">ช่อง <b>เหตุผลที่ยกเลิก *</b></td><td><b>จำเป็นต้องกรอก</b> ถ้าเว้นว่างปุ่มยืนยันจะกดไม่ได้ ข้อความนี้จะถูกเก็บไว้ในประวัติพร้อมชื่อผู้ยกเลิกและเวลา</td></tr>
+      <tr><td class="k">ปุ่ม <b>ยกเลิก</b> / ✕ / กดพื้นที่มืดรอบกล่อง</td><td>ปิดกล่องโดยไม่ทำอะไร</td></tr>
+      <tr><td class="k">ปุ่ม <b>ยืนยันยกเลิกการจับคู่</b> (สีแดง)</td>
+          <td>คืนสถานะทุกรายการใน Match นี้กลับเป็น <span class="pill p-red">UNMATCHED</span>
+              รายการจะกลับไปโผล่ที่หน้า Reconcile ให้จับคู่ใหม่ได้<br>
+              <b>ประวัติเดิมไม่ถูกลบ</b> — การ์ดเดิมจะยังอยู่ในหน้านี้แต่ติดป้าย “ยกเลิกแล้ว”</td></tr>
+    </tbody>
+  </table>
+  <div class="tip">
+    <b>เขียนเหตุผลให้คนอื่นอ่านรู้เรื่อง</b>
+    เช่น “จับคู่ผิดรายการ — เช็คคืนของวันที่ 12 ไปเข้าคู่กับใบสำคัญคนละใบ” ดีกว่าเขียนว่า “ผิด”
+    เพราะข้อความนี้คือหลักฐานเดียวที่ผู้ตรวจสอบจะเห็นย้อนหลัง
+  </div>
+</section>
+
+<!-- ================= 8 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">8</span>Suspense — บัญชีพักโอน</h2>
+  <p class="chapter-lead">รวมรายการที่กด “Move to suspense” ไว้จากหน้า Reconcile และดึงกลับมาจับคู่ใหม่ได้ทุกเมื่อ</p>
+
+  <figure>
+    <img src="web/15-suspense.png" alt="หน้า Suspense">
+    <figcaption><b>รูปที่ 8.1</b> รายการที่พักไว้ทั้งหมด พร้อมป้ายบอกว่าพักมากี่วันแล้ว</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่ม ALL / ชื่อธนาคาร</td><td>กรองเฉพาะธนาคารที่เลือก</td></tr>
+      <tr><td class="k">พักตั้งแต่วันที่ / ถึงวันที่</td><td>กรองตามวันที่ที่กดพักไว้</td></tr>
+      <tr><td class="k">ช่องค้นหา</td><td>ค้นจากรายละเอียดรายการ เลขอ้างอิง หรือเลข Match #</td></tr>
+      <tr><td class="k">ปุ่ม <b>ล้างตัวกรอง</b></td><td>โผล่มาเมื่อมีตัวกรองทำงานอยู่ — กดแล้วล้างวันที่และคำค้นทั้งหมด</td></tr>
+      <tr><td class="k">ป้าย <b>พักมา n วัน</b></td><td>อายุของรายการที่พักไว้ ยิ่งนานยิ่งควรรีบเคลียร์</td></tr>
+      <tr><td class="k">ช่องติ๊กหน้าการ์ด</td><td>เลือกทุกบรรทัดใน Match นั้นพร้อมกัน</td></tr>
+      <tr><td class="k">คลิกที่การ์ด</td><td>คลี่ดูรายการย่อย และติ๊กเลือกทีละบรรทัดได้</td></tr>
+      <tr><td class="k">ปุ่ม <b>ดึงกลับไป Reconcile</b> (บนการ์ด)</td><td>เปิดกล่องยืนยันสำหรับ <b>ทั้ง Match นั้น</b> ทันที</td></tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <img src="web/16-suspense-selected.png" alt="แถบดำลอยด้านล่างเมื่อเลือกรายการ">
+    <figcaption><b>รูปที่ 8.2</b> เมื่อติ๊กเลือกรายการ จะมีแถบสีดำลอยขึ้นมาด้านล่างจอ</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>ปุ่มบนแถบดำ</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">เลือกไว้ n รายการ · ยอดรวม</td><td>สรุปจำนวนบรรทัดและยอดเงินที่กำลังเลือกอยู่</td></tr>
+      <tr><td class="k"><b>ล้างเลือก</b></td><td>ยกเลิกการติ๊กทั้งหมด แถบดำจะหายไป</td></tr>
+      <tr><td class="k"><b>ดึงกลับไป Reconcile</b></td><td>เปิดกล่องยืนยันสำหรับเฉพาะบรรทัดที่ติ๊กไว้ (ข้ามหลาย Match ได้)</td></tr>
+    </tbody>
+  </table>
+
+  <figure class="mid">
+    <img src="web/17-suspense-confirm.png" alt="กล่องยืนยันดึงกลับไป Reconcile">
+    <figcaption><b>รูปที่ 8.3</b> กล่องยืนยัน — แสดงทุกบรรทัดพร้อมยอดรวมก่อนตัดสินใจ</figcaption>
+  </figure>
+  <table>
+    <thead><tr><th>ปุ่ม</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ตารางในกล่อง</td><td>วันที่ · ฝั่ง (BANK/GL) · รายละเอียด · จำนวนเงิน ของทุกบรรทัดที่จะถูกดึงกลับ</td></tr>
+      <tr><td class="k"><b>ยกเลิก</b> / ✕</td><td>ปิดกล่อง ไม่มีอะไรเปลี่ยน</td></tr>
+      <tr><td class="k"><b>ยืนยันดึงกลับ</b></td>
+          <td>คืนสถานะบรรทัดเหล่านั้นเป็น <span class="pill p-red">UNMATCHED</span>
+              รายการจะหายจากหน้า Suspense และกลับไปโผล่ที่หน้า Reconcile ให้จับคู่ใหม่</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 9 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">9</span>Master Data — จัดการไฟล์ Bank Statement</h2>
+  <p class="chapter-lead">ใช้ดูข้อมูลที่นำเข้าไปแล้วรายบรรทัด แก้ไขข้อมูลที่ผิด ลบไฟล์ที่นำเข้าซ้ำ หรือเพิ่มรายการที่ตกหล่นด้วยมือ</p>
+
+  <figure>
+    <img src="web/18-masterdata.png" alt="หน้า Master Data รายการไฟล์">
+    <figcaption><b>รูปที่ 9.1</b> รายการไฟล์ Statement ที่เคยนำเข้าของธนาคารที่เลือก</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่มชื่อธนาคาร</td><td>สลับดูไฟล์ของธนาคารนั้น (เปลี่ยนธนาคารแล้วระบบจะกลับมาหน้ารายการไฟล์เสมอ)</td></tr>
+      <tr><td class="k">คลิกที่ชื่อไฟล์</td><td>เปิดดูรายการทุกบรรทัดในไฟล์นั้น</td></tr>
+      <tr><td class="k">ไอคอนถังขยะ 🗑</td>
+          <td>ลบไฟล์นั้น <b>ทั้งชุด</b> — ระบบจะถามยืนยันก่อน 1 ครั้ง</td></tr>
+    </tbody>
+  </table>
+  <div class="warn"><b>การลบไฟล์ย้อนกลับไม่ได้</b> ทุกบรรทัดในไฟล์นั้นจะหายทั้งหมด ถ้าต้องการข้อมูลกลับมาต้องนำเข้าไฟล์ใหม่</div>
+
+  <figure>
+    <img src="web/19-masterdata-lines.png" alt="หน้ารายบรรทัดของไฟล์">
+    <figcaption><b>รูปที่ 9.2</b> รายการรายบรรทัด พร้อมตัวกรองและปุ่มแก้ไข/ลบท้ายแถว</figcaption>
+  </figure>
+
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">← กลับไปเลือกไฟล์</td><td>กลับไปหน้ารายการไฟล์</td></tr>
+      <tr><td class="k">ปุ่ม <b>+ เพิ่มรายการ</b></td><td>เปิดแถวว่างให้กรอกรายการใหม่ด้วยมือ (วันที่ · รายละเอียด · Debit · Credit · Balance) แล้วกด ✓ เพื่อบันทึก หรือ ✕ เพื่อทิ้ง</td></tr>
+      <tr><td class="k">ตัวกรอง จากวันที่ / ถึงวันที่</td><td>กรองตามวันที่ของรายการ</td></tr>
+      <tr><td class="k">ตัวกรอง ช่องทาง</td><td>กรองตามช่องทางที่เกิดรายการ เช่น mPhone, CMS, Branch, Auto</td></tr>
+      <tr><td class="k">ตัวกรอง สถานะ</td><td>เลือกดูเฉพาะ UNMATCHED / MATCHED / SUSPENSE</td></tr>
+      <tr><td class="k">ปุ่ม <b>ล้างตัวกรอง</b></td><td>ล้างตัวกรองทั้งหมด กลับมาแสดงทุกแถว</td></tr>
+      <tr><td class="k">ไอคอนดินสอ ✎ ท้ายแถว</td><td>แก้ไขแถวนั้นในตารางเลย แล้วกด ✓ บันทึก หรือ ✕ ยกเลิก</td></tr>
+      <tr><td class="k">ไอคอนถังขยะ 🗑 ท้ายแถว</td><td>ลบแถวนั้น</td></tr>
+      <tr><td class="k">ไอคอนแม่กุญแจ 🔒 ท้ายแถว</td><td>แถวนี้ <b>ถูกจับคู่ไปแล้ว จึงแก้ไข/ลบไม่ได้</b> ถ้าจำเป็นต้องแก้ ให้ไป Unmatch ที่หน้า Match History ก่อน</td></tr>
+      <tr><td class="k">ปุ่มเลื่อนหน้า ‹ › ด้านล่าง</td><td>เปลี่ยนหน้าของตาราง</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 10 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">10</span>Reports — รายงานการกระทบยอด</h2>
+  <p class="chapter-lead">แสดงผลแบบเทียบ 2 ฝั่งคู่กัน 1 แถวคือ 1 คู่ Bank–GL ในกลุ่มย่อยเดียวกัน พร้อมส่งออกเป็นไฟล์ Excel</p>
+
+  <figure>
+    <img src="web/20-reports.png" alt="หน้ารายงานการกระทบยอด">
+    <figcaption><b>รูปที่ 10.1</b> รายงานเทียบ 2 ฝั่ง — ฝั่งซ้ายสีฟ้าคือ Bank Statement ฝั่งขวาสีม่วงคือ BC365 (GL)</figcaption>
+  </figure>
+
+  <h3>10.1 ตัวกรอง</h3>
+  <table>
+    <thead><tr><th>สิ่งที่กด</th><th>กดแล้วเกิดอะไรขึ้น</th></tr></thead>
+    <tbody>
+      <tr><td class="k">จับคู่แล้ว / พักไว้ / ยังไม่จับคู่ / ทั้งหมด</td><td>เลือกสถานะที่จะแสดง (ค่าเริ่มต้นคือ “จับคู่แล้ว”)</td></tr>
+      <tr><td class="k">ทุกธนาคาร / BBL / KBank / …</td><td>กรองตามธนาคาร</td></tr>
+      <tr><td class="k"><b>วันที่ Bank Statement</b> / <b>วันที่ฝั่ง BC</b></td><td>เลือกว่าจะใช้วันที่ของฝั่งไหนเป็นเกณฑ์คัดรายการเข้าช่วงเวลา</td></tr>
+      <tr><td class="k">ตั้งแต่วันที่ / ถึงวันที่</td><td>กำหนดช่วงเวลาของรายงาน</td></tr>
+      <tr><td class="k">ปุ่ม ‹ · เดือนนี้ · ›</td><td>เลื่อนช่วงวันที่ไปทีละเดือน หรือกระโดดกลับมาเดือนปัจจุบัน</td></tr>
+      <tr><td class="k">ช่องค้นหา</td><td>ค้นจากรายละเอียด / Ref / Document No / ชื่อบัญชี / Match ID (พิมพ์แล้วรอประมาณ 1 วินาทีระบบจะค้นให้เอง)</td></tr>
+      <tr><td class="k">ปุ่ม <b>ล้างตัวกรอง</b></td><td>กลับไปค่าเริ่มต้น (จับคู่แล้ว · ทุกธนาคาร · ไม่มีคำค้น)</td></tr>
+    </tbody>
+  </table>
+  <div class="note">
+    <b>เกณฑ์วันที่ทำงานอย่างไร</b>
+    สำหรับรายการที่จับคู่แล้ว ระบบดูทั้งกลุ่มย่อย — ถ้าฝั่งที่เลือกมีบรรทัดอยู่ในช่วงวันที่ จะดึงคู่ของอีกฝั่งมาด้วยแม้จะข้ามเดือน
+    ถ้ากลุ่มไหนไม่มีบรรทัดฝั่งที่เลือกเลย (เช่นรายการพักไว้ที่มีแต่ฝั่ง BC) จะใช้วันที่ของอีกฝั่งแทน
+    ส่วนรายการที่ยังไม่จับคู่จะกรองด้วยวันที่ของตัวเองเสมอ
+  </div>
+
+  <h3>10.2 การ์ดสรุปและตาราง</h3>
+  <table>
+    <thead><tr><th>สิ่งที่เห็น / กด</th><th>ความหมาย</th></tr></thead>
+    <tbody>
+      <tr><td class="k">การ์ด จำนวนรายการ</td><td>จำนวนแถวทั้งหมดตามตัวกรอง พร้อมบอกว่ามาจากกี่ match และกี่บรรทัดของแต่ละฝั่ง</td></tr>
+      <tr><td class="k">การ์ด ฝั่ง BANK / ฝั่ง BC สุทธิ</td><td>ยอดสุทธิของแต่ละฝั่ง พร้อมแยกเงินเข้า–เงินออก</td></tr>
+      <tr><td class="k">การ์ด ผลต่าง (BANK − BC)</td><td>เขียว = ยอดตรงกัน · แดง = ยังไม่ตรง</td></tr>
+      <tr><td class="k">คอลัมน์ ผลต่าง (ขวาสุดของตาราง)</td><td>ผลต่างรายแถว ถ้าเป็น 0 จะแสดงเป็นสีเทาจาง ถ้าไม่เป็น 0 จะเป็นสีแดง</td></tr>
+      <tr><td class="k">ช่องขีด — ในตาราง</td><td>แถวนั้นมีข้อมูลฝั่งเดียว (อีกฝั่งไม่มีคู่)</td></tr>
+      <tr><td class="k">เลื่อนหน้าจอลงจนสุดตาราง</td><td>ระบบโหลดเพิ่มให้เองครั้งละ 50 รายการ (ถ้าไม่โหลดเอง กดคำว่า <b>โหลดเพิ่ม</b> ได้)</td></tr>
+      <tr><td class="k">ปุ่ม <b>Export Excel</b></td>
+          <td>สร้างและดาวน์โหลดไฟล์ <code>.xlsx</code> ของรายงาน <b>ตามตัวกรองที่ตั้งไว้ตอนนั้น</b> (ไม่ใช่แค่แถวที่โหลดมาแล้วบนจอ)
+              ระหว่างสร้างไฟล์ปุ่มจะหมุนและกดซ้ำไม่ได้</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 11 ================= -->
+<section class="page-break">
+  <h2 class="chapter"><span class="chapter-no">11</span>ภาคผนวก</h2>
+
+  <h3>11.1 ความหมายของสีและป้ายที่ใช้ทั้งระบบ</h3>
+  <table>
+    <thead><tr><th>สี / ป้าย</th><th>ความหมาย</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill p-green">IN</span> · ตัวเลขเขียว · ลูกศรชี้เข้า ↙</td><td>เงินเข้าบัญชี (ฝั่งธนาคารเป็น Credit)</td></tr>
+      <tr><td><span class="pill p-red">OUT</span> · ตัวเลขแดง · ลูกศรชี้ออก ↗</td><td>เงินออกจากบัญชี (ฝั่งธนาคารเป็น Debit)</td></tr>
+      <tr><td>วงกลมติ๊ก<b>เขียว</b></td><td>ยอด 2 ฝั่งของวันนั้นตรงกันพอดี — พร้อมกด Match</td></tr>
+      <tr><td>วงกลมติ๊ก<b>น้ำเงิน</b></td><td>ผู้ใช้เลือกเอง ยังไม่ยืนยันว่ายอดตรง</td></tr>
+      <tr><td>วงกลม<b>แดงมีกากบาท</b> (ในหน้า Suggest)</td><td>กลุ่มนี้ถูกเอาออกแล้ว จะไม่ถูกบันทึก</td></tr>
+      <tr><td>ป้ายสี “กลุ่ม n”</td><td>รายการที่จับกลุ่มกันได้ — สีเดียวกันทั้ง 2 ฝั่งคือคู่กัน</td></tr>
+      <tr><td>DIFFERENCE เขียว / แดง</td><td>เขียว = 0.00 กด Match ได้ · แดง = ยังไม่ตรง กดไม่ได้</td></tr>
+      <tr><td>🔒 แม่กุญแจ</td><td>รายการถูกจับคู่แล้ว แก้ไข/ลบไม่ได้</td></tr>
+    </tbody>
+  </table>
+
+  <h3>11.2 ข้อควรระวัง</h3>
+  <ul>
+    <li><b>เลือกธนาคารให้ถูกก่อนอัปโหลด</b> — ระบบอ่านโครงสร้างคอลัมน์ตามธนาคารที่เลือก เลือกผิดจะอ่านข้อมูลผิดทั้งไฟล์</li>
+    <li><b>ปุ่ม Match กดแล้วมีผลทันที</b> — ไม่มีขั้นตอน “บันทึกร่าง” ถ้าจับผิดต้องไป Unmatch ที่หน้า Match History พร้อมระบุเหตุผล</li>
+    <li><b>การลบไฟล์ที่ Master Data ย้อนกลับไม่ได้</b> — ตรวจชื่อไฟล์และจำนวนรายการในกล่องยืนยันให้ดีก่อนกด</li>
+    <li><b>ข้อมูล GL แก้ในระบบนี้ไม่ได้</b> — ถ้าตัวเลขฝั่ง BC365 ผิด ต้องแก้ที่ Business Central แล้วกด “ซิงค์จาก BC365” ใหม่</li>
+    <li><b>ไม่มีการใช้งาน 30 นาที ระบบจะออกจากระบบให้</b> — งานที่กด Match ไปแล้วอยู่ครบ แต่ขอบเขตงานที่ตั้งไว้จะถูกล้าง</li>
+  </ul>
+
+  <h3>11.3 คำถามที่พบบ่อย</h3>
+  <table>
+    <thead><tr><th>คำถาม</th><th>คำตอบ</th></tr></thead>
+    <tbody>
+      <tr><td class="k">ปุ่ม Match กดไม่ได้ (สีจาง)</td>
+          <td>เกิดจากอย่างใดอย่างหนึ่ง: ยังไม่ได้เลือกฝั่งใดฝั่งหนึ่ง หรือ DIFFERENCE ยังไม่เป็น 0.00 — ดูตัวเลข DIFFERENCE ที่แถบล่าง</td></tr>
+      <tr><td class="k">ปุ่ม Move to suspense กดไม่ได้</td><td>ต้องเลือกรายการ<b>ฝั่ง GL</b> อย่างน้อย 1 รายการ (ฝั่ง Bank อย่างเดียวพักไม่ได้)</td></tr>
+      <tr><td class="k">รายการฝั่ง GL ไม่ครบ / เพิ่งแก้ใน BC365</td><td>กดปุ่ม “ซิงค์จาก BC365” มุมขวาบนของตารางฝั่ง GL (ดึง 40 วันล่าสุด) ถ้าต้องการย้อนหลังมากกว่านั้นใช้ “ซิงค์ GL ทั้งหมด” ที่หน้า Import</td></tr>
+      <tr><td class="k">รายการพักโอนบันทึกข้ามเดือน หาไม่เจอ</td><td>ตอนกด New reconciliation ให้ติ๊ก “ขยายวันที่ฝั่ง GL ไปอีก 7 วัน”</td></tr>
+      <tr><td class="k">อัปโหลดไฟล์แล้วปุ่ม Import กดไม่ได้</td><td>ระบบพบว่าไฟล์ชื่อนี้เคยนำเข้าแล้ว — ไปลบชุดเดิมที่หน้า Master Data ก่อน แล้วนำเข้าใหม่</td></tr>
+      <tr><td class="k">แก้ไขบรรทัดใน Master Data ไม่ได้ (ขึ้นแม่กุญแจ)</td><td>บรรทัดนั้นถูกจับคู่แล้ว ต้อง Unmatch ที่หน้า Match History ก่อน</td></tr>
+      <tr><td class="k">Suggest matches ไม่เจออะไรเลย</td><td>ในทิศทาง (IN/OUT) และช่วงวันที่ที่ดูอยู่ ไม่มีคู่ที่ชัดเจนพอ — ลองสลับ IN ↔ OUT หรือจับคู่เองด้วยมือ</td></tr>
+      <tr><td class="k">รายงานว่าง ไม่มีข้อมูล</td><td>ตรวจช่วงวันที่ สถานะที่เลือก (ค่าเริ่มต้นคือ “จับคู่แล้ว”) และเกณฑ์วันที่ Bank/BC</td></tr>
+      <tr><td class="k">ตารางกว้างไม่พอ อ่านยาก</td><td>กดปุ่ม “โฟกัสตาราง” ที่หน้า Reconcile และ/หรือพับแถบเมนูด้านซ้าย</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note" style="margin-top:18pt;">
+    <b>ต้องการความช่วยเหลือเพิ่มเติม</b>
+    ปัญหาที่เกี่ยวกับการเชื่อมต่อ (ข้อความ “เชื่อมต่อ server ไม่ได้” / “เชื่อมต่อ BC365 sync service ไม่ได้”)
+    เป็นเรื่องของระบบเครือข่าย ให้แจ้งฝ่าย IT พร้อมภาพหน้าจอและเวลาที่เกิดเหตุ
+  </div>
+</section>
+
+</body>
+</html>
