@@ -1,68 +1,17 @@
 'use client';
 
 import {
-  LayoutDashboard,
-  Upload,
-  GitCompareArrows,
-  Database,
-  WalletCards,
-  BarChart3,
-  Settings,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
-  History,
 } from 'lucide-react';
 
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSidebar } from './SidebarContext';
 import { clearReconcileSession } from '../lib/reconcileSession';
+import { menuItemsFor, normalizeRole, type Role } from '../lib/menu';
 import type { UserSession } from '../lib/trwApi';
-
-const menuItems = [
-  {
-    name: 'Dashboard',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    name: 'Import',
-    href: '/import',
-    icon: Upload,
-  },
-  {
-    name: 'Reconcile',
-    href: '/reconcile',
-    icon: GitCompareArrows,
-  },
-  {
-    name: 'Match History',
-    href: '/reconcile/history',
-    icon: History,
-  },
-    {
-    name: 'Suspense',
-    href: '/suspense',
-    icon: WalletCards,
-  },
-  {
-    name: 'Master Data',
-    href: '/master-data/bank-statement',
-    icon: Database,
-  },
-
-  {
-    name: 'Reports',
-    href: '/reports',
-    icon: BarChart3,
-  },
-  // {
-  //   name: 'Settings',
-  //   href: '/settings',
-  //   icon: Settings,
-  // },
-];
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -72,6 +21,7 @@ export default function Sidebar() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   const [user, setUser] = useState<{ name: string; subtitle: string; initials: string } | null>(null);
+  const [role, setRole] = useState<Role | null>(null);
 
 
   useEffect(() => {
@@ -93,6 +43,7 @@ export default function Sidebar() {
         ? words.map((w) => w[0]).join('').toUpperCase()
         : (parsed.username?.slice(0, 2).toUpperCase() ?? 'NA');
       setUser({ name, subtitle, initials });
+      setRole(normalizeRole(parsed.role));
       setAuthorized(true);
     } catch (err) {
       console.error('Failed to parse user from localStorage', err);
@@ -108,7 +59,9 @@ export default function Sidebar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  if (authorized === null) return null;
+  if (authorized === null || role === null) return null;
+
+  const visibleItems = menuItemsFor(role);
 
   function handleLogout() {
     localStorage.removeItem('user');
@@ -153,11 +106,12 @@ export default function Sidebar() {
         >
           <div className="flex items-center gap-3">
 
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg shadow-blue-500/20">
-              <WalletCards
-                size={23}
-                className="text-white"
-              />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl  shadow-lg shadow-blue-500/20">
+              <img
+    src="/vercel.png"
+    alt="Auto Reconcile Bank"
+    className="h-full w-full object-contain"
+  />
             </div>
 
             <div className={collapsed ? 'lg:hidden' : ''}>
@@ -183,7 +137,7 @@ export default function Sidebar() {
 
           <div className="space-y-2">
 
-            {menuItems.map((item) => {
+            {visibleItems.map((item) => {
               const Icon = item.icon;
 
               const isActive =
