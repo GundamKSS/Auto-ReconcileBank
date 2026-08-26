@@ -23,10 +23,18 @@ export async function POST(req: NextRequest) {
     if (!bankCode || !matchType) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบ' }, { status: 400 });
     }
-    if (!groups || groups.length === 0) {
+    // matchType ถูกนำไปใช้ทั้ง bind param และประกอบ SQL ต่อ (UPDATE MatchStatus) — ต้องจำกัดไว้เฉพาะ
+    // ค่าที่รู้จักเท่านั้น กันค่าแปลกปลอมจาก client หลุดเข้า query (SQL injection) และกันสถานะขยะลง DB
+    if (matchType !== 'MATCHED' && matchType !== 'SUSPENSE') {
+      return NextResponse.json({ error: 'matchType ไม่ถูกต้อง' }, { status: 400 });
+    }
+    if (!Array.isArray(groups) || groups.length === 0) {
       return NextResponse.json({ error: 'ต้องมีอย่างน้อย 1 กลุ่ม' }, { status: 400 });
     }
     for (const g of groups) {
+      if (!g || !Array.isArray(g.bankLineIds) || !Array.isArray(g.glEntryNos)) {
+        return NextResponse.json({ error: 'รูปแบบกลุ่มไม่ถูกต้อง' }, { status: 400 });
+      }
       if (matchType === 'MATCHED' && (g.bankLineIds.length === 0 || g.glEntryNos.length === 0)) {
         return NextResponse.json(
           { error: 'การ Match แต่ละกลุ่มต้องมีทั้งฝั่ง Bank และฝั่ง GL อย่างน้อยฝั่งละ 1 รายการ' },
@@ -86,8 +94,12 @@ export async function POST(req: NextRequest) {
       // อัปเดตสถานะฝั่ง BankStatementLine รวดเดียวทั้งหมดที่อยู่ใน MatchId นี้
       if (allBankIds.length > 0) {
         const updateRequest = new sql.Request(transaction);
-        await updateRequest.query(`
-          UPDATE BankStatementLine SET MatchStatus = '${matchType}' WHERE LineId IN (${allBankIds.join(',')})
+        // allBankIds ผ่าน Number.isInteger ครบทุกตัวแล้ว จึงต่อเข้า IN(...) ได้อย่างปลอดภัย
+        // ส่วน matchType bind เป็น parameter เสมอ ไม่ต่อสตริงดิบ (แม้จะ validate เป็น enum ไว้แล้วก็ตาม)
+        await updateRequest
+          .input('matchType', sql.NVarChar, matchType)
+          .query(`
+          UPDATE BankStatementLine SET MatchStatus = @matchType WHERE LineId IN (${allBankIds.join(',')})
         `);
       }
 

@@ -11,7 +11,7 @@ import {
 
 import type { UserSession } from './trwApi';
 
-// สิทธิ์ทั้งหมดที่ระบบรู้จัก — ค่า role ที่ /auth/login ส่งมาจะถูก map เข้าชุดนี้
+// สิทธิ์ทั้งหมดที่ระบบรู้จัก — ค่า role_prog ของโปรแกรมนี้ที่ /auth/auth_permission_prog ส่งมาจะถูก map เข้าชุดนี้
 export const ROLES = ['Admin', 'User', 'Dev'] as const;
 export type Role = (typeof ROLES)[number];
 
@@ -80,13 +80,14 @@ export function normalizeRole(raw: string | null | undefined): Role {
   return ROLES.find((r) => r.toLowerCase() === key) ?? DEFAULT_ROLE;
 }
 
-// อ่าน role ปัจจุบันจาก localStorage คีย์ 'user' — คืน null ถ้ายังไม่ login หรือเรียกฝั่ง server
+// อ่านสิทธิ์ปัจจุบันจาก localStorage คีย์ 'user' — ใช้ roleProg (สิทธิ์ในโปรแกรมนี้) ไม่ใช่ role ซึ่งเป็นตำแหน่งงาน
+// คืน null ถ้ายังไม่ login หรือเรียกฝั่ง server
 export function getCurrentRole(): Role | null {
   if (typeof window === 'undefined') return null;
   try {
     const raw = localStorage.getItem('user');
     if (!raw) return null;
-    return normalizeRole((JSON.parse(raw) as UserSession).role);
+    return normalizeRole((JSON.parse(raw) as UserSession).roleProg);
   } catch {
     return null;
   }

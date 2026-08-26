@@ -34,8 +34,16 @@ export default function Sidebar() {
     }
     try {
       const parsed = JSON.parse(u) as UserSession;
+      // session รูปแบบเก่า (ก่อนย้ายมา /auth/auth_permission_prog) ไม่มีคีย์ roleProg เลย
+      // ถ้าปล่อยไว้จะกลายเป็นสิทธิ์ User ทั้งที่จริงเป็น Admin — บังคับ login ใหม่ให้จบ
+      if (parsed.roleProg === undefined) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('lastActivity');
+        router.push('/login');
+        return;
+      }
       const name = parsed.displayName || parsed.username;
-      // /auth/login ไม่ได้ส่งอีเมลมา — ใช้ตำแหน่ง (role) เป็นบรรทัดรองแทน
+      // บรรทัดรองใช้ตำแหน่งงาน (role) เช่น "Accounting" ไม่ใช่สิทธิ์ในโปรแกรม (roleProg)
       const subtitle = parsed.role ?? '';
       // ย่อจากคำแรกของแต่ละคำในชื่อ ถ้าไม่มีชื่อค่อยถอยไปใช้ username
       const words = name.split(/\s+/).filter(Boolean).slice(0, 2);
@@ -43,13 +51,14 @@ export default function Sidebar() {
         ? words.map((w) => w[0]).join('').toUpperCase()
         : (parsed.username?.slice(0, 2).toUpperCase() ?? 'NA');
       setUser({ name, subtitle, initials });
-      setRole(normalizeRole(parsed.role));
+      setRole(normalizeRole(parsed.roleProg));
       setAuthorized(true);
     } catch (err) {
       console.error('Failed to parse user from localStorage', err);
       router.push('/login');
     }
-    setAuthorized(true);
+    // setAuthorized(true) อยู่ในเส้นทางสำเร็จ (ในบล็อก try) แล้ว — ไม่เรียกซ้ำตรงนี้
+    // เพราะจะทำให้เคส parse ไม่ผ่าน/ไม่มี session กลายเป็น authorized ค้างไว้ด้วย
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [router]);
 
