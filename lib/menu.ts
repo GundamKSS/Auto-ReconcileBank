@@ -45,19 +45,19 @@ export const menuItems: MenuItem[] = [
     name: 'Reconcile',
     href: '/reconcile',
     icon: GitCompareArrows,
-    auth: ['Admin', 'User', 'Dev'],
+    auth: ['Admin', 'Dev'],
   },
   {
     name: 'Match History',
     href: '/reconcile/history',
     icon: History,
-    auth: ['Admin', 'User', 'Dev'],
+    auth: ['Admin', 'Dev'],
   },
   {
     name: 'Suspense',
     href: '/suspense',
     icon: WalletCards,
-    auth: ['Admin', 'User', 'Dev'],
+    auth: ['Admin', 'Dev'],
   },
   {
     name: 'Master Data',
