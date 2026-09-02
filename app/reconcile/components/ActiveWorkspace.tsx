@@ -180,7 +180,7 @@ function DirectionBadge({ direction }: { direction: Direction }) {
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-        isIn ? "bg-teal-50 text-teal-700" : "bg-red-50 text-red-600"
+        isIn ? "bg-purple-50 text-purple-700" : "bg-red-50 text-red-600"
       }`}
     >
       {isIn ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
@@ -200,7 +200,7 @@ function FilterTabs({ value, onChange }: { value: Direction; onChange: (v: Direc
           className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
             value === opt
               ? opt === "IN"
-                ? "bg-teal-600 text-white"
+                ? "bg-purple-600 text-white"
                 : "bg-red-500 text-white"
               : "text-gray-400 hover:text-gray-600"
           }`}
@@ -488,6 +488,8 @@ function Panel({
 }) {
   const byGroup = groupTab === "ALL" ? allItems : allItems.filter((i) => i.groupKey === groupTab);
   const filtered = byGroup.filter((item) => item.direction === filter);
+  // นับ "selected" เฉพาะฝั่งทิศทางที่กำลังดูอยู่ (filter) — ไม่ใช่ selected.size ดิบซึ่งรวมอีกฝั่งที่ไม่เกี่ยวด้วย
+  const selectedInDirection = filtered.filter((item) => selected.has(item.id)).length;
 
   const byDate = useMemo(() => {
     const map = new Map<string, LineItem[]>();
@@ -505,7 +507,7 @@ function Panel({
         <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
           <h2 className="font-semibold text-[15px] text-gray-900 whitespace-nowrap">{title}</h2>
           <span className="text-xs text-gray-400 whitespace-nowrap">
-            {selected.size} selected · {filtered.length} pending
+            {selectedInDirection} selected · {filtered.length} pending
           </span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
@@ -849,21 +851,39 @@ export default function ActiveWorkspace({
     });
   }
 
-  const selectedBankItems = useMemo(() => bankLinesRaw.filter((l) => selectedBank.has(l.id)), [selectedBank, bankLinesRaw]);
-  const selectedGlItems = useMemo(() => glLinesRaw.filter((l) => selectedGl.has(l.id)), [selectedGl, glLinesRaw]);
+  // เลือกไว้ทั้งหมดข้าม IN/OUT ยังคงอยู่ใน selectedBank/selectedGl ตามเดิม (สลับแท็บไปมาไม่หายไปไหน)
+  // แต่ "การกระทำ" (totals, Match, Move to suspense, Clear) ต้องเห็นแค่ฝั่งทิศทางที่กำลังเปิดดูอยู่เท่านั้น
+  // เพราะ IN/OUT มักเป็นคนละคนรับผิดชอบ — กด Match ตอนอยู่แท็บ IN ต้องไม่ไปยุ่งกับ OUT ที่อีกคนเลือกค้างไว้
+  const selectedBankItems = useMemo(
+    () => bankLinesRaw.filter((l) => selectedBank.has(l.id) && l.direction === directionFilter),
+    [selectedBank, bankLinesRaw, directionFilter]
+  );
+  const selectedGlItems = useMemo(
+    () => glLinesRaw.filter((l) => selectedGl.has(l.id) && l.direction === directionFilter),
+    [selectedGl, glLinesRaw, directionFilter]
+  );
 
   const bankTotal = useMemo(() => selectedBankItems.reduce((sum, l) => sum + l.amount, 0), [selectedBankItems]);
   const glTotal = useMemo(() => selectedGlItems.reduce((sum, l) => sum + l.amount, 0), [selectedGlItems]);
   const difference = bankTotal - glTotal;
 
   const amountMatches = Math.abs(difference) < 0.005;
-  const canMatch = selectedBank.size > 0 && selectedGl.size > 0 && amountMatches;
+  const canMatch = selectedBankItems.length > 0 && selectedGlItems.length > 0 && amountMatches;
   // Suspense พักได้แค่ฝั่ง GL (BC365) เท่านั้น — Bank Statement เป็นข้อมูลหลักจากธนาคาร ห้ามแก้ไข/ห้ามพัก
-  const canMoveToSuspense = selectedGl.size > 0;
+  const canMoveToSuspense = selectedGlItems.length > 0;
 
+  // ล้างเฉพาะรายการที่เลือกไว้ "ในทิศทางที่กำลังดูอยู่" — อีกฝั่งที่อีกคนเลือกไว้ไม่ถูกแตะ
   function handleClear() {
-    setSelectedBank(new Set());
-    setSelectedGl(new Set());
+    setSelectedBank((prev) => {
+      const next = new Set(prev);
+      for (const l of selectedBankItems) next.delete(l.id);
+      return next;
+    });
+    setSelectedGl((prev) => {
+      const next = new Set(prev);
+      for (const l of selectedGlItems) next.delete(l.id);
+      return next;
+    });
   }
 
   // จัดกลุ่มรายการที่เลือกไว้ตาม "วันที่ + ทิศทาง" ก่อนส่ง แต่ละกลุ่มจะกลายเป็นคนละ MatchId แยกกัน
@@ -1033,98 +1053,134 @@ export default function ActiveWorkspace({
         />
       )}
 
-      <div className="px-4 sm:px-6 py-5 flex items-start justify-between gap-4 flex-wrap shrink-0">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Reconciliation workspace</h1>
-          {!focusMode && (
-            <p className="text-sm text-gray-500 mt-1">
-              Bank Cr ↔ GL Dr · Bank Dr ↔ GL Cr · same date · GL แยกตามบัญชี
-            </p>
-          )}
-          {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          
-          <button
-            onClick={() => setFocusMode((v) => !v)}
-            className={`flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-full border transition-colors ${
-              focusMode
-                ? "text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100"
-                : "text-gray-600 border-gray-200 hover:bg-gray-50"
-            }`}
-            title="ซ่อนแถบข้อมูลด้านบน/ย่อแถบสรุปด้านล่าง ให้เห็นตารางเทียบทั้ง 2 ฝั่งชัดขึ้น"
-          >
-            {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            {focusMode ? "ย่อกลับ" : "โฟกัสตาราง"}
-          </button>
-          <button
-            onClick={loadData}
-            disabled={loading || busy || syncingGl}
-            className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-3.5 py-2 rounded-full hover:bg-gray-50 disabled:opacity-50"
-          >
-            <RotateCcw size={14} /> Reset
-          </button>
-          <button
-            onClick={handleSuggestMatches}
-            disabled={loading || busy || syncingGl}
-            className="flex items-center gap-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3.5 py-2 rounded-full hover:bg-blue-100 disabled:opacity-50"
-          >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-            Suggest matches
-          </button>
-        </div>
-      </div>
-
-      {/* Filter bar — สรุป scope ปัจจุบันจาก session + ปุ่มแก้ไข — ซ่อนตอนโฟกัสตาราง เพื่อเพิ่มพื้นที่ */}
-      {!focusMode && (
-        <div className="mx-4 sm:mx-6 mb-4 flex items-center justify-between gap-3 flex-wrap bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-2.5 shrink-0">
-          <div className="flex items-center gap-2 text-sm text-blue-900 flex-wrap">
-            <CalendarRange size={15} className="text-blue-500" />
-            <span className="font-medium">Bank: {session.bankCode}</span>
-            <span className="text-blue-300">|</span>
-            <span>
-              Period: {formatDMY(session.periodStart)} - {formatDMY(session.periodEnd)}
-            </span>
-            {session.fileName && (
-              <>
-                <span className="text-blue-300">|</span>
-                <span className="text-blue-700">{session.fileName}</span>
-              </>
-            )}
-            {session.includeSuspenseBuffer && (
-              <span className="text-[11px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                GL +7 วัน (พักโอนข้ามเดือน)
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
+      {focusMode ? (
+        // โฟกัสตารางเต็มที่: ย่อหัวข้อ+แถบ filter ทั้งหมดเหลือแค่แถบไอคอนบางๆ แถบเดียว ให้เห็นตารางมากที่สุด
+        // ปุ่มขยายกลับ (วงกลมแดง) ตั้งใจเน้นสีให้เห็นชัดว่ากดตรงนี้เพื่อย้อนกลับไปโหมดปกติได้
+        <div className="px-4 sm:px-6 py-2 flex items-center justify-between gap-2 flex-wrap shrink-0 border-b border-gray-100">
+          <div className="flex items-center gap-1.5 flex-wrap">
             <button
-              onClick={() => setLinkDates((v) => !v)}
-              className="flex items-center gap-2 text-xs font-medium text-blue-900"
-              title="เปิด = กดขยายวันฝั่งไหน อีกฝั่งขยาย+เลื่อนตามให้อัตโนมัติ"
+              onClick={() => setFocusMode(false)}
+              className="p-2 text-red-600 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
+              title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
             >
-              <Link2 size={13} className={linkDates ? "text-blue-600" : "text-gray-400"} />
-              ลิงค์วันที่ 2 ฝั่ง
-              <span
-                className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                  linkDates ? "bg-blue-600" : "bg-gray-300"
-                }`}
-              >
-                <span
-                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                    linkDates ? "translate-x-[18px]" : "translate-x-1"
-                  }`}
-                />
-              </span>
+              <Minimize2 size={14} />
+            </button>
+            <button
+              onClick={loadData}
+              disabled={loading || busy || syncingGl}
+              className="p-2 text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 disabled:opacity-50"
+              title="Reset — โหลดข้อมูลใหม่"
+            >
+              <RotateCcw size={14} />
+            </button>
+            <button
+              onClick={handleSuggestMatches}
+              disabled={loading || busy || syncingGl}
+              className="p-2 text-blue-600 border border-blue-200 bg-blue-50 rounded-full hover:bg-blue-100 disabled:opacity-50"
+              title="Suggest matches"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             </button>
             <button
               onClick={onEditFilters}
-              className="flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors"
+              className="p-2 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-50"
+              title="Edit — แก้ไขธนาคาร/ช่วงวันที่"
             >
-              <Pencil size={12} /> Edit
+              <Pencil size={14} />
             </button>
+            {error && <span className="text-xs text-red-600 ml-1">{error}</span>}
           </div>
+          <span className="text-xs text-gray-400 truncate">
+            {session.bankCode} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
+          </span>
         </div>
+      ) : (
+        <>
+          <div className="px-4 sm:px-6 py-5 flex items-start justify-between gap-4 flex-wrap shrink-0">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Reconciliation workspace</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Bank Cr ↔ GL Dr · Bank Dr ↔ GL Cr · same date · GL แยกตามบัญชี
+              </p>
+              {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setFocusMode(true)}
+                className="flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-full border transition-colors text-gray-600 border-gray-200 hover:bg-gray-50"
+                title="ซ่อนแถบข้อมูลด้านบน เหลือแค่ไอคอน ให้เห็นตารางเทียบทั้ง 2 ฝั่งชัดขึ้น"
+              >
+                <Maximize2 size={14} />
+                โฟกัสตาราง
+              </button>
+              <button
+                onClick={loadData}
+                disabled={loading || busy || syncingGl}
+                className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-3.5 py-2 rounded-full hover:bg-gray-50 disabled:opacity-50"
+              >
+                <RotateCcw size={14} /> Reset
+              </button>
+              <button
+                onClick={handleSuggestMatches}
+                disabled={loading || busy || syncingGl}
+                className="flex items-center gap-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3.5 py-2 rounded-full hover:bg-blue-100 disabled:opacity-50"
+              >
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                Suggest matches
+              </button>
+            </div>
+          </div>
+
+          {/* Filter bar — สรุป scope ปัจจุบันจาก session + ปุ่มแก้ไข — ซ่อนตอนโฟกัสตาราง เพื่อเพิ่มพื้นที่ */}
+          <div className="mx-4 sm:mx-6 mb-4 flex items-center justify-between gap-3 flex-wrap bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-2.5 shrink-0">
+            <div className="flex items-center gap-2 text-sm text-blue-900 flex-wrap">
+              <CalendarRange size={15} className="text-blue-500" />
+              <span className="font-medium">Bank: {session.bankCode}</span>
+              <span className="text-blue-300">|</span>
+              <span>
+                Period: {formatDMY(session.periodStart)} - {formatDMY(session.periodEnd)}
+              </span>
+              {session.fileName && (
+                <>
+                  <span className="text-blue-300">|</span>
+                  <span className="text-blue-700">{session.fileName}</span>
+                </>
+              )}
+              {session.includeSuspenseBuffer && (
+                <span className="text-[11px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                  GL +7 วัน (พักโอนข้ามเดือน)
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                onClick={() => setLinkDates((v) => !v)}
+                className="flex items-center gap-2 text-xs font-medium text-blue-900"
+                title="เปิด = กดขยายวันฝั่งไหน อีกฝั่งขยาย+เลื่อนตามให้อัตโนมัติ"
+              >
+                <Link2 size={13} className={linkDates ? "text-blue-600" : "text-gray-400"} />
+                ลิงค์วันที่ 2 ฝั่ง
+                <span
+                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                    linkDates ? "bg-blue-600" : "bg-gray-300"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                      linkDates ? "translate-x-[18px]" : "translate-x-1"
+                    }`}
+                  />
+                </span>
+              </button>
+              <button
+                onClick={onEditFilters}
+                className="flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+            </div>
+          </div>
+        </>
       )}
 
       <div className="lg:flex-1 lg:min-h-0 px-4 sm:px-6 pb-4 lg:overflow-hidden">
@@ -1209,7 +1265,7 @@ export default function ActiveWorkspace({
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-              Match {selectedBank.size}:{selectedGl.size}
+              Match {selectedBankItems.length}:{selectedGlItems.length}
             </button>
           </div>
         </div>

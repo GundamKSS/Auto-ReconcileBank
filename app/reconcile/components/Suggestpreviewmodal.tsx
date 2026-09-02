@@ -50,7 +50,7 @@ function DirectionBadge({ direction }: { direction: Direction }) {
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-        isIn ? "bg-teal-50 text-teal-700" : "bg-red-50 text-red-600"
+        isIn ? "bg-purple-50 text-purple-700" : "bg-red-50 text-red-600"
       }`}
     >
       {isIn ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
