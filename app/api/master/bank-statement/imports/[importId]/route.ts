@@ -2,16 +2,25 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../../../lib/db';
 
+import { requireRole } from '../../../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../../../lib/roles';
+import { badRequest, parseIdParam } from '../../../../../../lib/apiInput';
 // DELETE /api/master/bank-statement/imports/:importId
 // ลบทั้ง batch (header + ทุก line ข้างใน) — บล็อกทั้งชุดถ้ามีแม้แต่ 1 รายการที่จับคู่ไปแล้ว
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ importId: string }> }) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
-    const { importId } = await params;
+    const { importId: rawImportId } = await params;
+    const importId = parseIdParam(rawImportId);
+    if (importId === null) return badRequest('importId ต้องเป็นจำนวนเต็มบวก');
+
     const pool = await getPool();
 
     const matchedCheck = await pool
       .request()
-      .input('importId', sql.Int, Number(importId))
+      .input('importId', sql.Int, importId)
       .query(`
         SELECT COUNT(*) AS MatchedCount
         FROM BankStatementLine
@@ -32,10 +41,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     await transaction.begin();
     try {
       const req1 = new sql.Request(transaction);
-      await req1.input('importId', sql.Int, Number(importId)).query(`DELETE FROM BankStatementLine WHERE ImportId = @importId`);
+      await req1.input('importId', sql.Int, importId).query(`DELETE FROM BankStatementLine WHERE ImportId = @importId`);
 
       const req2 = new sql.Request(transaction);
-      await req2.input('importId', sql.Int, Number(importId)).query(`DELETE FROM BankStatementImport WHERE ImportId = @importId`);
+      await req2.input('importId', sql.Int, importId).query(`DELETE FROM BankStatementImport WHERE ImportId = @importId`);
 
       await transaction.commit();
     } catch (err) {
@@ -46,7 +55,6 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('Master bank-statement import DELETE error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ลบไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

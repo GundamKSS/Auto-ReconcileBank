@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../lib/db';
 
+import { requireRole } from '../../../lib/session';
+import { RECONCILE_ROLES } from '../../../lib/roles';
+import { badRequest, parseDateRange } from '../../../lib/apiInput';
 const PAGE_SIZE = 50;
 
 /**
@@ -16,6 +19,9 @@ const PAGE_SIZE = 50;
  * ตอบกลับ total + bankCodes เฉพาะตอนโหลดหน้าแรก (offset = 0) เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll
  */
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const params = req.nextUrl.searchParams;
     const bankCode = params.get('bankCode');
@@ -24,13 +30,18 @@ export async function GET(req: NextRequest) {
     const to = params.get('to');
     const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
 
+    // ตรวจรูปแบบและลำดับวันที่ก่อนส่งเข้า query — ค่าผิดต้องได้ 400 พร้อมข้อความที่อ่านรู้เรื่อง
+    // ไม่ใช่ปล่อยให้ mssql โยน "Validation failed for parameter 'from'" ออกมาเป็น 500
+    const range = parseDateRange(from, to);
+    if ('error' in range) return badRequest(range.error);
+
     // ช่วงวันที่กรองที่ CreatedAt (datetime มีเวลาแฝงอยู่) — from ใช้เที่ยงคืนของวันนั้น
     // to ต้องรวมทั้งวันสุดท้ายด้วย เลยขยับไปเที่ยงคืนของ "วันถัดไป" แล้วเทียบด้วย < แทน <=
-    const fromDate = from ? new Date(`${from}T00:00:00`) : null;
+    const fromDate = range.from;
     let toDateExclusive: Date | null = null;
-    if (to) {
-      toDateExclusive = new Date(`${to}T00:00:00`);
-      toDateExclusive.setDate(toDateExclusive.getDate() + 1);
+    if (range.to) {
+      toDateExclusive = new Date(range.to);
+      toDateExclusive.setUTCDate(toDateExclusive.getUTCDate() + 1);
     }
 
     const whereClause = `
@@ -185,7 +196,6 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error('Match history API error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ดึงประวัติการจับคู่ไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ดึงประวัติการจับคู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

@@ -1,5 +1,7 @@
 import { GL_SYNC_ENDPOINT, runGlSync } from '../../../../lib/bc365Sync';
 
+import { requireRole } from '../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../lib/roles';
 // กัน Next.js cache response ของ route นี้ไว้ (เป็น action ที่ต้อง trigger จริงทุกครั้ง ไม่ใช่ข้อมูลอ่านอย่างเดียว)
 export const dynamic = 'force-dynamic';
 
@@ -8,5 +10,8 @@ export const dynamic = 'force-dynamic';
 // เสร็จแล้วอยากดึงของจริงมาเทียบใหม่ทันที โดยไม่ต้องรอ sync job รอบถัดไป
 // หน้า reconcile ทำงานทีละเดือน เลยใช้แบบ 40 วันก็พอ (ถ้าต้องการทั้งหมดให้ใช้ /api/import/sync-gl)
 export async function POST() {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   return runGlSync(GL_SYNC_ENDPOINT.RECENT, 120_000);
 }

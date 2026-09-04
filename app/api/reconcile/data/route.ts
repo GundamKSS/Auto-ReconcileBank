@@ -3,6 +3,9 @@ import sql from 'mssql';
 import { getPool } from  '../../../../lib/db';
 
 
+import { requireRole } from '../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../lib/roles';
+import { badRequest, parseDateRange } from '../../../../lib/apiInput';
 // กัน Next.js cache response ของ route นี้ไว้ (ต้องเป็นข้อมูลสดทุกครั้ง เพราะ filter วันที่/ธนาคารเปลี่ยนได้ตลอด)
 export const dynamic = 'force-dynamic';
 
@@ -12,17 +15,23 @@ export const dynamic = 'force-dynamic';
 //   glExtendDays  - optional, ขยายวันที่ "to" ฝั่ง GL ออกไปอีกกี่วัน (ใช้หารายการพักโอนข้ามเดือน)
 //                   ฝั่ง bank statement ยังใช้ "to" เดิม ไม่ขยายตาม
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const params = req.nextUrl.searchParams;
     const bankCode = params.get('bankCode');
     const from = params.get('from');
     const to = params.get('to');
-    const glExtendDays = Number(params.get('glExtendDays') ?? '0');
+    // จำกัดช่วงขยายวันฝั่ง GL ไว้ 1 ปี — ค่าติดลบหรือค่ามหาศาลจาก client ไม่ควรมีผล
+    const rawExtend = Number(params.get('glExtendDays') ?? '0');
+    const glExtendDays = Number.isFinite(rawExtend) ? Math.min(Math.max(Math.trunc(rawExtend), 0), 365) : 0;
 
-    // แปลงเป็น Date object จริงก่อน bind เข้า sql.Date เสมอ (ส่ง string ตรงๆ ให้ mssql
-    // บางเวอร์ชัน validate ค่าไม่ผ่านแบบเงียบๆ แล้ว filter ไม่ทำงานโดยไม่มี error ให้เห็น)
-    const fromDate = from ? new Date(`${from}T00:00:00Z`) : null;
-    const toDate = to ? new Date(`${to}T00:00:00Z`) : null;
+    // ตรวจรูปแบบ + ลำดับวันที่ก่อน bind เข้า sql.Date — เดิมวันที่มั่วทำให้ได้ 500 โดยไม่บอกสาเหตุ
+    const range = parseDateRange(from, to);
+    if ('error' in range) return badRequest(range.error);
+    const fromDate = range.from;
+    const toDate = range.to;
 
     let glToDate = toDate;
     if (toDate && glExtendDays > 0) {

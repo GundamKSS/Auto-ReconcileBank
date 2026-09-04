@@ -10,7 +10,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSidebar } from './SidebarContext';
 import { clearReconcileSession } from '../lib/reconcileSession';
-import { menuItemsFor, normalizeRole, type Role } from '../lib/menu';
+import { findMenuItem, menuItemsFor, normalizeRole, type Role } from '../lib/menu';
 import type { UserSession } from '../lib/trwApi';
 
 export default function Sidebar() {
@@ -72,7 +72,14 @@ export default function Sidebar() {
 
   const visibleItems = menuItemsFor(role);
 
-  function handleLogout() {
+  async function handleLogout() {
+    // ล้าง session cookie ฝั่ง server ด้วย — ถ้าล้างแค่ localStorage ตัว cookie จะยังใช้เรียก API ได้
+    // จนกว่าจะหมดอายุเอง ซึ่งเท่ากับยังไม่ได้ออกจากระบบจริง
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } catch {
+      // ต่อ server ไม่ได้ก็ยังต้องพาผู้ใช้ออกจากหน้าจอให้ได้ตามปกติ
+    }
     localStorage.removeItem('user');
     localStorage.removeItem('lastActivity');
     clearReconcileSession();
@@ -149,9 +156,9 @@ export default function Sidebar() {
             {visibleItems.map((item) => {
               const Icon = item.icon;
 
-              const isActive =
-                pathname === item.href ||
-                pathname.startsWith(`${item.href}/`);
+              // เทียบกับเมนูที่ "เจาะจงที่สุด" ของ path ปัจจุบัน ไม่ใช่ startsWith เฉยๆ
+              // ไม่งั้นอยู่หน้า /reconcile/history แล้วเมนู Reconcile จะสว่างขึ้นมาด้วยพร้อมกัน
+              const isActive = findMenuItem(pathname)?.href === item.href;
 
               return (
                 <button

@@ -48,7 +48,7 @@ export default function LoginPage() {
       localStorage.setItem('lastActivity', Date.now().toString());
 
       router.push('/dashboard');
-    } catch (error) {
+    } catch {
       setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
     } finally {
       setIsLoading(false); 

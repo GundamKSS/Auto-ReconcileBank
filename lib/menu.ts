@@ -10,13 +10,12 @@ import {
 } from 'lucide-react';
 
 import type { UserSession } from './trwApi';
+import { RECONCILE_ROLES, VIEWER_ROLES, normalizeRole, type Role } from './roles';
 
-// สิทธิ์ทั้งหมดที่ระบบรู้จัก — ค่า role_prog ของโปรแกรมนี้ที่ /auth/auth_permission_prog ส่งมาจะถูก map เข้าชุดนี้
-export const ROLES = ['Admin', 'User', 'Dev'] as const;
-export type Role = (typeof ROLES)[number];
-
-// ใช้เมื่อ session ไม่มี role หรือส่งค่าที่ไม่รู้จักมา — ให้สิทธิ์ต่ำสุดไว้ก่อน
-export const DEFAULT_ROLE: Role = 'User';
+// นิยาม Role/normalizeRole ย้ายไปอยู่ lib/roles.ts แล้ว เพราะฝั่ง server ต้องใช้ร่วมด้วย
+// (ไฟล์นี้ import ไอคอนจาก lucide-react จึงลากเข้า route handler ไม่ได้)
+// re-export ไว้เพื่อให้ที่เดิมที่ import จาก './menu' ยังใช้ได้เหมือนเดิม
+export { ROLES, DEFAULT_ROLE, normalizeRole, type Role } from './roles';
 
 export type MenuItem = {
   name: string;
@@ -33,52 +32,46 @@ export const menuItems: MenuItem[] = [
     name: 'Dashboard',
     href: '/dashboard',
     icon: LayoutDashboard,
-    auth: ['Admin', 'User', 'Dev'],
+    auth: VIEWER_ROLES,
   },
   {
     name: 'Import',
     href: '/import',
     icon: Upload,
-    auth: ['Admin', 'Dev'],
+    auth: RECONCILE_ROLES,
   },
   {
     name: 'Reconcile',
     href: '/reconcile',
     icon: GitCompareArrows,
-    auth: ['Admin', 'Dev'],
+    auth: RECONCILE_ROLES,
   },
   {
     name: 'Match History',
     href: '/reconcile/history',
     icon: History,
-    auth: ['Admin', 'Dev'],
+    auth: RECONCILE_ROLES,
   },
   {
     name: 'Suspense',
     href: '/suspense',
     icon: WalletCards,
-    auth: ['Admin', 'Dev'],
+    auth: RECONCILE_ROLES,
   },
   {
     name: 'Master Data',
     href: '/master-data/bank-statement',
     icon: Database,
-    auth: ['Admin', 'Dev'],
+    auth: RECONCILE_ROLES,
     guardPath: '/master-data',
   },
   {
     name: 'Reports',
     href: '/reports',
     icon: BarChart3,
-    auth: ['Admin', 'User', 'Dev'],
+    auth: VIEWER_ROLES,
   },
 ];
-
-// role จาก API เป็น string อิสระ — เทียบแบบไม่สนตัวพิมพ์ ถ้าไม่ตรงชุดที่รู้จักถือเป็น DEFAULT_ROLE
-export function normalizeRole(raw: string | null | undefined): Role {
-  const key = (raw ?? '').trim().toLowerCase();
-  return ROLES.find((r) => r.toLowerCase() === key) ?? DEFAULT_ROLE;
-}
 
 // อ่านสิทธิ์ปัจจุบันจาก localStorage คีย์ 'user' — ใช้ roleProg (สิทธิ์ในโปรแกรมนี้) ไม่ใช่ role ซึ่งเป็นตำแหน่งงาน
 // คืน null ถ้ายังไม่ login หรือเรียกฝั่ง server

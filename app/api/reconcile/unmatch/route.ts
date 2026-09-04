@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
+import { requireRole } from '../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../lib/roles';
 
 // ยกเลิกการจับคู่ (Unmatch) แบบเลือกได้หลายรายการพร้อมกัน โดยใช้เหตุผลเดียวร่วมกันทั้งชุด
 // เลือกได้ถึงระดับ "กลุ่มย่อย (Num)" ภายใน MatchId เดียวกัน — กลุ่มย่อยอื่นที่ไม่ได้เลือกยังจับคู่อยู่ตามเดิม
@@ -65,11 +67,15 @@ function parseTargets(body: unknown): UnmatchTargetInput[] | null {
 }
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json();
     const targets = parseTargets(body);
     const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
-    const unmatchedBy = typeof body?.unmatchedBy === 'string' && body.unmatchedBy.trim() ? body.unmatchedBy.trim() : null;
+    // ผู้ยกเลิกอ่านจาก session cookie ที่เซ็นไว้ ไม่รับจาก body — ไม่งั้นระบุตัวผู้ทำรายการไม่ได้จริง
+    const unmatchedBy = auth.session.displayName;
 
     if (targets === null) {
       return NextResponse.json({ error: 'รูปแบบรายการที่ต้องการยกเลิกไม่ถูกต้อง' }, { status: 400 });
@@ -192,11 +198,15 @@ export async function POST(req: NextRequest) {
       });
     } catch (err) {
       await transaction.rollback();
+      // เงื่อนไขที่เราตรวจเองข้างบน (ไม่พบ Match / ยกเลิกไปแล้ว / ไม่ใช่ MATCHED) เป็นเรื่องของ
+      // ข้อมูลที่ผู้ใช้เลือกมา ไม่ใช่ระบบพัง จึงตอบ 409 พร้อมข้อความตรงๆ ให้แก้ที่เลือกแล้วลองใหม่
+      if (err instanceof Error) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
       throw err;
     }
   } catch (err) {
     console.error('Unmatch API error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ยกเลิกการจับคู่ไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ยกเลิกการจับคู่ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

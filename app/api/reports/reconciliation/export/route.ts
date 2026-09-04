@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { getPool } from '../../../../../lib/db';
+import { requireRole } from '../../../../../lib/session';
+import { VIEWER_ROLES } from '../../../../../lib/roles';
 import {
   MAX_EXPORT_ROWS,
   ORDER_BY,
@@ -213,6 +215,9 @@ function buildWorkbook(filters: ReportFilters, rows: ReportRow[], summary: Retur
  * แล้วส่งไฟล์ .xlsx ที่มี 2 ชีต: Summary (ยอดรวมแยกตามสถานะ/ธนาคาร) และ Detail (ทุกแถวตาม filter)
  */
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(VIEWER_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const filters = parseFilters(req.nextUrl.searchParams);
 

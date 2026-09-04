@@ -126,8 +126,13 @@ function DateGroupRow({
   const selectedHere = clusterIdsHere.filter((id) => selectedClusterIds.has(id));
   const state: "full" | "partial" | "none" =
     selectedHere.length === 0 ? "none" : selectedHere.length === clusterIdsHere.length ? "full" : "partial";
-  const allGreen = items.every((i) => i.type === "ONE_TO_ONE");
-  const color = allGreen ? "green" : items.every((i) => i.type !== "ONE_TO_ONE") ? "amber" : "mixed";
+  // สีต้องดูจาก "รายการที่ยังเลือกอยู่จริงตอนนี้" ไม่ใช่องค์ประกอบเดิมทั้งหมดของวันนั้น
+  // ไม่งั้นวันที่มีทั้ง 1:1 ปนกับ lump sum พอกด "เอาเฉพาะ 1:1" ไปแล้ว (lump sum ถูกเอาออกจริง)
+  // ไอคอนจะยังค้างเป็นสีฟ้า (mixed) ตามของเดิม ทำให้ดูเหมือนยังมี lump sum ติดมาด้วยทั้งที่ไม่มีแล้ว
+  const selectedItems = items.filter((i) => selectedClusterIds.has(i.clusterId));
+  const colorBasis = selectedItems.length > 0 ? selectedItems : items;
+  const allGreen = colorBasis.every((i) => i.type === "ONE_TO_ONE");
+  const color = allGreen ? "green" : colorBasis.every((i) => i.type !== "ONE_TO_ONE") ? "amber" : "mixed";
 
   return (
     <div
@@ -502,14 +507,14 @@ export default function SuggestPreviewModal({
               >
                 {allYellowSelected ? "ยกเลิกเลือก" : "เลือกทั้งหมด"} · lump sum ({yellowClusters.length})
               </button>
-              <button
+              {/*<button
                 onClick={() => deselectAll(yellowClusters.map((c) => c.clusterId))}
                 disabled={yellowClusters.length === 0}
                 className="text-xs font-medium text-gray-600 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-full hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 title="ยกเลิกกลุ่ม lump sum ทั้งหมด เหลือไว้แค่ 1:1 สีเขียว"
               >
                 เอาเฉพาะ 1:1 (ยกเลิก lump sum ทั้งหมด)
-              </button>
+              </button>*/}
             </div>
 
             <button

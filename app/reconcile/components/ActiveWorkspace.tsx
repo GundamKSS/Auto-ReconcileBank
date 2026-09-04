@@ -21,9 +21,12 @@ import {
 } from "lucide-react";
 import { ReconcileSession } from "./types";
 import SuggestPreviewModal, { Cluster } from "./Suggestpreviewmodal";
-import { getCurrentUsername } from "../../../lib/currentUser";
 
 type Direction = "IN" | "OUT";
+
+// ผลต่างที่ยอมรับได้ตอนเทียบยอด Bank กับ GL — ครึ่งสตางค์ ต้องตรงกับเกณฑ์ฝั่ง server
+// (app/api/reconcile/match/route.ts) ไม่งั้นปุ่มกดได้แต่ server ปฏิเสธ
+const AMOUNT_TOLERANCE = 0.005;
 
 type BankApiLine = {
   id: string;
@@ -41,7 +44,9 @@ type GlApiLine = {
   entryNo: number;
   bankCode: string;
   accountNo: string;
-  accountName: string;
+  // API ส่ง null มาได้เมื่อ BankAccountMapping.BankAccountName ยังไม่ได้กรอก (ตอนนี้เป็น null ทุกแถว)
+  // เดิมประกาศเป็น string เฉยๆ แล้วเอาไปต่อสตริงตรงๆ ทำให้ขึ้นคำว่า "null" บนหน้าจอทุกรายการ
+  accountName: string | null;
   date: string;
   ref: string;
   direction: Direction;
@@ -611,9 +616,12 @@ function SuccessToast({ title, message, onClose }: { title: string; message: str
 export default function ActiveWorkspace({
   session,
   onEditFilters,
+  onFocusModeChange,
 }: {
   session: ReconcileSession;
   onEditFilters: () => void;
+  // แจ้ง parent (ReconcileWorkspace) ตอนสลับโฟกัสตาราง ให้ซ่อน chrome bar ด้านบนสุดพร้อมกันได้
+  onFocusModeChange?: (focusMode: boolean) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -626,7 +634,13 @@ export default function ActiveWorkspace({
   const [selectedBank, setSelectedBank] = useState<Set<string>>(new Set());
   const [selectedGl, setSelectedGl] = useState<Set<string>>(new Set());
   // โฟกัสตาราง: ซ่อนแถบข้อมูล/ย่อแถบสรุปด้านล่างชั่วคราว ให้พื้นที่ตารางเทียบทั้ง 2 ฝั่งใหญ่ขึ้น
-  const [focusMode, setFocusMode] = useState(false);
+  const [focusMode, setFocusModeState] = useState(false);
+  // ห่อ setFocusMode ไว้ให้แจ้ง parent ด้วยทุกครั้งที่สลับ (ไม่ใช้ useEffect เพราะจะโดน react-hooks/set-state-in-effect
+  // และจริงๆ นี่คือ event handler ตรงๆ จากปุ่มกด ไม่ใช่ side effect ที่ต้องรอ sync กับอย่างอื่น)
+  function setFocusMode(next: boolean) {
+    setFocusModeState(next);
+    onFocusModeChange?.(next);
+  }
 
   const [bankLinesRaw, setBankLinesRaw] = useState<BankApiLine[]>([]);
   const [glLinesRaw, setGlLinesRaw] = useState<GlApiLine[]>([]);
@@ -765,7 +779,8 @@ export default function ActiveWorkspace({
         date: l.date,
         ref: l.ref,
         direction: l.direction,
-        description: `${l.description} · ${l.accountName}`,
+        // ต่อชื่อบัญชีเฉพาะตอนมีค่าจริง ไม่งั้นได้ "... · null" ติดมาทุกแถว
+        description: l.accountName ? `${l.description} · ${l.accountName}` : l.description,
         amount: l.amount,
       })),
     [glLinesRaw]
@@ -779,7 +794,7 @@ export default function ActiveWorkspace({
   }, [bankLines]);
 
   const glGroups = useMemo(() => {
-    const map = new Map<string, { count: number; name: string }>();
+    const map = new Map<string, { count: number; name: string | null }>();
     glLinesRaw.forEach((l) => {
       const existing = map.get(l.accountNo);
       map.set(l.accountNo, { count: (existing?.count ?? 0) + 1, name: l.accountName });
@@ -867,8 +882,7 @@ export default function ActiveWorkspace({
   const glTotal = useMemo(() => selectedGlItems.reduce((sum, l) => sum + l.amount, 0), [selectedGlItems]);
   const difference = bankTotal - glTotal;
 
-  const amountMatches = Math.abs(difference) < 0.005;
-  const canMatch = selectedBankItems.length > 0 && selectedGlItems.length > 0 && amountMatches;
+  const amountMatches = Math.abs(difference) < AMOUNT_TOLERANCE;
   // Suspense พักได้แค่ฝั่ง GL (BC365) เท่านั้น — Bank Statement เป็นข้อมูลหลักจากธนาคาร ห้ามแก้ไข/ห้ามพัก
   const canMoveToSuspense = selectedGlItems.length > 0;
 
@@ -913,19 +927,78 @@ export default function ActiveWorkspace({
     return groups;
   }
 
+  // วางแผนว่า "จะบันทึกกลุ่มย่อยอะไรบ้าง" พร้อมบอกเหตุผลถ้ายังจับคู่ไม่ได้
+  //
+  // เดิมโค้ดตรงนี้ตัดกลุ่มที่ขาดฝั่งใดฝั่งหนึ่งทิ้งเงียบๆ ทำให้เกิดปัญหา 2 แบบ:
+  //   1. เลือก Bank กับ GL ที่ยอดตรงกันแต่คนละวัน — ทั้งคู่ถูกตัดทิ้ง ส่ง groups ว่างไปที่ API
+  //      ผู้ใช้เห็นปุ่ม "Match 1:1" กับผลต่าง 0.00 แต่กดแล้วได้ error "ต้องมีอย่างน้อย 1 กลุ่ม"
+  //      ทั้งที่การจับคู่ข้ามวันคือเคสปกติที่สุดของงานกระทบยอด (ธนาคารตัดวันหนึ่ง บัญชีลงอีกวัน)
+  //   2. เลือกคู่ที่ถูกต้องปนกับรายการข้ามวัน — รายการข้ามวันถูกตัดทิ้งเงียบ เหลือกลุ่มที่ยอดไม่ดุล
+  //      บันทึกลง DB ได้สำเร็จ พร้อมแจ้งว่า "สำเร็จ" ด้วยยอดที่ไม่ตรงกับที่บันทึกจริง
+  //
+  // ตอนนี้: รายการที่จับกลุ่มตามวันไม่ลงตัวจะถูกยุบรวมเป็นกลุ่มเดียว (จับคู่ข้ามวันได้)
+  // และทุกกลุ่มที่จะส่งต้องมียอดสองฝั่งดุลกันจริง ไม่ใช่ดุลแค่ยอดรวมทั้งหมด
+  // ถ้ายังไม่เข้าเงื่อนไข จะปิดปุ่มพร้อมบอกเหตุผล ไม่ตัดรายการทิ้งเงียบอีกต่อไป
+  const matchPlan = useMemo(() => {
+    if (selectedBankItems.length === 0 || selectedGlItems.length === 0) {
+      return { groups: [] as { bankIds: number[]; glIds: number[] }[], problem: null as string | null };
+    }
+
+    const bankById = new Map(selectedBankItems.map((l) => [l.lineId, l]));
+    const glById = new Map(selectedGlItems.map((l) => [l.entryNo, l]));
+
+    const raw = [...groupSelectionByDateDirection().values()];
+    const groups = raw.filter((g) => g.bankIds.length > 0 && g.glIds.length > 0);
+    const leftoverBank = raw.filter((g) => g.glIds.length === 0).flatMap((g) => g.bankIds);
+    const leftoverGl = raw.filter((g) => g.bankIds.length === 0).flatMap((g) => g.glIds);
+
+    if (leftoverBank.length > 0 && leftoverGl.length > 0) {
+      // ทั้งสองฝั่งมีรายการเหลือ = ผู้ใช้ตั้งใจจับคู่ข้ามวัน รวมเป็นกลุ่มเดียวให้
+      groups.push({ bankIds: leftoverBank, glIds: leftoverGl });
+    } else if (leftoverBank.length > 0 || leftoverGl.length > 0) {
+      const isBank = leftoverBank.length > 0;
+      const refs = isBank
+        ? leftoverBank.map((id) => bankById.get(id)?.ref ?? `L-${id}`)
+        : leftoverGl.map((id) => glById.get(id)?.ref ?? `#${id}`);
+      const shown = refs.slice(0, 3).join(", ");
+      const more = refs.length > 3 ? ` และอีก ${refs.length - 3} รายการ` : "";
+      return {
+        groups: [],
+        problem: `ยังไม่ได้เลือกรายการฝั่ง ${isBank ? "GL (BC365)" : "Bank"} มาจับคู่กับ ${shown}${more}`,
+      };
+    }
+
+    for (let i = 0; i < groups.length; i++) {
+      const bankSum = groups[i].bankIds.reduce((s, id) => s + (bankById.get(id)?.amount ?? 0), 0);
+      const glSum = groups[i].glIds.reduce((s, id) => s + (glById.get(id)?.amount ?? 0), 0);
+      if (Math.abs(bankSum - glSum) >= AMOUNT_TOLERANCE) {
+        return {
+          groups: [],
+          problem:
+            groups.length === 1
+              ? `ยอดสองฝั่งต่างกัน ${formatAmount(Math.abs(bankSum - glSum))} — จับคู่ไม่ได้`
+              : `กลุ่มย่อยที่ ${i + 1} ยอดไม่ตรงกัน (Bank ${formatAmount(bankSum)} / GL ${formatAmount(glSum)}) — ลองจับคู่ทีละกลุ่ม`,
+        };
+      }
+    }
+
+    return { groups, problem: null as string | null };
+    // groupSelectionByDateDirection อ่านค่าจาก selectedBankItems/selectedGlItems/clusterOf เท่านั้น
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedBankItems, selectedGlItems, clusterOf]);
+
+  const canMatch = matchPlan.groups.length > 0 && matchPlan.problem === null;
+
   async function handleMatch() {
     if (!canMatch || busy || syncingGl) return;
     setBusy(true);
     try {
-      const grouped = groupSelectionByDateDirection();
-      const groups = [...grouped.values()]
-        .filter((g) => g.bankIds.length > 0 && g.glIds.length > 0)
-        .map((g) => ({ bankLineIds: g.bankIds, glEntryNos: g.glIds }));
+      const groups = matchPlan.groups.map((g) => ({ bankLineIds: g.bankIds, glEntryNos: g.glIds }));
 
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode: session.bankCode, matchType: "MATCHED", groups, createdBy: getCurrentUsername() }),
+        body: JSON.stringify({ bankCode: session.bankCode, matchType: "MATCHED", groups }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -960,7 +1033,7 @@ export default function ActiveWorkspace({
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode: session.bankCode, matchType: "SUSPENSE", groups, createdBy: getCurrentUsername() }),
+        body: JSON.stringify({ bankCode: session.bankCode, matchType: "SUSPENSE", groups }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1034,7 +1107,7 @@ export default function ActiveWorkspace({
 
   return (
     <div
-      className={`flex-1 min-w-0 flex flex-col lg:overflow-hidden transition-all duration-500 ease-out ${
+      className={`relative flex-1 min-w-0 flex flex-col lg:overflow-hidden transition-all duration-500 ease-out ${
         mounted ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2"
       }`}
     >
@@ -1054,45 +1127,44 @@ export default function ActiveWorkspace({
       )}
 
       {focusMode ? (
-        // โฟกัสตารางเต็มที่: ย่อหัวข้อ+แถบ filter ทั้งหมดเหลือแค่แถบไอคอนบางๆ แถบเดียว ให้เห็นตารางมากที่สุด
+        // โฟกัสตารางเต็มที่: เอาแถบหัวข้อ/filter เดิมออกจนหมด ไม่กินพื้นที่แถวใดๆ อีกต่อไป
+        // เหลือแค่กลุ่มไอคอนลอย (absolute) มุมขวาบน ลอยทับตารางแทน ให้ตารางขยายเต็มพื้นที่จริงๆ
         // ปุ่มขยายกลับ (วงกลมแดง) ตั้งใจเน้นสีให้เห็นชัดว่ากดตรงนี้เพื่อย้อนกลับไปโหมดปกติได้
-        <div className="px-4 sm:px-6 py-2 flex items-center justify-between gap-2 flex-wrap shrink-0 border-b border-gray-100">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <button
-              onClick={() => setFocusMode(false)}
-              className="p-2 text-red-600 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
-              title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
-            >
-              <Minimize2 size={14} />
-            </button>
-            <button
-              onClick={loadData}
-              disabled={loading || busy || syncingGl}
-              className="p-2 text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 disabled:opacity-50"
-              title="Reset — โหลดข้อมูลใหม่"
-            >
-              <RotateCcw size={14} />
-            </button>
-            <button
-              onClick={handleSuggestMatches}
-              disabled={loading || busy || syncingGl}
-              className="p-2 text-blue-600 border border-blue-200 bg-blue-50 rounded-full hover:bg-blue-100 disabled:opacity-50"
-              title="Suggest matches"
-            >
-              {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-            </button>
-            <button
-              onClick={onEditFilters}
-              className="p-2 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-50"
-              title="Edit — แก้ไขธนาคาร/ช่วงวันที่"
-            >
-              <Pencil size={14} />
-            </button>
-            {error && <span className="text-xs text-red-600 ml-1">{error}</span>}
-          </div>
-          <span className="text-xs text-gray-400 truncate">
+        <div className="absolute top-3 right-4 sm:right-6 z-30 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-2rem)] bg-white/95 backdrop-blur border border-gray-200 rounded-full shadow-lg px-2 py-1.5">
+          <button
+            onClick={() => setFocusMode(false)}
+            className="p-2 text-red-600 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
+            title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
+          >
+            <Minimize2 size={14} />
+          </button>
+          <button
+            onClick={loadData}
+            disabled={loading || busy || syncingGl}
+            className="p-2 text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 disabled:opacity-50"
+            title="Reset — โหลดข้อมูลใหม่"
+          >
+            <RotateCcw size={14} />
+          </button>
+          <button
+            onClick={handleSuggestMatches}
+            disabled={loading || busy || syncingGl}
+            className="p-2 text-blue-600 border border-blue-200 bg-blue-50 rounded-full hover:bg-blue-100 disabled:opacity-50"
+            title="Suggest matches"
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+          </button>
+          <button
+            onClick={onEditFilters}
+            className="p-2 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-50"
+            title="Edit — แก้ไขธนาคาร/ช่วงวันที่"
+          >
+            <Pencil size={14} />
+          </button>
+          <span className="hidden sm:inline text-xs text-gray-400 truncate max-w-[160px] pl-1">
             {session.bankCode} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
           </span>
+          {error && <span className="text-xs text-red-600 pl-1 basis-full">{error}</span>}
         </div>
       ) : (
         <>
@@ -1246,6 +1318,13 @@ export default function ActiveWorkspace({
                 {formatAmount(difference)}
               </p>
             </div>
+
+            {/* บอกตรงๆ ว่าทำไมปุ่ม Match ยังกดไม่ได้ — เดิมปุ่มเทาเฉยๆ โดยไม่มีคำอธิบาย */}
+            {matchPlan.problem && (
+              <p className="max-w-md text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+                {matchPlan.problem}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -1262,6 +1341,7 @@ export default function ActiveWorkspace({
             <button
               onClick={handleMatch}
               disabled={!canMatch || busy || syncingGl}
+              title={matchPlan.problem ?? (matchPlan.groups.length > 1 ? `จะบันทึกเป็น ${matchPlan.groups.length} กลุ่มย่อย` : undefined)}
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}

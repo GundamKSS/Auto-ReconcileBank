@@ -474,6 +474,7 @@ export default function ReportWorkspace() {
           <input
             type="date"
             value={from}
+            max={to || undefined}
             onChange={(e) => setFrom(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
           />
@@ -483,6 +484,7 @@ export default function ReportWorkspace() {
           <input
             type="date"
             value={to}
+            min={from || undefined}
             onChange={(e) => setTo(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
           />
