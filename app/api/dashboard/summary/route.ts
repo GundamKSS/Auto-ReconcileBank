@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
+import { requireRole } from '../../../../lib/session';
+import { VIEWER_ROLES } from '../../../../lib/roles';
 import {
   SUMMARY_SELECT,
   bindFilters,
@@ -71,6 +73,9 @@ type StatusKey = 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
  * ตรงกับรีพอร์ตและไฟล์ Excel เสมอ — ต่างกันแค่ระดับการ group เท่านั้น
  */
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(VIEWER_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const params = req.nextUrl.searchParams;
 

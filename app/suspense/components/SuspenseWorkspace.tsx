@@ -129,7 +129,7 @@ function DirectionBadge({ direction }: { direction: "IN" | "OUT" }) {
   return (
     <span
       className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-        isIn ? "bg-teal-50 text-teal-700" : "bg-red-50 text-red-600"
+        isIn ? "bg-purple-50 text-purple-700" : "bg-red-50 text-red-600"
       }`}
     >
       {isIn ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
@@ -540,6 +540,7 @@ export default function SuspenseWorkspace() {
           <input
             type="date"
             value={dateFrom}
+            max={dateTo || undefined}
             onChange={(e) => setDateFrom(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
           />
@@ -549,10 +550,17 @@ export default function SuspenseWorkspace() {
           <input
             type="date"
             value={dateTo}
+            min={dateFrom || undefined}
             onChange={(e) => setDateTo(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
           />
         </div>
+        {dateFrom && dateTo && dateFrom > dateTo && (
+          <p className="w-full order-last text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
+            ช่วงวันที่ไม่ถูกต้อง — &quot;ถึงวันที่&quot; ต้องไม่มาก่อน &quot;พักตั้งแต่วันที่&quot; จึงยังไม่มีรายการใดตรงกับตัวกรอง
+          </p>
+        )}
+
         <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
           <label className="text-[11px] font-medium text-gray-500">ค้นหา</label>
           <div className="relative">

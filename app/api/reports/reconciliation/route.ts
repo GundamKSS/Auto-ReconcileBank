@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
+import { requireRole } from '../../../../lib/session';
+import { VIEWER_ROLES } from '../../../../lib/roles';
 import {
   PAGE_SIZE,
   ORDER_BY,
@@ -30,6 +32,9 @@ export const dynamic = 'force-dynamic';
  * ตอบกลับ summary + total เฉพาะตอน offset = 0 เพื่อไม่ให้ต้องรวมยอดใหม่ทุกครั้งที่ scroll
  */
 export async function GET(req: NextRequest) {
+  const auth = await requireRole(VIEWER_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const filters = parseFilters(req.nextUrl.searchParams);
     const offset = Math.max(0, Number(req.nextUrl.searchParams.get('offset') ?? '0') || 0);

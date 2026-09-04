@@ -143,7 +143,7 @@ export function buildUnifiedCte(f: ReportFilters): string {
     FROM ReconciliationMatch rm
     JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'BANK'
     JOIN BankStatementLine bsl ON bsl.LineId = rml.BankLineId
-    WHERE 1=1 ${matchTypeFilter} ${matchBankFilter} ${dateFilter}
+    WHERE rm.Status = 'ACTIVE' AND rml.Status = 'ACTIVE' ${matchTypeFilter} ${matchBankFilter} ${dateFilter}
   ),
   GlSide AS (
     SELECT
@@ -156,7 +156,7 @@ export function buildUnifiedCte(f: ReportFilters): string {
     JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'GL'
     JOIN BankAccountLedgerEntries e ON e.Entry_No = rml.GLEntryNo
     LEFT JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
-    WHERE 1=1 ${matchTypeFilter} ${matchBankFilter} ${dateFilter}
+    WHERE rm.Status = 'ACTIVE' AND rml.Status = 'ACTIVE' ${matchTypeFilter} ${matchBankFilter} ${dateFilter}
   ),
   Paired AS (
     SELECT
@@ -253,7 +253,8 @@ export function buildUnifiedCte(f: ReportFilters): string {
       ${f.bankCode ? 'AND bsl.BankCode = @bankCode' : ''}
       AND NOT EXISTS (
         SELECT 1 FROM ReconciliationMatchLine u_rml
-        WHERE u_rml.SourceType = 'BANK' AND u_rml.BankLineId = bsl.LineId
+        JOIN ReconciliationMatch u_rm ON u_rm.MatchId = u_rml.MatchId AND u_rm.Status = 'ACTIVE'
+        WHERE u_rml.SourceType = 'BANK' AND u_rml.BankLineId = bsl.LineId AND u_rml.Status = 'ACTIVE'
       )`);
 
     branches.push(`
@@ -288,7 +289,8 @@ export function buildUnifiedCte(f: ReportFilters): string {
       ${f.bankCode ? 'AND m.BankCode = @bankCode' : ''}
       AND NOT EXISTS (
         SELECT 1 FROM ReconciliationMatchLine u_rml
-        WHERE u_rml.SourceType = 'GL' AND u_rml.GLEntryNo = e.Entry_No
+        JOIN ReconciliationMatch u_rm ON u_rm.MatchId = u_rml.MatchId AND u_rm.Status = 'ACTIVE'
+        WHERE u_rml.SourceType = 'GL' AND u_rml.GLEntryNo = e.Entry_No AND u_rml.Status = 'ACTIVE'
       )`);
   }
 

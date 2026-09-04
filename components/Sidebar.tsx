@@ -1,13 +1,6 @@
 'use client';
 
 import {
-  LayoutDashboard,
-  Upload,
-  GitCompareArrows,
-  Database,
-  WalletCards,
-  BarChart3,
-  Settings,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -17,44 +10,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useSidebar } from './SidebarContext';
 import { clearReconcileSession } from '../lib/reconcileSession';
-
-const menuItems = [
-  {
-    name: 'Dashboard',
-    href: '/dashboard',
-    icon: LayoutDashboard,
-  },
-  {
-    name: 'Import',
-    href: '/import',
-    icon: Upload,
-  },
-  {
-    name: 'Reconcile',
-    href: '/reconcile',
-    icon: GitCompareArrows,
-  },
-  {
-    name: 'Master Data',
-    href: '/master-data/bank-statement',
-    icon: Database,
-  },
-  {
-    name: 'Suspense',
-    href: '/suspense',
-    icon: WalletCards,
-  },
-  {
-    name: 'Reports',
-    href: '/reports',
-    icon: BarChart3,
-  },
-  // {
-  //   name: 'Settings',
-  //   href: '/settings',
-  //   icon: Settings,
-  // },
-];
+import { findMenuItem, menuItemsFor, normalizeRole, type Role } from '../lib/menu';
+import type { UserSession } from '../lib/trwApi';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -63,7 +20,8 @@ export default function Sidebar() {
   const { collapsed, toggleCollapsed, mobileOpen, setMobileOpen } = useSidebar();
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
-  const [user, setUser] = useState<{ name: string; email: string; initials: string } | null>(null);
+  const [user, setUser] = useState<{ name: string; subtitle: string; initials: string } | null>(null);
+  const [role, setRole] = useState<Role | null>(null);
 
 
   useEffect(() => {
@@ -75,25 +33,32 @@ export default function Sidebar() {
       return;
     }
     try {
-      const parsed = JSON.parse(u);
-      const emp = parsed.employee;
-      const name = emp
-        ? `${emp.First_Name ?? ''} ${emp.Last_Name ?? ''}`.trim() || parsed.username
-        : parsed.username;
-      const email = emp?.E_Mail ?? parsed.email ?? '';
-      let initials = 'NA';
-      if (emp?.First_Name || emp?.Last_Name) {
-        initials = `${(emp.First_Name?.[0] ?? '')}${(emp.Last_Name?.[0] ?? '')}`.toUpperCase();
-      } else if (parsed.username) {
-        initials = parsed.username.slice(0, 2).toUpperCase();
+      const parsed = JSON.parse(u) as UserSession;
+      // session รูปแบบเก่า (ก่อนย้ายมา /auth/auth_permission_prog) ไม่มีคีย์ roleProg เลย
+      // ถ้าปล่อยไว้จะกลายเป็นสิทธิ์ User ทั้งที่จริงเป็น Admin — บังคับ login ใหม่ให้จบ
+      if (parsed.roleProg === undefined) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('lastActivity');
+        router.push('/login');
+        return;
       }
-      setUser({ name, email, initials });
+      const name = parsed.displayName || parsed.username;
+      // บรรทัดรองใช้ตำแหน่งงาน (role) เช่น "Accounting" ไม่ใช่สิทธิ์ในโปรแกรม (roleProg)
+      const subtitle = parsed.role ?? '';
+      // ย่อจากคำแรกของแต่ละคำในชื่อ ถ้าไม่มีชื่อค่อยถอยไปใช้ username
+      const words = name.split(/\s+/).filter(Boolean).slice(0, 2);
+      const initials = words.length
+        ? words.map((w) => w[0]).join('').toUpperCase()
+        : (parsed.username?.slice(0, 2).toUpperCase() ?? 'NA');
+      setUser({ name, subtitle, initials });
+      setRole(normalizeRole(parsed.roleProg));
       setAuthorized(true);
     } catch (err) {
       console.error('Failed to parse user from localStorage', err);
       router.push('/login');
     }
-    setAuthorized(true);
+    // setAuthorized(true) อยู่ในเส้นทางสำเร็จ (ในบล็อก try) แล้ว — ไม่เรียกซ้ำตรงนี้
+    // เพราะจะทำให้เคส parse ไม่ผ่าน/ไม่มี session กลายเป็น authorized ค้างไว้ด้วย
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [router]);
 
@@ -103,9 +68,18 @@ export default function Sidebar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  if (authorized === null) return null;
+  if (authorized === null || role === null) return null;
 
-  function handleLogout() {
+  const visibleItems = menuItemsFor(role);
+
+  async function handleLogout() {
+    // ล้าง session cookie ฝั่ง server ด้วย — ถ้าล้างแค่ localStorage ตัว cookie จะยังใช้เรียก API ได้
+    // จนกว่าจะหมดอายุเอง ซึ่งเท่ากับยังไม่ได้ออกจากระบบจริง
+    try {
+      await fetch('/api/logout', { method: 'POST' });
+    } catch {
+      // ต่อ server ไม่ได้ก็ยังต้องพาผู้ใช้ออกจากหน้าจอให้ได้ตามปกติ
+    }
     localStorage.removeItem('user');
     localStorage.removeItem('lastActivity');
     clearReconcileSession();
@@ -148,11 +122,12 @@ export default function Sidebar() {
         >
           <div className="flex items-center gap-3">
 
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg shadow-blue-500/20">
-              <WalletCards
-                size={23}
-                className="text-white"
-              />
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl  shadow-lg shadow-blue-500/20">
+              <img
+    src="/vercel.png"
+    alt="Auto Reconcile Bank"
+    className="h-full w-full object-contain"
+  />
             </div>
 
             <div className={collapsed ? 'lg:hidden' : ''}>
@@ -178,12 +153,12 @@ export default function Sidebar() {
 
           <div className="space-y-2">
 
-            {menuItems.map((item) => {
+            {visibleItems.map((item) => {
               const Icon = item.icon;
 
-              const isActive =
-                pathname === item.href ||
-                pathname.startsWith(`${item.href}/`);
+              // เทียบกับเมนูที่ "เจาะจงที่สุด" ของ path ปัจจุบัน ไม่ใช่ startsWith เฉยๆ
+              // ไม่งั้นอยู่หน้า /reconcile/history แล้วเมนู Reconcile จะสว่างขึ้นมาด้วยพร้อมกัน
+              const isActive = findMenuItem(pathname)?.href === item.href;
 
               return (
                 <button
@@ -252,7 +227,7 @@ export default function Sidebar() {
                 </p>
 
                 <p className="truncate text-xs text-slate-500">
-                  {user?.email}
+                  {user?.subtitle}
                 </p>
               </div>
 

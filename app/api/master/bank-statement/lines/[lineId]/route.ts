@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../../../lib/db';
 
+import { requireRole } from '../../../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../../../lib/roles';
+import { badRequest, parseIdParam } from '../../../../../../lib/apiInput';
 async function assertUnlocked(pool: sql.ConnectionPool, lineId: number) {
   const check = await pool
     .request()
@@ -18,8 +21,14 @@ async function assertUnlocked(pool: sql.ConnectionPool, lineId: number) {
 // PUT /api/master/bank-statement/lines/:lineId
 // แก้ไขรายการเดียว — บล็อกถ้าจับคู่ไปแล้ว (ต้องยกเลิกการจับคู่ที่หน้า reconcile ก่อน)
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ lineId: string }> }) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
-    const { lineId } = await params;
+    const { lineId: rawLineId } = await params;
+    const lineId = parseIdParam(rawLineId);
+    if (lineId === null) return badRequest('lineId ต้องเป็นจำนวนเต็มบวก');
+
     const body = await req.json();
     const { tranDate, description, debit, credit, balance, chequeNo, channel } = body;
 
@@ -31,14 +40,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ line
     }
 
     const pool = await getPool();
-    const lock = await assertUnlocked(pool, Number(lineId));
+    const lock = await assertUnlocked(pool, lineId);
     if (!lock.ok) {
       return NextResponse.json({ error: lock.error }, { status: 409 });
     }
 
     await pool
       .request()
-      .input('lineId', sql.Int, Number(lineId))
+      .input('lineId', sql.Int, lineId)
       .input('tranDate', sql.Date, tranDate)
       .input('description', sql.NVarChar, description ?? null)
       .input('debit', sql.Decimal(18, 2), debit ?? null)
@@ -61,23 +70,28 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ line
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('Master bank-statement line PUT error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `แก้ไขไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'แก้ไขไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }
 
 // DELETE /api/master/bank-statement/lines/:lineId
 // ลบรายการเดียว — บล็อกถ้าจับคู่ไปแล้ว แล้วอัปเดตจำนวนแถวใน import header ให้ตรงของจริง
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ lineId: string }> }) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
-    const { lineId } = await params;
+    const { lineId: rawLineId } = await params;
+    const lineId = parseIdParam(rawLineId);
+    if (lineId === null) return badRequest('lineId ต้องเป็นจำนวนเต็มบวก');
+
     const pool = await getPool();
-    const lock = await assertUnlocked(pool, Number(lineId));
+    const lock = await assertUnlocked(pool, lineId);
     if (!lock.ok) {
       return NextResponse.json({ error: lock.error }, { status: 409 });
     }
 
-    await pool.request().input('lineId', sql.Int, Number(lineId)).query(`DELETE FROM BankStatementLine WHERE LineId = @lineId`);
+    await pool.request().input('lineId', sql.Int, lineId).query(`DELETE FROM BankStatementLine WHERE LineId = @lineId`);
 
     await pool
       .request()
@@ -91,7 +105,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error('Master bank-statement line DELETE error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ลบไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ลบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

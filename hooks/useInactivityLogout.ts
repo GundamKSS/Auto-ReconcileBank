@@ -12,6 +12,9 @@ export function useInactivityLogout() {
 
   useEffect(() => {
     function logout() {
+      // ล้าง session cookie ฝั่ง server ด้วย ไม่งั้นหมดเวลาแล้ว cookie ยังเรียก API ได้อยู่
+      // (ยิงแบบไม่รอผล เพราะต้องพาผู้ใช้ออกจากหน้าจอทันทีอยู่แล้ว)
+      fetch('/api/logout', { method: 'POST' }).catch(() => {});
       localStorage.removeItem('user');
       localStorage.removeItem('lastActivity');
       clearReconcileSession();

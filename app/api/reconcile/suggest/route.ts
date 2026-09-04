@@ -3,6 +3,8 @@ import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 
 
+import { requireRole } from '../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../lib/roles';
 type Item = { id: number; amount: number };
 type RawCluster = { bankIds: number[]; glIds: number[] };
 
@@ -72,6 +74,9 @@ function clusterMatches(bankItems: Item[], glItems: Item[]): RawCluster[] {
 // ต้องกรองช่วงวันที่ (from/to/glExtendDays) ให้ตรงกับ /api/reconcile/data เป๊ะ — ไม่งั้น suggest จะไปดึงรายการ
 // นอก Period ที่หน้า Reconciliation workspace กำลังทำงานอยู่มาปนด้วย (bank ใช้ to เดิม, GL ขยายได้ตาม glExtendDays)
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const { bankCode, from, to, glExtendDays: glExtendDaysRaw } = await req.json();
     if (!bankCode) {
@@ -112,7 +117,8 @@ export async function POST(req: NextRequest) {
         WHERE m.BankCode = @bankCode
           AND NOT EXISTS (
             SELECT 1 FROM ReconciliationMatchLine rml
-            WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No
+            JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
+            WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No AND rml.Status = 'ACTIVE'
           )
           ${fromDate ? 'AND e.Posting_Date >= @from' : ''}
           ${glToDate ? 'AND e.Posting_Date <= @to' : ''}

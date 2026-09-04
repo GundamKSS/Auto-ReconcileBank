@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
+import { requireRole } from '../../../../lib/session';
+import { RECONCILE_ROLES } from '../../../../lib/roles';
 
 type UnsuspendItem = {
   matchId: number;
@@ -9,6 +11,9 @@ type UnsuspendItem = {
 };
 
 export async function POST(req: NextRequest) {
+  const auth = await requireRole(RECONCILE_ROLES);
+  if (!auth.ok) return auth.response;
+
   try {
     const body = await req.json();
     const items: UnsuspendItem[] = body?.items;
@@ -93,11 +98,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ revertedBankLineCount, clearedMatchIds });
     } catch (err) {
       await transaction.rollback();
+      // ไม่พบ MatchId / ไม่ใช่รายการ Suspense = ข้อมูลที่เลือกมาไม่ตรงกับของจริงแล้ว ตอบ 409
+      if (err instanceof Error) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
       throw err;
     }
   } catch (err) {
     console.error('Unsuspend API error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ดึงกลับไป Reconcile ไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ดึงกลับไป Reconcile ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

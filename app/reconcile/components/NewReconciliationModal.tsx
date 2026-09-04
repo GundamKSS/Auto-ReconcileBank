@@ -86,7 +86,14 @@ export default function NewReconciliationModal({
     setSelectedImportId(CUSTOM_RANGE);
   }
 
-  const canStart = bankCode && periodStart && periodEnd;
+  // เดิมตรวจแค่ว่ากรอกครบไหม ทำให้ใส่ "ถึงวันที่" ก่อน "จากวันที่" แล้วกด Start ได้
+  // ผลคือเข้าไปเจอ workspace ว่างเปล่าพร้อมข้อความ "ไม่มีรายการค้างอยู่ในช่วงที่เลือก"
+  // ซึ่งชวนให้เข้าใจผิดว่ากระทบยอดครบแล้ว ทั้งที่จริงแค่กรอกวันที่กลับด้าน
+  const rangeError =
+    periodStart && periodEnd && periodStart > periodEnd
+      ? 'ช่วงวันที่ไม่ถูกต้อง — "ถึงวันที่" ต้องไม่มาก่อน "จากวันที่"'
+      : null;
+  const canStart = Boolean(bankCode && periodStart && periodEnd && !rangeError);
 
   function handleStart() {
     if (!canStart) return;
@@ -172,6 +179,7 @@ export default function NewReconciliationModal({
               <input
                 type="date"
                 value={periodStart}
+                max={periodEnd || undefined}
                 onChange={(e) => {
                   setPeriodStart(e.target.value);
                   setSelectedImportId(CUSTOM_RANGE);
@@ -184,6 +192,7 @@ export default function NewReconciliationModal({
               <input
                 type="date"
                 value={periodEnd}
+                min={periodStart || undefined}
                 onChange={(e) => {
                   setPeriodEnd(e.target.value);
                   setSelectedImportId(CUSTOM_RANGE);
@@ -192,6 +201,12 @@ export default function NewReconciliationModal({
               />
             </div>
           </div>
+
+          {rangeError && (
+            <p className="text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {rangeError}
+            </p>
+          )}
 
           <label className="flex items-start gap-2.5 cursor-pointer">
             <input

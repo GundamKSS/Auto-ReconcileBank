@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8">
+<title>คู่มือใช้งานฉบับย่อ — Auto Reconcile Bank</title>
+<style>
+  @page { size: A4 portrait; margin: 13mm 12mm 14mm 12mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Thonburi","Noto Sans Thai",-apple-system,"Helvetica Neue",sans-serif;
+         font-size: 10.5pt; line-height: 1.55; color:#16202e; margin:0; }
+  h1,h2,h3,h4,p,ul,ol { margin:0; }
+  /* เนื้อหาไหลต่อกัน ไม่บังคับขึ้นหน้าใหม่ทุกหัวข้อ เพื่อไม่ให้เหลือที่ว่างครึ่งหน้า */
+  .page { page-break-after: auto; }
+  .page.brk { page-break-after: always; }
+  .avoid { page-break-inside: avoid; }
+  .sec, h3 { page-break-after: avoid; }
+  table, ul { page-break-inside: avoid; }
+
+  /* cover */
+  .badge { display:inline-block; background:linear-gradient(135deg,#0ea5e9,#2563eb); color:#fff;
+           font-size:9pt; font-weight:700; letter-spacing:.12em; padding:4pt 11pt; border-radius:99pt; }
+  .cover h1 { font-size:31pt; font-weight:800; letter-spacing:-.02em; color:#0b1727; margin:12pt 0 4pt; }
+  .cover .sub { font-size:13pt; color:#475569; }
+
+  /* section head */
+  .sec { display:flex; align-items:center; gap:9pt; margin:0 0 8pt;
+         padding-bottom:6pt; border-bottom:2.5px solid #2563eb; }
+  .sec .n { flex:0 0 auto; width:23pt; height:23pt; border-radius:7pt; background:#2563eb; color:#fff;
+            font-weight:800; font-size:12pt; display:flex; align-items:center; justify-content:center; }
+  .sec h2 { font-size:17pt; font-weight:800; color:#0b1727; }
+  .sec .t { font-size:9.5pt; color:#64748b; margin-left:auto; }
+  .lead { color:#475569; font-size:10pt; margin:0 0 9pt; }
+
+  h3 { font-size:11.5pt; font-weight:700; color:#0f2748; margin:12pt 0 5pt;
+       padding-left:7pt; border-left:3.5px solid #93c5fd; }
+
+  figure { margin:8pt 0 10pt; page-break-inside:avoid; }
+  figure img { width:82%; display:block; margin:0 auto; border:1px solid #dbe3ec; border-radius:4pt; }
+  figcaption { font-size:8.5pt; color:#64748b; margin-top:3pt; text-align:center; }
+
+  ul { padding-left:0; list-style:none; }
+  li { position:relative; padding-left:14pt; margin-bottom:4pt; }
+  li::before { content:"•"; position:absolute; left:3pt; color:#2563eb; font-weight:700; }
+  li b { color:#0f2748; }
+
+  /* key = value rows */
+  .kv { display:flex; gap:8pt; padding:4.5pt 0; border-bottom:1px solid #eef2f7; font-size:9.8pt; }
+  .kv .k { flex:0 0 33%; font-weight:700; color:#0f2748; }
+  .kv .v { flex:1; color:#3b4a5e; }
+
+  /* step cards */
+  .steps { display:flex; gap:6pt; margin:10pt 0 4pt; }
+  .steps > div { flex:1; background:#eff6ff; border:1px solid #bfdbfe; border-radius:6pt; padding:7pt 8pt; }
+  .steps .num { font-size:8.5pt; font-weight:800; color:#2563eb; }
+  .steps .ttl { font-size:9.5pt; font-weight:700; color:#0f2748; margin-top:1pt; }
+  .steps .dsc { font-size:8.5pt; color:#5b6b80; margin-top:2pt; line-height:1.4; }
+
+  .note,.warn,.tip { border-radius:4pt; padding:7pt 10pt; margin:8pt 0; font-size:9.6pt; page-break-inside:avoid; }
+  .note { background:#f1f5fb; border-left:3.5px solid #64748b; }
+  .warn { background:#fff4f2; border-left:3.5px solid #e11d48; }
+  .tip  { background:#f0fdf6; border-left:3.5px solid #16a34a; }
+  .note > b:first-child, .warn > b:first-child, .tip > b:first-child { display:block; margin-bottom:1pt; }
+  .warn > b:first-child { color:#be123c; } .tip > b:first-child { color:#15803d; } .note > b:first-child { color:#334155; }
+
+  .pill { display:inline-block; font-size:8.5pt; font-weight:700; padding:1pt 6pt; border-radius:99pt; }
+  .g{background:#dcfce7;color:#15803d} .a{background:#fef3c7;color:#b45309}
+  .r{background:#ffe4e6;color:#be123c} .b{background:#dbeafe;color:#1d4ed8} .s{background:#e9eef5;color:#475569}
+
+  table { width:100%; border-collapse:collapse; font-size:9.5pt; margin:6pt 0 8pt; }
+  th { background:#eff6ff; color:#1e3a5f; text-align:left; font-weight:700; font-size:9.2pt;
+       padding:4.5pt 7pt; border-bottom:1.5px solid #bfdbfe; }
+  td { padding:4.5pt 7pt; border-bottom:1px solid #eef2f7; vertical-align:top; }
+  td.c { text-align:center; }
+  .two { display:flex; gap:11pt; }
+  .two > div { flex:1; }
+</style></head><body>
+
+<!-- ===================== PAGE 1 ===================== -->
+<section class="page brk cover">
+  <div style="margin-top:14mm"><span class="badge">คู่มือฉบับย่อ · อ่าน 10 นาที</span></div>
+  <h1>Auto Reconcile Bank</h1>
+  <div class="sub">ระบบกระทบยอดเงินฝากธนาคารกับบัญชีแยกประเภท</div>
+
+  <div class="note" style="margin-top:10mm">
+    <b>ระบบนี้ทำอะไร</b>
+    ทุกสิ้นเดือนเราต้องเทียบว่า <b>เงินที่เข้า–ออกจริงในบัญชีธนาคาร</b> ตรงกับ <b>รายการที่บันทึกไว้ในระบบบัญชี BC365</b> หรือไม่
+    ระบบนี้ทำให้งานนั้นเป็นดิจิทัลทั้งหมด — เอาข้อมูล 2 ฝั่งมาวางเทียบกัน ช่วยหาคู่ที่ตรงกันให้อัตโนมัติ
+    บันทึกว่าใครจับคู่อะไรเมื่อไร และออกรายงานให้พร้อมปิดงวด
+  </div>
+
+  <h3>คำศัพท์ 5 คำที่ต้องรู้ก่อนเริ่ม</h3>
+  <div class="kv"><div class="k"><span class="pill g">IN</span> / <span class="pill r">OUT</span></div>
+    <div class="v">IN = เงินเข้าบัญชี · OUT = เงินออกจากบัญชี ระบบจับคู่เฉพาะรายการ<b>ทิศทางเดียวกัน</b>และ<b>วันเดียวกัน</b>เท่านั้น</div></div>
+  <div class="kv"><div class="k"><span class="pill r">UNMATCHED</span></div>
+    <div class="v">ยังไม่ถูกจับคู่ — คืองานที่เหลือให้เราทำ</div></div>
+  <div class="kv"><div class="k"><span class="pill g">MATCHED</span></div>
+    <div class="v">จับคู่เรียบร้อยแล้ว มีบันทึกว่าใครทำ เมื่อไร</div></div>
+  <div class="kv"><div class="k"><span class="pill a">SUSPENSE</span></div>
+    <div class="v">พักไว้ก่อน — ยังหาคู่ไม่เจอ แต่ไม่อยากปล่อยค้าง ดึงกลับมาจับคู่ใหม่ได้ทุกเมื่อ</div></div>
+  <div class="kv"><div class="k">กลุ่มย่อย</div>
+    <div class="v">ชุดรายการที่ยอด 2 ฝั่งเท่ากันพอดี เช่น ธนาคาร 1 รายการ = BC365 3 รายการ ถือเป็น 1 กลุ่มย่อย</div></div>
+
+  <div class="tip" style="margin-top:8mm">
+    <b>กฎเหล็กข้อเดียวที่ต้องจำ</b>
+    ระบบจะให้กดปุ่ม <b>Match</b> ได้ก็ต่อเมื่อ <b>ยอดรวม 2 ฝั่งเท่ากันพอดี (DIFFERENCE = 0.00)</b> เท่านั้น
+    ถ้าตัวเลขยังไม่เป็น 0.00 สีเขียว ปุ่มจะกดไม่ได้ — ไม่ต้องกังวลว่าจะจับคู่ผิดโดยไม่รู้ตัว
+  </div>
+</section>
+
+<!-- ===================== PAGE 2 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">1</span><h2>ภาพรวม: งานประจำเดือนมี 5 ขั้น</h2></div>
+
+  <div class="steps">
+    <div><div class="num">ขั้นที่ 1</div><div class="ttl">นำเข้า Statement</div><div class="dsc">อัปโหลดไฟล์จากธนาคารที่หน้า Import</div></div>
+    <div><div class="num">ขั้นที่ 2</div><div class="ttl">ซิงค์ข้อมูล BC365</div><div class="dsc">กดปุ่มเดียว ดึงรายการบัญชีล่าสุดมา</div></div>
+    <div><div class="num">ขั้นที่ 3</div><div class="ttl">จับคู่รายการ</div><div class="dsc">งานหลัก ทำที่หน้า Reconcile</div></div>
+    <div><div class="num">ขั้นที่ 4</div><div class="ttl">พักรายการที่เหลือ</div><div class="dsc">ตัวที่หาคู่ไม่ได้ ส่งเข้าบัญชีพักโอน</div></div>
+    <div><div class="num">ขั้นที่ 5</div><div class="ttl">ออกรายงาน</div><div class="dsc">ดูผลและส่งออก Excel</div></div>
+  </div>
+
+  <h3>สิทธิ์การใช้งาน — คุณเห็นเมนูไม่เท่ากัน</h3>
+  <p class="lead">ระบบแบ่งผู้ใช้เป็น 2 กลุ่ม เมนูด้านซ้ายจะแสดงเฉพาะสิ่งที่คุณมีสิทธิ์ใช้</p>
+  <table>
+    <thead><tr><th style="width:40%">เมนู</th><th class="c" style="width:30%">Accountant (Admin)</th><th class="c" style="width:30%">ผู้ใช้งานทั่วไป (User)</th></tr></thead>
+    <tbody>
+      <tr><td>Dashboard — สรุปประจำเดือน</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill g">ใช้ได้</span></td></tr>
+      <tr><td>Reports — รายงาน &amp; Export Excel</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill g">ใช้ได้</span></td></tr>
+      <tr><td>Import — นำเข้าไฟล์ / ซิงค์</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill s">ไม่เห็นเมนู</span></td></tr>
+      <tr><td>Reconcile — จับคู่รายการ</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill s">ไม่เห็นเมนู</span></td></tr>
+      <tr><td>Match History — ประวัติการจับคู่</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill s">ไม่เห็นเมนู</span></td></tr>
+      <tr><td>Suspense — บัญชีพักโอน</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill s">ไม่เห็นเมนู</span></td></tr>
+      <tr><td>Master Data — จัดการไฟล์</td><td class="c"><span class="pill g">ใช้ได้</span></td><td class="c"><span class="pill s">ไม่เห็นเมนู</span></td></tr>
+    </tbody>
+  </table>
+
+  <figure>
+    <img src="web2/10-dashboard-user.png" alt="หน้าจอของผู้ใช้งานทั่วไป">
+    <figcaption>สิ่งที่ <b>ผู้ใช้งานทั่วไป (User)</b> เห็น — เมนูซ้ายมีแค่ Dashboard กับ Reports</figcaption>
+  </figure>
+
+  <div class="note">
+    <b>ถ้าหาเมนูที่ต้องการไม่เจอ</b>
+    ไม่ใช่ระบบเสีย — แปลว่าบัญชีของคุณยังไม่ได้รับสิทธิ์นั้น ติดต่อผู้ดูแลระบบเพื่อขอเปลี่ยนสิทธิ์
+    (การพิมพ์ URL เข้าตรงๆ ก็เข้าไม่ได้ ระบบจะพากลับหน้าแรกให้)
+  </div>
+</section>
+
+<!-- ===================== PAGE 3 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">2</span><h2>เข้าสู่ระบบ</h2></div>
+  <div class="two">
+    <div>
+      <figure style="margin-top:0">
+        <img src="web2/01-login.png" alt="หน้าเข้าสู่ระบบ" style="width:100%">
+      </figure>
+    </div>
+    <div>
+      <h3 style="margin-top:0">ขั้นตอน</h3>
+      <ul>
+        <li>กรอก <b>Username</b> และ <b>Password</b> ชุดเดียวกับระบบกลางของบริษัท</li>
+        <li>กดไอคอน <b>รูปตา</b> ถ้าอยากเห็นรหัสผ่านที่พิมพ์</li>
+        <li>กด <b>Sign in</b> → เข้าหน้า Dashboard ทันที</li>
+      </ul>
+      <div class="warn" style="margin-top:9pt">
+        <b>ไม่ใช้งาน 30 นาที ระบบออกให้อัตโนมัติ</b>
+        งานที่กด Match ไปแล้วอยู่ครบ ไม่หาย แต่ช่วงวันที่ที่ตั้งค่าไว้ในหน้า Reconcile จะถูกล้าง ต้องตั้งใหม่
+      </div>
+      <div class="note">
+        <b>ถ้าเข้าไม่ได้</b>
+        “username หรือรหัสผ่านไม่ถูกต้อง” = พิมพ์ผิด<br>
+        “ไม่มีสิทธิ์ใช้งานโปรแกรมนี้” = ยังไม่ได้รับสิทธิ์ ติดต่อผู้ดูแลระบบ
+      </div>
+    </div>
+  </div>
+
+  <div class="sec" style="margin-top:12pt"><span class="n">3</span><h2>Dashboard — ดูว่าเดือนนี้ไปถึงไหนแล้ว</h2></div>
+  <figure>
+    <img src="web2/02-dashboard.png" alt="หน้า Dashboard">
+  </figure>
+  <div class="two">
+    <div>
+      <h3 style="margin-top:0">อ่านการ์ด 4 ใบนี้ก็พอ</h3>
+      <div class="kv"><div class="k">บรรทัดทั้งหมด</div><div class="v">รายการทั้ง 2 ฝั่งรวมกันในเดือนนี้</div></div>
+      <div class="kv"><div class="k">จับคู่แล้ว</div><div class="v">ทำไปได้เท่าไรแล้ว</div></div>
+      <div class="kv"><div class="k">ค้างอยู่</div><div class="v"><b>งานที่ยังเหลือ</b> — ตัวเลขนี้ควรลดลงเรื่อยๆ</div></div>
+      <div class="kv"><div class="k">อัตรากระทบยอด</div><div class="v">คิดเป็น % ยิ่งใกล้ 100% ยิ่งดี</div></div>
+    </div>
+    <div>
+      <h3 style="margin-top:0">ปุ่มที่ใช้บ่อย</h3>
+      <ul>
+        <li><b>‹ › และช่องเดือน</b> — เปลี่ยนเดือนที่ดู</li>
+        <li><b>วันที่ Bank / วันที่ BC</b> — เลือกว่าจะยึดวันที่ฝั่งไหนเป็นเกณฑ์</li>
+        <li><b>ปุ่มชื่อธนาคาร</b> — ดูเฉพาะธนาคารนั้น</li>
+        <li><b>รีเฟรช</b> — ดึงตัวเลขล่าสุด ใช้หลังเพิ่งจับคู่เสร็จ</li>
+        <li><b>ปรับมุมมอง</b> — เลือกว่าจะแสดงกราฟส่วนไหนบ้าง (ระบบจำค่าไว้ให้)</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== PAGE 4 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">4</span><h2>Import — เอาข้อมูลเข้าระบบ</h2><span class="t">เฉพาะ Admin</span></div>
+  <p class="lead">ต้องทำ 2 อย่างก่อนเริ่มจับคู่ คือ อัปโหลดไฟล์ธนาคาร และซิงค์ข้อมูลฝั่ง BC365</p>
+  <figure><img src="web2/03-import.png" alt="หน้า Import"></figure>
+
+  <h3>ก. อัปโหลดไฟล์ Bank Statement</h3>
+  <ul>
+    <li>เลือกการ์ด <b>Bank statement</b> แล้วเลือก<b>ธนาคารให้ถูก</b> (BBL / KBank / SCB)</li>
+    <li>กด <b>Continue</b> → ลากไฟล์ <b>.xlsx .xls .csv</b> มาวาง หรือคลิกเลือกไฟล์</li>
+    <li>ระบบแสดงตัวอย่าง 5 แถวแรกให้ตรวจ — <b>ยังไม่บันทึกอะไรลงระบบ</b></li>
+    <li>ตรวจแล้วโอเค กด <b>Map columns</b> → <b>Import</b> เพื่อบันทึกจริง</li>
+  </ul>
+  <div class="warn">
+    <b>เลือกธนาคารผิด = ข้อมูลเพี้ยนทั้งไฟล์</b>
+    เพราะแต่ละธนาคารวางคอลัมน์ไม่เหมือนกัน ระบบอ่านตามธนาคารที่คุณเลือก ถ้าเลือกผิดจะขึ้นว่าอ่านไฟล์ไม่ได้ หรือได้ข้อมูลผิด
+  </div>
+  <div class="tip">
+    <b>อัปโหลดไฟล์เดิมซ้ำไม่ได้ (และนั่นเป็นเรื่องดี)</b>
+    ระบบจำ “ลายนิ้วมือ” ของทุกไฟล์ที่เคยนำเข้า ถ้าเป็นไฟล์เดิมจะเตือนและปิดปุ่ม Import ให้ — กันข้อมูลซ้ำโดยไม่ตั้งใจ
+    ถ้าต้องการนำเข้าใหม่จริงๆ ให้ไปลบชุดเดิมที่หน้า Master Data ก่อน
+  </div>
+
+  <h3>ข. ซิงค์ข้อมูลจาก BC365</h3>
+  <ul>
+    <li>เลือกการ์ด <b>General Ledger (GL)</b> แล้วกด <b>ซิงค์ GL ทั้งหมด</b> — ดึงย้อนหลังทั้งชุด <b>ใช้เวลานาน</b> เหมาะกับตอนตั้งระบบใหม่หรือย้อนทำเดือนเก่า</li>
+    <li>งานประจำเดือนปกติ ให้ใช้ปุ่ม <b>ซิงค์จาก BC365</b> ที่หน้า Reconcile แทน — ดึงแค่ <b>40 วันล่าสุด</b> เร็วกว่ามาก</li>
+  </ul>
+  <div class="note">
+    <b>ข้อมูล BC365 มาจากไหน</b>
+    ระบบไม่ได้ต่อกับ BC365 ตรงๆ แต่สั่งให้ระบบกลางของบริษัท (TRW Data Center API) ไปดึงมาให้แล้วเขียนลงฐานข้อมูล
+    เราจึงแค่ “กดสั่ง” แล้วรอ — ถ้าขึ้นว่าเชื่อมต่อไม่ได้ ให้แจ้งฝ่าย IT
+  </div>
+</section>
+
+<!-- ===================== PAGE 5 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">5</span><h2>Reconcile — หน้าจับคู่ (หัวใจของระบบ)</h2><span class="t">เฉพาะ Admin</span></div>
+  <p class="lead">เริ่มด้วยการกด <b>New reconciliation</b> เลือกธนาคารและช่วงวันที่ที่จะทำ แล้วระบบจะดึงเฉพาะรายการที่ยังค้างของทั้ง 2 ฝั่งมาวางเทียบกัน</p>
+  <figure>
+    <img src="web2/04-reconcile.png" alt="หน้าจับคู่รายการ">
+    <figcaption>ซ้าย = Bank statement · ขวา = General Ledger (BC365) · แถบล่าง = ยอดรวมและปุ่มบันทึก</figcaption>
+  </figure>
+
+  <div class="two">
+    <div>
+      <h3 style="margin-top:0">วิธีจับคู่ทีละคู่</h3>
+      <ul>
+        <li>เลือก <span class="pill g">IN</span> หรือ <span class="pill r">OUT</span> ก่อน (เปลี่ยนพร้อมกันทั้ง 2 ฝั่ง)</li>
+        <li>คลิก <b>แถววันที่</b> เพื่อคลี่ดูรายการย่อย</li>
+        <li>ติ๊กวงกลมหน้ารายการที่ต้องการทั้ง 2 ฝั่ง</li>
+        <li>ดู <b>DIFFERENCE</b> ที่แถบล่าง — ต้องเป็น <b style="color:#16a34a">0.00 สีเขียว</b></li>
+        <li>กด <b>Match</b> → บันทึกทันที</li>
+      </ul>
+    </div>
+    <div>
+      <h3 style="margin-top:0">ตัวช่วยที่ควรใช้</h3>
+      <ul>
+        <li><b>วงกลมสีเขียว</b> = ระบบตรวจแล้วว่าวันนั้นยอด 2 ฝั่งตรงกันพอดี และติ๊กไว้ให้ล่วงหน้าแล้ว แค่ตรวจแล้วกด Match</li>
+        <li><b>ป้ายสี “กลุ่ม 1, 2, 3”</b> = สีเดียวกันคือคู่กัน ใช้ไล่สายตาได้เร็ว</li>
+        <li><b>ลิงค์วันที่ 2 ฝั่ง</b> = เปิดไว้ คลี่ฝั่งหนึ่งอีกฝั่งคลี่ตามให้</li>
+        <li><b>โฟกัสตาราง</b> = ซ่อนส่วนอื่น ให้ตารางใหญ่ขึ้น</li>
+        <li><b>ซิงค์จาก BC365</b> = ใช้เมื่อเพิ่งไปแก้ข้อมูลใน BC365 มา</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="warn">
+    <b>Move to suspense ส่งเฉพาะฝั่ง BC365 เท่านั้น</b>
+    ต่อให้ติ๊กฝั่งธนาคารไว้ด้วยก็ไม่ถูกส่งไป เพราะ Bank Statement คือหลักฐานจากธนาคาร ห้ามแก้ไขหรือพักไว้
+  </div>
+</section>
+
+<!-- ===================== PAGE 6 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">6</span><h2>Suggest matches — ให้ระบบหาคู่ให้</h2><span class="t">เฉพาะ Admin</span></div>
+  <p class="lead">แทนที่จะไล่ติ๊กเอง กดปุ่มเดียวให้ระบบหาชุดที่ยอดตรงกันพอดีมาเสนอ แล้วเราแค่ตรวจ</p>
+  <figure>
+    <img src="web2/05-suggest.png" alt="หน้าตรวจก่อนบันทึก">
+    <figcaption>ทุกกลุ่มถูกติ๊กไว้ให้แล้ว — หน้านี้ <b>ยังไม่บันทึกอะไรลงระบบ</b> จนกว่าจะกดยืนยัน</figcaption>
+  </figure>
+
+  <div class="two">
+    <div>
+      <h3 style="margin-top:0">อ่านสีให้เป็น</h3>
+      <div class="kv"><div class="k"><span class="pill g">เขียว</span></div><div class="v">คู่แบบ 1:1 ตรงตัว มั่นใจได้สูง</div></div>
+      <div class="kv"><div class="k"><span class="pill a">เหลือง</span></div><div class="v">แบบยอดรวม (lump sum) เช่น 1 ต่อหลายรายการ — <b>ควรตรวจก่อน</b></div></div>
+      <div class="kv"><div class="k"><span class="pill r">แดง ✕</span></div><div class="v">กลุ่มที่คุณเอาออกแล้ว จะไม่ถูกบันทึก</div></div>
+    </div>
+    <div>
+      <h3 style="margin-top:0">ขั้นตอน</h3>
+      <ul>
+        <li>ดูรายการที่ระบบเสนอ</li>
+        <li>กดวงกลมของกลุ่มที่<b>ไม่</b>ต้องการ ให้กลายเป็นสีแดง</li>
+        <li>ถ้าอยากเอาเฉพาะที่ชัวร์ กด <b>เอาเฉพาะ 1:1</b></li>
+        <li>กด <b>ยืนยัน Match</b> → บันทึกทุกกลุ่มที่ยังติ๊กอยู่</li>
+      </ul>
+      <div class="tip" style="margin-top:8pt">
+        <b>กดผิดไม่เสียหาย</b> ถ้ายังไม่กดยืนยัน กด <b>ยกเลิก</b> ได้เลย ไม่มีอะไรถูกบันทึก
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>ถ้าขึ้นว่า “ไม่พบรายการที่จับคู่กันได้แบบชัดเจน”</b>
+    แปลว่าในทิศทาง (IN/OUT) และช่วงวันที่ที่ดูอยู่ ไม่มีคู่ที่ระบบมั่นใจพอ — ลองสลับ IN ↔ OUT หรือจับคู่เองจากตารางหลัก
+  </div>
+</section>
+
+<!-- ===================== PAGE 7 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">7</span><h2>Match History — ตรวจย้อนหลัง &amp; แก้ที่จับผิด</h2><span class="t">เฉพาะ Admin</span></div>
+  <figure><img src="web2/06-history.png" alt="หน้าประวัติการจับคู่"></figure>
+  <ul>
+    <li>ค่าเริ่มต้นแสดง<b>เดือนปัจจุบัน</b> — ถ้าหาของเดือนก่อนไม่เจอ ให้เลื่อนเดือนด้วยปุ่ม <b>‹ ›</b></li>
+    <li>คลิกการ์ดเพื่อ<b>คลี่ดูกลุ่มย่อย</b>ว่าจับรายการไหนกับรายการไหน</li>
+    <li>จับผิดเฉพาะบางกลุ่ม → กด <b>Unmatch กลุ่มนี้</b> เฉพาะกลุ่มนั้น กลุ่มอื่นยังอยู่เหมือนเดิม</li>
+    <li>ผิดทั้งใบ → กด <b>Unmatch ทั้งใบ</b></li>
+    <li>ทุกครั้งต้อง<b>กรอกเหตุผล</b> ไม่กรอกปุ่มยืนยันจะกดไม่ได้</li>
+  </ul>
+  <div class="tip">
+    <b>ยกเลิกแล้วประวัติไม่หาย</b>
+    ระบบเก็บไว้ว่าเคยจับคู่อะไรกับอะไร แล้วติดป้าย <span class="pill r">ยกเลิกแล้ว</span> พร้อมชื่อผู้ยกเลิก เวลา และเหตุผล
+    ส่วนรายการจะกลับไปเป็น <span class="pill r">UNMATCHED</span> ให้จับคู่ใหม่ได้ที่หน้า Reconcile
+  </div>
+
+  <div class="sec" style="margin-top:12pt"><span class="n">8</span><h2>Suspense — บัญชีพักโอน</h2><span class="t">เฉพาะ Admin</span></div>
+  <figure><img src="web2/07-suspense.png" alt="หน้าบัญชีพักโอน"></figure>
+  <ul>
+    <li>รวมรายการที่กด <b>Move to suspense</b> ไว้จากหน้า Reconcile</li>
+    <li>ป้าย <b>พักมา n วัน</b> บอกอายุ — ยิ่งนานยิ่งควรรีบเคลียร์</li>
+    <li>ติ๊กเลือกรายการ → แถบดำจะลอยขึ้นมาด้านล่าง → กด <b>ดึงกลับไป Reconcile</b></li>
+    <li>ยืนยันแล้วรายการจะกลับเป็น <span class="pill r">UNMATCHED</span> พร้อมให้จับคู่ใหม่</li>
+  </ul>
+</section>
+
+<!-- ===================== PAGE 8 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">9</span><h2>Reports — ออกรายงาน &amp; Excel</h2><span class="t">ทุกคนใช้ได้</span></div>
+  <figure><img src="web2/09-reports.png" alt="หน้ารายงาน"></figure>
+  <ul>
+    <li>1 แถว = <b>1 คู่ Bank–BC365</b> วางเทียบกันซ้าย–ขวา ช่องขีด — คือฝั่งนั้นไม่มีคู่</li>
+    <li>เลือกสถานะที่จะดู: <b>จับคู่แล้ว / พักไว้ / ยังไม่จับคู่ / ทั้งหมด</b> (ค่าเริ่มต้นคือ “จับคู่แล้ว”)</li>
+    <li>ตั้งช่วงวันที่ หรือใช้ปุ่ม <b>‹ เดือนนี้ ›</b> · กรองธนาคาร · ค้นจากรายละเอียด/Ref/เลขเอกสาร</li>
+    <li>การ์ด <b>ผลต่าง (BANK − BC)</b> — <b style="color:#16a34a">เขียว = ยอดตรงกัน</b> · <b style="color:#dc2626">แดง = ยังไม่ตรง</b></li>
+    <li>เลื่อนลงจนสุด ระบบโหลดเพิ่มให้เองครั้งละ 50 รายการ</li>
+    <li><b>Export Excel</b> = ได้ทั้งชุดตามตัวกรองที่ตั้งไว้ ไม่ใช่แค่แถวที่เห็นบนจอ</li>
+  </ul>
+
+  <div class="sec" style="margin-top:12pt"><span class="n">10</span><h2>Master Data — แก้ข้อมูลที่นำเข้าผิด</h2><span class="t">เฉพาะ Admin</span></div>
+  <figure><img src="web2/08-masterdata.png" alt="หน้า Master Data"></figure>
+  <ul>
+    <li>ดูไฟล์ที่เคยนำเข้าของแต่ละธนาคาร คลิกชื่อไฟล์เพื่อดูรายบรรทัด</li>
+    <li>แก้ไข (<b>ดินสอ</b>) · ลบ (<b>ถังขยะ</b>) · เพิ่มรายการที่ตกหล่นด้วยมือ (<b>+ เพิ่มรายการ</b>)</li>
+    <li>เจอ <b>ไอคอนแม่กุญแจ</b> = แถวนั้นจับคู่ไปแล้ว แก้ไม่ได้ ต้องไป Unmatch ก่อน</li>
+  </ul>
+  <div class="warn"><b>การลบไฟล์ทั้งชุดย้อนกลับไม่ได้</b> และถ้ามีรายการในไฟล์ถูกจับคู่ไปแล้ว ระบบจะไม่ยอมให้ลบ</div>
+</section>
+
+<!-- ===================== PAGE 9 ===================== -->
+<section class="page">
+  <div class="sec"><span class="n">11</span><h2>สรุปไว้ข้างจอ</h2></div>
+
+  <h3>เจอปัญหาแบบนี้ ทำอย่างไร</h3>
+  <table>
+    <thead><tr><th style="width:38%">อาการ</th><th>สาเหตุและวิธีแก้</th></tr></thead>
+    <tbody>
+      <tr><td>ปุ่ม <b>Match</b> กดไม่ได้ (สีจาง)</td><td>ยังไม่ได้เลือกฝั่งใดฝั่งหนึ่ง หรือ DIFFERENCE ยังไม่เป็น 0.00 — ดูตัวเลขที่แถบล่าง</td></tr>
+      <tr><td>ปุ่ม <b>Move to suspense</b> กดไม่ได้</td><td>ต้องเลือกรายการฝั่ง BC365 อย่างน้อย 1 รายการ (ฝั่งธนาคารอย่างเดียวพักไม่ได้)</td></tr>
+      <tr><td>รายการฝั่ง BC365 ไม่ครบ</td><td>กด <b>ซิงค์จาก BC365</b> ที่หน้า Reconcile (40 วันล่าสุด) ถ้าต้องย้อนไกลกว่านั้นใช้ <b>ซิงค์ GL ทั้งหมด</b> ที่หน้า Import</td></tr>
+      <tr><td>อัปโหลดแล้วปุ่ม <b>Import</b> กดไม่ได้</td><td>ไฟล์นี้เคยนำเข้าแล้ว — ไปลบชุดเดิมที่ Master Data ก่อน</td></tr>
+      <tr><td>แก้ไขรายการไม่ได้ (แม่กุญแจ)</td><td>รายการถูกจับคู่แล้ว ต้อง Unmatch ที่ Match History ก่อน</td></tr>
+      <tr><td>Suggest matches ไม่เจออะไรเลย</td><td>ในทิศทางและช่วงวันที่นี้ไม่มีคู่ที่ชัดเจน — สลับ IN ↔ OUT หรือจับคู่เอง</td></tr>
+      <tr><td>หา Match ของเดือนก่อนไม่เจอ</td><td>Match History เริ่มที่เดือนปัจจุบัน เลื่อนเดือนด้วยปุ่ม ‹ ›</td></tr>
+      <tr><td>รายงานว่างเปล่า</td><td>ตรวจช่วงวันที่ สถานะที่เลือก (เริ่มต้นคือ “จับคู่แล้ว”) และเกณฑ์วันที่ Bank/BC</td></tr>
+      <tr><td>ไม่เห็นเมนูที่ต้องการ</td><td>บัญชีของคุณไม่มีสิทธิ์นั้น ติดต่อผู้ดูแลระบบ</td></tr>
+      <tr><td>“เชื่อมต่อ server ไม่ได้”</td><td>ปัญหาเครือข่าย แจ้งฝ่าย IT พร้อมภาพหน้าจอและเวลาที่เกิด</td></tr>
+    </tbody>
+  </table>
+
+  <h3>สิ่งที่ต้องระวัง 5 ข้อ</h3>
+  <ul>
+    <li><b>เลือกธนาคารให้ถูกก่อนอัปโหลด</b> — เลือกผิดอ่านข้อมูลผิดทั้งไฟล์</li>
+    <li><b>กด Match แล้วมีผลทันที</b> ไม่มีการบันทึกร่าง — ถ้าผิดต้องไป Unmatch พร้อมระบุเหตุผล</li>
+    <li><b>ข้อมูล BC365 แก้ในระบบนี้ไม่ได้</b> ต้องไปแก้ที่ BC365 แล้วกดซิงค์ใหม่</li>
+    <li><b>Bank Statement ห้ามพัก ห้ามแก้</b> ถ้าถูกจับคู่ไปแล้ว</li>
+    <li><b>เขียนเหตุผลตอน Unmatch ให้คนอื่นอ่านรู้เรื่อง</b> เพราะเป็นหลักฐานเดียวที่ผู้ตรวจสอบจะเห็นย้อนหลัง</li>
+  </ul>
+
+  <div class="tip" style="margin-top:10pt">
+    <b>ต้องการรายละเอียดมากกว่านี้</b>
+    ดูคู่มือฉบับเต็ม (อธิบายทุกปุ่มทีละตัว) และเอกสารประกอบโครงการ (สถาปัตยกรรม ฐานข้อมูล API) ได้ที่โฟลเดอร์เอกสารของระบบ
+  </div>
+</section>
+
+</body></html>

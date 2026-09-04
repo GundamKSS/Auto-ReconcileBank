@@ -47,11 +47,11 @@ export default function LoginPage() {
       localStorage.setItem('user', JSON.stringify(data));
       localStorage.setItem('lastActivity', Date.now().toString());
 
-      router.push('/import');
-    } catch (error) {
+      router.push('/dashboard');
+    } catch {
       setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
     } finally {
-      setIsLoading(false);
+      setIsLoading(false); 
     }
   }
 
