@@ -6,15 +6,16 @@ import { VIEWER_ROLES } from '../../../../../lib/roles';
 import {
   MAX_EXPORT_ROWS,
   ORDER_BY,
-  SUMMARY_SELECT,
+  SUMMARY_QUERY,
   bindFilters,
-  buildSummary,
-  buildUnifiedCte,
+  buildReportCte,
   mapRow,
   parseFilters,
-  searchCondition,
-  type ReportFilters,
+  summarizeBySide,
+  type ReportPageFilters,
   type ReportRow,
+  type ReportSide,
+  type ReportSummary,
 } from '../query';
 
 export const dynamic = 'force-dynamic';
@@ -24,6 +25,11 @@ const STATUS_LABEL: Record<string, string> = {
   SUSPENSE: 'พักไว้ (Suspense)',
   UNMATCHED: 'ยังไม่จับคู่',
   ALL: 'ทุกสถานะ',
+};
+
+const SIDE_LABEL: Record<ReportSide, string> = {
+  AR: 'AR — เงินเข้า',
+  AP: 'AP — เงินออก',
 };
 
 const DETAIL_HEADERS = [
@@ -42,7 +48,7 @@ const DETAIL_HEADERS = [
   'ชื่อบัญชี (BC)',
   'IN/OUT (BC)',
   'จำนวนเงิน (BC)',
-  'ผลต่าง (Bank - BC)',
+  'ผลต่างของกลุ่ม (Bank - BC)',
   'ผู้จับคู่',
   'วันที่จับคู่',
 ];
@@ -86,7 +92,7 @@ function applyMoneyFormat(ws: XLSX.WorkSheet, moneyCols: number[], firstDataRow:
   }
 }
 
-function buildWorkbook(filters: ReportFilters, rows: ReportRow[], summary: ReturnType<typeof buildSummary>) {
+function buildWorkbook(filters: ReportPageFilters, rows: ReportRow[], summary: ReportSummary) {
   const wb = XLSX.utils.book_new();
 
   // ---------- ชีต Summary ----------
@@ -95,6 +101,7 @@ function buildWorkbook(filters: ReportFilters, rows: ReportRow[], summary: Retur
 
   const summaryAoa: Cell[][] = [
     ['รายงานสรุปการกระทบยอด (Bank Reconciliation Report)'],
+    ['ฝั่ง', SIDE_LABEL[filters.side]],
     ['ช่วงวันที่', `${filters.from} ถึง ${filters.to}`],
     ['เกณฑ์วันที่ที่ใช้กรอง', basisLabel],
     ['สถานะที่แสดง', STATUS_LABEL[filters.status] ?? filters.status],
@@ -102,6 +109,7 @@ function buildWorkbook(filters: ReportFilters, rows: ReportRow[], summary: Retur
     ['คำค้นหา', filters.q ?? '-'],
     ['ออกรายงานเมื่อ', new Date().toISOString().slice(0, 19).replace('T', ' ')],
     ['จำนวนแถวทั้งหมด', summary.total],
+    ['หมายเหตุ', 'ผลต่างใน Detail คิดทั้งกลุ่ม (Match + กลุ่มย่อย) แสดงที่แถวสุดท้ายของกลุ่ม'],
     [],
     [
       'สถานะ',
@@ -204,15 +212,15 @@ function buildWorkbook(filters: ReportFilters, rows: ReportRow[], summary: Retur
     };
   }
   applyMoneyFormat(wsDetail, DETAIL_MONEY_COLS, 1, detailAoa.length - 1);
-  XLSX.utils.book_append_sheet(wb, wsDetail, 'Detail');
+  XLSX.utils.book_append_sheet(wb, wsDetail, `Detail ${filters.side}`);
 
   return wb;
 }
 
 /**
  * GET /api/reports/reconciliation/export
- * รับ query params ชุดเดียวกับ /api/reports/reconciliation (ยกเว้น offset)
- * แล้วส่งไฟล์ .xlsx ที่มี 2 ชีต: Summary (ยอดรวมแยกตามสถานะ/ธนาคาร) และ Detail (ทุกแถวตาม filter)
+ * รับ query params ชุดเดียวกับ /api/reports/reconciliation (ยกเว้น offset) รวมถึง side
+ * แล้วส่งไฟล์ .xlsx ของฝั่งนั้นฝั่งเดียว 2 ชีต: Summary (ยอดรวมแยกตามสถานะ/ธนาคาร) และ Detail (ทุกแถวตาม filter)
  */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(VIEWER_ROLES);
@@ -226,15 +234,12 @@ export async function GET(req: NextRequest) {
     }
 
     const pool = await getPool();
-    const cte = buildUnifiedCte(filters);
-    const search = searchCondition(filters);
 
     const summaryResult = await bindFilters(pool.request(), filters).query(`
-      ${cte}
-      ${SUMMARY_SELECT} ${search}
-      GROUP BY Status, COALESCE(BankCode, N'-')
+      ${buildReportCte(filters, { allSides: true })}
+      ${SUMMARY_QUERY}
     `);
-    const summary = buildSummary(summaryResult.recordset);
+    const { summary } = summarizeBySide(summaryResult.recordset, filters.side);
 
     if (summary.total > MAX_EXPORT_ROWS) {
       return NextResponse.json(
@@ -246,9 +251,9 @@ export async function GET(req: NextRequest) {
     }
 
     const rowsResult = await bindFilters(pool.request(), filters).query(`
-      ${cte}
-      SELECT * FROM Unified
-      WHERE 1=1 ${search}
+      ${buildReportCte(filters)}
+      SELECT * FROM Scoped
+      WHERE GroupHit = 1
       ${ORDER_BY}
     `);
     const rows = rowsResult.recordset.map(mapRow);
@@ -256,7 +261,7 @@ export async function GET(req: NextRequest) {
     const wb = buildWorkbook(filters, rows, summary);
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 
-    const fileName = `reconciliation-report_${filters.from}_${filters.to}_${filters.status.toLowerCase()}.xlsx`;
+    const fileName = `reconciliation-report_${filters.side.toLowerCase()}_${filters.from}_${filters.to}_${filters.status.toLowerCase()}.xlsx`;
 
     return new Response(new Uint8Array(buf), {
       status: 200,

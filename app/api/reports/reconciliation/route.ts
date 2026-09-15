@@ -6,13 +6,12 @@ import { VIEWER_ROLES } from '../../../../lib/roles';
 import {
   PAGE_SIZE,
   ORDER_BY,
-  SUMMARY_SELECT,
+  SUMMARY_QUERY,
   bindFilters,
-  buildSummary,
-  buildUnifiedCte,
+  buildReportCte,
   mapRow,
   parseFilters,
-  searchCondition,
+  summarizeBySide,
 } from './query';
 
 // ข้อมูลต้องสดทุกครั้ง ช่วงวันที่/เกณฑ์วันที่/สถานะเปลี่ยนได้ตลอด
@@ -22,14 +21,16 @@ export const dynamic = 'force-dynamic';
  * GET /api/reports/reconciliation
  *
  * Query params:
+ *   side        - 'AR' (ค่าเริ่มต้น, เงินเข้า) | 'AP' (เงินออก)
  *   from, to    - ช่วงวันที่ YYYY-MM-DD (ไม่ใส่ = วันที่ 1 ถึงสิ้นเดือนปัจจุบัน)
  *   basis       - 'BANK' (ค่าเริ่มต้น, ใช้ TranDate ของ statement) | 'GL' (ใช้ Posting_Date ฝั่ง BC)
  *   status      - 'MATCHED' (ค่าเริ่มต้น) | 'SUSPENSE' | 'UNMATCHED' | 'ALL'
  *   bankCode    - รหัสธนาคาร หรือ 'ALL'
- *   q           - ค้นหาข้อความ (คำอธิบาย bank / ref / document no / ชื่อบัญชี / MatchId)
+ *   q           - ค้นหาข้อความ (คำอธิบาย bank / ref / document no / ชื่อบัญชี / MatchId) เจอแล้วติดมาทั้งกลุ่ม
  *   offset      - เริ่มที่แถวที่เท่าไร (infinite scroll ทีละ 50)
  *
- * ตอบกลับ summary + total เฉพาะตอน offset = 0 เพื่อไม่ให้ต้องรวมยอดใหม่ทุกครั้งที่ scroll
+ * ตอบกลับ summary + total + จำนวนแถวของทั้งสองฝั่ง เฉพาะตอน offset = 0
+ * เพื่อไม่ให้ต้องรวมยอดใหม่ทุกครั้งที่ scroll
  */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(VIEWER_ROLES);
@@ -44,20 +45,17 @@ export async function GET(req: NextRequest) {
     }
 
     const pool = await getPool();
-    const cte = buildUnifiedCte(filters);
-    const search = searchCondition(filters);
 
-    const rowsRequest = bindFilters(pool.request(), filters)
+    const rowsResult = await bindFilters(pool.request(), filters)
       .input('offset', sql.Int, offset)
-      .input('limit', sql.Int, PAGE_SIZE);
-
-    const rowsResult = await rowsRequest.query(`
-      ${cte}
-      SELECT * FROM Unified
-      WHERE 1=1 ${search}
-      ${ORDER_BY}
-      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
-    `);
+      .input('limit', sql.Int, PAGE_SIZE)
+      .query(`
+        ${buildReportCte(filters)}
+        SELECT * FROM Scoped
+        WHERE GroupHit = 1
+        ${ORDER_BY}
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+      `);
 
     const rows = rowsResult.recordset.map(mapRow);
 
@@ -66,12 +64,10 @@ export async function GET(req: NextRequest) {
     }
 
     const summaryResult = await bindFilters(pool.request(), filters).query(`
-      ${cte}
-      ${SUMMARY_SELECT} ${search}
-      GROUP BY Status, COALESCE(BankCode, N'-')
+      ${buildReportCte(filters, { allSides: true })}
+      ${SUMMARY_QUERY}
     `);
-
-    const summary = buildSummary(summaryResult.recordset);
+    const { summary, sideCounts } = summarizeBySide(summaryResult.recordset, filters.side);
 
     // รายชื่อธนาคารสำหรับปุ่มกรอง — ดึงจากข้อมูลจริง ไม่ผูกกับ filter ที่เลือกอยู่
     // ไม่งั้นพอเลือกธนาคารเดียวแล้วปุ่มธนาคารอื่นจะหายไปหมด
@@ -89,6 +85,7 @@ export async function GET(req: NextRequest) {
       pageSize: PAGE_SIZE,
       total: summary.total,
       summary,
+      sideCounts,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
       filters,
     });

@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import AuthGuard from '../components/AuthGuard';
 import { SidebarProvider } from '../components/SidebarContext';
+import AppShell from '../components/AppShell';
+import PressFeedback from '../components/PressFeedback';
 
 
 const geistSans = Geist({
@@ -16,8 +18,13 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Auto Reconcile Bank",
+  // หน้าลูกตั้งแค่ชื่อหน้า เช่น "Dashboard" → แท็บจะแสดง "Dashboard · Auto Reconcile Bank"
+  title: {
+    template: "%s · Auto Reconcile Bank",
+    default: "Auto Reconcile Bank",
+  },
   description: "ระบบกระทบยอดธนาคารอัตโนมัติ (Bank Reconciliation)",
+  applicationName: "Auto Reconcile Bank",
 };
 
 export default function RootLayout({
@@ -28,8 +35,11 @@ export default function RootLayout({
    return (
     <html lang="th">
       <body>
+        <PressFeedback />
         <AuthGuard>
-          <SidebarProvider>{children}</SidebarProvider>
+          <SidebarProvider>
+            <AppShell>{children}</AppShell>
+          </SidebarProvider>
         </AuthGuard>
       </body>
     </html>

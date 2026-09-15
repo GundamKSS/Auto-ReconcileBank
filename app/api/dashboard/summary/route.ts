@@ -4,12 +4,14 @@ import { getPool } from '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
 import { VIEWER_ROLES } from '../../../../lib/roles';
 import {
-  SUMMARY_SELECT,
+  SIDE_DIRECTION,
+  SUMMARY_QUERY,
   bindFilters,
+  buildReportCte,
   buildSummary,
-  buildUnifiedCte,
   type DateBasis,
   type ReportFilters,
+  type ReportSide,
 } from '../../reports/reconciliation/query';
 
 // ตัวเลขบนหน้า dashboard ต้องสดเสมอ — เดือน/ธนาคาร/เกณฑ์วันที่เปลี่ยนได้ตลอด
@@ -64,13 +66,15 @@ type StatusKey = 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
  * GET /api/dashboard/summary
  *
  * Query params:
+ *   side         - 'AR' (ค่าเริ่มต้น, เงินเข้า) | 'AP' (เงินออก) | 'ALL' (รวมทั้งสองฝั่ง)
  *   month        - เดือนที่ดู 'YYYY-MM' (ค่าเริ่มต้น = เดือนปัจจุบัน)
  *   basis        - 'BANK' (ค่าเริ่มต้น) | 'GL' เกณฑ์วันที่ที่ใช้จัดรายการเข้าเดือน
  *   bankCode     - รหัสธนาคาร หรือ 'ALL'
  *   trendMonths  - จำนวนเดือนย้อนหลังของกราฟแนวโน้ม (6 หรือ 12, ค่าเริ่มต้น 6)
  *
- * ใช้ตัวสร้าง SQL ชุดเดียวกับหน้า Reports (buildUnifiedCte) เพื่อให้ยอดบน dashboard
+ * ใช้ตัวสร้าง SQL ชุดเดียวกับหน้า Reports (buildReportCte) เพื่อให้ยอดบน dashboard
  * ตรงกับรีพอร์ตและไฟล์ Excel เสมอ — ต่างกันแค่ระดับการ group เท่านั้น
+ * การแบ่ง AR/AP ก็ใช้ทิศทางของบรรทัดแบบเดียวกับรีพอร์ต (AR = IN, AP = OUT)
  */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(VIEWER_ROLES);
@@ -87,6 +91,8 @@ export async function GET(req: NextRequest) {
     const rawBank = params.get('bankCode');
     const bankCode = rawBank && rawBank !== 'ALL' ? rawBank : null;
     const trendMonths = params.get('trendMonths') === '12' ? 12 : 6;
+    const rawSide = params.get('side')?.toUpperCase();
+    const side: ReportSide | 'ALL' = rawSide === 'AP' ? 'AP' : rawSide === 'ALL' ? 'ALL' : 'AR';
 
     const { from, to } = monthBounds(month);
 
@@ -95,23 +101,33 @@ export async function GET(req: NextRequest) {
     const today = toIsoDate(now);
     const asOf = today < to ? today : to;
 
-    const monthFilters: ReportFilters = { from, to, basis, status: 'ALL', bankCode, q: null };
+    const monthFilters: ReportFilters = {
+      from,
+      to,
+      basis,
+      status: 'ALL',
+      side: side === 'ALL' ? undefined : side,
+      bankCode,
+      q: null,
+    };
     const trendFilters: ReportFilters = {
       ...monthFilters,
       from: monthsBackStart(month, trendMonths),
     };
 
     const pool = await getPool();
-    const cte = buildUnifiedCte(monthFilters);
-    const trendCte = buildUnifiedCte(trendFilters);
+    const allSides = side === 'ALL';
+    const cte = buildReportCte(monthFilters, { allSides });
+    const trendCte = buildReportCte(trendFilters, { allSides });
+    // ยอดสรุปอ่านทั้งสองฝั่งเสมอ เพื่อได้ตัวเลขบนแท็บ AR/AP มาพร้อมกันใน query เดียว แล้วค่อยกรองฝั่งใน JS
+    const summaryCte = buildReportCte(monthFilters, { allSides: true });
 
     const [summaryResult, dailyResult, agingResult, outstandingResult, trendResult, bankCodesResult] =
       await Promise.all([
         // 1) ยอดรวมแยกตามสถานะ + ธนาคาร — ป้อนทั้งการ์ด KPI, โดนัทสถานะ และตารางแยกธนาคาร
         bindFilters(pool.request(), monthFilters).query(`
-          ${cte}
-          ${SUMMARY_SELECT}
-          GROUP BY Status, COALESCE(BankCode, N'-')
+          ${summaryCte}
+          ${SUMMARY_QUERY}
         `),
 
         // 2) ความเคลื่อนไหวรายวันภายในเดือน
@@ -124,7 +140,7 @@ export async function GET(req: NextRequest) {
               + SUM(CASE WHEN GLEntryNo IS NOT NULL THEN 1 ELSE 0 END) AS Lines_,
             SUM(CASE WHEN BankDirection = 'IN' THEN BankAmount ELSE 0 END) AS BankIn_,
             SUM(CASE WHEN BankDirection = 'OUT' THEN BankAmount ELSE 0 END) AS BankOut_
-          FROM Unified
+          FROM Scoped
           WHERE EffDate IS NOT NULL
           GROUP BY EffDate, Status
           ORDER BY EffDate
@@ -139,8 +155,9 @@ export async function GET(req: NextRequest) {
               Status,
               ${AGING_CASE} AS Bucket_,
               COUNT(*) AS Rows_,
-              SUM(COALESCE(BankAmount, GLAmount, 0)) AS Amount_
-            FROM Unified
+              SUM(COALESCE(BankAmount, 0)) AS BankAmount_,
+              SUM(COALESCE(GLAmount, 0)) AS GlAmount_
+            FROM Scoped
             WHERE Status IN ('UNMATCHED', 'SUSPENSE') AND EffDate IS NOT NULL
             GROUP BY Status, ${AGING_CASE}
             ORDER BY Status, Bucket_
@@ -158,7 +175,7 @@ export async function GET(req: NextRequest) {
             COALESCE(BankDirection, GLDirection) AS Direction_,
             CASE WHEN BankLineId IS NOT NULL THEN 'BANK' ELSE 'GL' END AS Side_,
             COALESCE(NULLIF(BankDescription, N''), GLDocumentNo, GLBankAccountName) AS Label_
-          FROM Unified
+          FROM Scoped
           WHERE Status IN ('UNMATCHED', 'SUSPENSE')
           ORDER BY COALESCE(BankAmount, GLAmount) DESC
         `),
@@ -173,7 +190,7 @@ export async function GET(req: NextRequest) {
               + SUM(CASE WHEN GLEntryNo IS NOT NULL THEN 1 ELSE 0 END) AS Lines_,
             SUM(COALESCE(BankSigned, 0)) AS BankNet_,
             SUM(COALESCE(GLSigned, 0)) AS GlNet_
-          FROM Unified
+          FROM Scoped
           WHERE EffDate IS NOT NULL
           GROUP BY DATEFROMPARTS(YEAR(EffDate), MONTH(EffDate), 1), Status
           ORDER BY Month_
@@ -190,7 +207,16 @@ export async function GET(req: NextRequest) {
         `),
       ]);
 
-    const summary = buildSummary(summaryResult.recordset);
+    const summaryRows = summaryResult.recordset;
+    const summary = buildSummary(
+      side === 'ALL' ? summaryRows : summaryRows.filter((r) => r.Direction === SIDE_DIRECTION[side])
+    );
+    // ป้ายบนแท็บนับเป็นบรรทัด (Bank + GL) ให้หน่วยเดียวกับการ์ดบนหน้า dashboard
+    const linesOf = (direction: 'IN' | 'OUT') =>
+      summaryRows
+        .filter((r) => r.Direction === direction)
+        .reduce((sum, r) => sum + Number(r.BankLines_ ?? 0) + Number(r.GlLines_ ?? 0), 0);
+    const sideCounts = { AR: linesOf('IN'), AP: linesOf('OUT') };
 
     const daily = dailyResult.recordset.map((r) => ({
       date: isoDay(r.EffDate),
@@ -204,7 +230,8 @@ export async function GET(req: NextRequest) {
       status: r.Status as StatusKey,
       bucket: Number(r.Bucket_ ?? 0),
       rows: Number(r.Rows_ ?? 0),
-      amount: Number(r.Amount_ ?? 0),
+      bankAmount: Number(r.BankAmount_ ?? 0),
+      glAmount: Number(r.GlAmount_ ?? 0),
     }));
 
     const outstanding = outstandingResult.recordset.map((r) => ({
@@ -239,6 +266,8 @@ export async function GET(req: NextRequest) {
       basis,
       bankCode: bankCode ?? 'ALL',
       trendMonths,
+      side,
+      sideCounts,
       summary,
       daily,
       aging,

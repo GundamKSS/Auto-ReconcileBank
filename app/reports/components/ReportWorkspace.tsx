@@ -18,12 +18,16 @@ type Direction = "IN" | "OUT";
 type StatusValue = "MATCHED" | "SUSPENSE" | "UNMATCHED";
 type StatusFilter = StatusValue | "ALL";
 type DateBasis = "BANK" | "GL";
+type Side = "AR" | "AP";
 
 type ReportRow = {
   rowKey: string;
   status: StatusValue;
+  direction: Direction;
   matchId: number | null;
   groupNum: number | null;
+  pairRn: number | null;
+  groupRows: number;
   bankCode: string | null;
   createdBy: string | null;
   createdAt: string | null;
@@ -45,7 +49,8 @@ type ReportRow = {
     direction: Direction;
     amount: number;
   } | null;
-  diff: number;
+  /** ผลต่างของทั้งกลุ่ม มีค่าเฉพาะแถวสุดท้ายของกลุ่ม */
+  diff: number | null;
 };
 
 type SummaryBucket = {
@@ -78,6 +83,11 @@ const BANK_LABEL: Record<string, string> = {
   KTB: "KTB",
   NOT_BANK: "ไม่ใช่บัญชีธนาคาร",
 };
+
+const SIDES: { value: Side; label: string; hint: string }[] = [
+  { value: "AR", label: "AR", hint: "เงินเข้า" },
+  { value: "AP", label: "AP", hint: "เงินออก" },
+];
 
 const STATUSES: { value: StatusFilter; label: string }[] = [
   { value: "MATCHED", label: "จับคู่แล้ว" },
@@ -163,60 +173,94 @@ function EmptyCell() {
   return <span className="text-gray-300">—</span>;
 }
 
-function ReportTableRow({ row }: { row: ReportRow }) {
-  const hasDiff = Math.abs(row.diff) >= 0.005;
+/**
+ * ช่องว่างของฝั่งที่ไม่มีบรรทัดในแถวนี้ — ถ้าอยู่ในกลุ่มหลายแถว (1:N / N:1) ยอดของฝั่งนั้นอยู่ในแถวอื่นของกลุ่มแล้ว
+ * บอกไว้ชัดๆ ไม่ให้ดูเหมือนรายการตกหล่น
+ */
+function MissingSide({ inGroup, first }: { inGroup: boolean; first?: boolean }) {
+  if (!inGroup) return <EmptyCell />;
+  return first ? <span className="text-[11px] text-gray-400 whitespace-nowrap">รวมในกลุ่มเดียวกัน</span> : null;
+}
+
+function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStart: boolean; shaded: boolean }) {
+  const inGroup = row.groupRows > 1;
+  const hasDiff = row.diff !== null && Math.abs(row.diff) >= 0.005;
+
   return (
-    <tr className="border-b border-gray-100 hover:bg-gray-50/70">
-      <td className="px-3 py-2 align-top whitespace-nowrap">
-        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[row.status]}`}>
-          {STATUS_LABEL[row.status]}
-        </span>
-        <p className="text-[10px] text-gray-400 mt-1">
-          {row.matchId ? `#${row.matchId} · กลุ่ม ${row.groupNum}` : "—"}
-          {row.bankCode ? ` · ${row.bankCode}` : ""}
-        </p>
+    <tr
+      className={`hover:bg-gray-100/60 ${shaded ? "bg-slate-50/70" : ""} ${
+        groupStart ? "border-t border-gray-200" : "border-t border-transparent"
+      }`}
+    >
+      <td className={`px-3 py-2 align-top whitespace-nowrap ${inGroup ? "border-l-2 border-violet-300" : "border-l-2 border-transparent"}`}>
+        {groupStart ? (
+          <>
+            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[row.status]}`}>
+              {STATUS_LABEL[row.status]}
+            </span>
+            <p className="text-[10px] text-gray-400 mt-1">
+              {row.matchId ? `#${row.matchId} · กลุ่ม ${row.groupNum}` : "—"}
+              {row.bankCode ? ` · ${row.bankCode}` : ""}
+              {inGroup ? ` · ${row.groupRows} แถว` : ""}
+            </p>
+          </>
+        ) : (
+          <p className="text-[10px] text-gray-400 pl-1">
+            ↳ {row.pairRn}/{row.groupRows}
+          </p>
+        )}
       </td>
 
       {/* ฝั่ง Bank Statement */}
       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">
-        {row.bank ? formatDay(row.bank.date) : <EmptyCell />}
+        {row.bank ? formatDay(row.bank.date) : <MissingSide inGroup={inGroup} first />}
       </td>
       <td className="px-3 py-2 align-top max-w-[280px]">
-        {row.bank ? <span className="text-gray-700 line-clamp-2">{row.bank.description || "-"}</span> : <EmptyCell />}
+        {row.bank ? <span className="text-gray-700 line-clamp-2">{row.bank.description || "-"}</span> : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">
-        {row.bank ? row.bank.ref || "-" : <EmptyCell />}
+        {row.bank ? row.bank.ref || "-" : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap">
-        {row.bank ? <DirectionBadge direction={row.bank.direction} /> : <EmptyCell />}
+        {row.bank ? <DirectionBadge direction={row.bank.direction} /> : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap text-right tabular-nums text-gray-900">
-        {row.bank ? formatAmount(row.bank.amount) : <EmptyCell />}
+        {row.bank ? formatAmount(row.bank.amount) : <MissingSide inGroup={inGroup} />}
       </td>
 
       {/* ฝั่ง BC365 (GL) */}
       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500 border-l border-gray-100">
-        {row.gl ? formatDay(row.gl.date) : <EmptyCell />}
+        {row.gl ? formatDay(row.gl.date) : <MissingSide inGroup={inGroup} first />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-700">
-        {row.gl ? row.gl.documentNo || "-" : <EmptyCell />}
+        {row.gl ? row.gl.documentNo || "-" : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top max-w-[220px]">
-        {row.gl ? <span className="text-gray-500 line-clamp-2">{row.gl.accountName || row.gl.accountNo || "-"}</span> : <EmptyCell />}
+        {row.gl ? (
+          <span className="text-gray-500 line-clamp-2">{row.gl.accountName || row.gl.accountNo || "-"}</span>
+        ) : (
+          <MissingSide inGroup={inGroup} />
+        )}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap">
-        {row.gl ? <DirectionBadge direction={row.gl.direction} /> : <EmptyCell />}
+        {row.gl ? <DirectionBadge direction={row.gl.direction} /> : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap text-right tabular-nums text-gray-900">
-        {row.gl ? formatAmount(row.gl.amount) : <EmptyCell />}
+        {row.gl ? formatAmount(row.gl.amount) : <MissingSide inGroup={inGroup} />}
       </td>
 
+      {/* ผลต่างคิดทั้งกลุ่ม แสดงครั้งเดียวที่แถวสุดท้ายของกลุ่ม */}
       <td
         className={`px-3 py-2 align-top whitespace-nowrap text-right tabular-nums border-l border-gray-100 ${
           hasDiff ? "text-red-600 font-medium" : "text-gray-300"
         }`}
       >
-        {hasDiff ? formatAmount(row.diff) : "0.00"}
+        {row.diff === null ? null : (
+          <>
+            {formatAmount(hasDiff ? row.diff : 0)}
+            {inGroup && <span className="block text-[10px] font-normal text-gray-400">รวมทั้งกลุ่ม</span>}
+          </>
+        )}
       </td>
     </tr>
   );
@@ -225,6 +269,7 @@ function ReportTableRow({ row }: { row: ReportRow }) {
 export default function ReportWorkspace() {
   const initialRange = useMemo(() => monthRange(new Date()), []);
 
+  const [side, setSide] = useState<Side>("AR");
   const [status, setStatus] = useState<StatusFilter>("MATCHED");
   const [bankCode, setBankCode] = useState("ALL");
   const [basis, setBasis] = useState<DateBasis>("BANK");
@@ -241,6 +286,7 @@ export default function ReportWorkspace() {
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
+  const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
 
   const requestIdRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
@@ -254,11 +300,11 @@ export default function ReportWorkspace() {
   }, [searchInput]);
 
   const params = useMemo(() => {
-    const p = new URLSearchParams({ from, to, basis, status });
+    const p = new URLSearchParams({ side, from, to, basis, status });
     if (bankCode !== "ALL") p.set("bankCode", bankCode);
     if (q) p.set("q", q);
     return p.toString();
-  }, [from, to, basis, status, bankCode, q]);
+  }, [side, from, to, basis, status, bankCode, q]);
 
   // โหลดหน้าแรกใหม่ทุกครั้งที่ filter เปลี่ยน (พร้อมยอดสรุปของทั้งชุด)
   useEffect(() => {
@@ -283,6 +329,7 @@ export default function ReportWorkspace() {
         setTotal(data.total ?? data.rows.length);
         setSummary(data.summary ?? null);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
+        setSideCounts(data.sideCounts ?? null);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
           setError("เชื่อมต่อ server ไม่ได้");
@@ -382,7 +429,7 @@ export default function ReportWorkspace() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = match?.[1] ?? `reconciliation-report_${from}_${to}.xlsx`;
+      a.download = match?.[1] ?? `reconciliation-report_${side.toLowerCase()}_${from}_${to}.xlsx`;
       document.body.appendChild(a);
       a.click();
       a.remove();
@@ -395,6 +442,19 @@ export default function ReportWorkspace() {
   }
 
   const t = summary?.totals;
+  const sideHint = side === "AR" ? "เงินเข้า" : "เงินออก";
+
+  // แถวของกลุ่มเดียวกันถูกเรียงให้ติดกันจากฝั่ง server แล้ว — ที่นี่แค่หาจุดเริ่มกลุ่มและสลับสีพื้นทีละกลุ่ม
+  const displayRows = useMemo(() => {
+    let band = 0;
+    return rows.map((row, i) => {
+      const prev = rows[i - 1];
+      const groupStart =
+        !prev || row.matchId === null || prev.matchId !== row.matchId || prev.groupNum !== row.groupNum;
+      if (groupStart && i > 0) band++;
+      return { row, groupStart, shaded: band % 2 === 1 };
+    });
+  }, [rows]);
 
   return (
     <div className="flex-1 min-w-0 p-4 sm:p-6">
@@ -406,12 +466,39 @@ export default function ReportWorkspace() {
           className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
         >
           {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-          Export Excel
+          Export Excel ({side})
         </button>
       </div>
       <p className="text-sm text-gray-500 mb-5">
-        สรุปการกระทบยอดของ {monthLabel(from)} — 1 แถวคือ 1 คู่ Bank–GL ในกลุ่มย่อยเดียวกัน เลื่อนลงเพื่อโหลดเพิ่มครั้งละ 50 รายการ
+        สรุปการกระทบยอดของ {monthLabel(from)} แยกฝั่ง AR (เงินเข้า) และ AP (เงินออก) — 1 แถวคือ 1 คู่ Bank–GL ในกลุ่มย่อยเดียวกัน
+        เลื่อนลงเพื่อโหลดเพิ่มครั้งละ 50 รายการ
       </p>
+
+      {/* ---------- แท็บ AR / AP ---------- */}
+      <div className="flex items-center gap-1 mb-4 border-b border-gray-200">
+        {SIDES.map((sd) => {
+          const active = side === sd.value;
+          return (
+            <button
+              key={sd.value}
+              onClick={() => setSide(sd.value)}
+              className={`-mb-px inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
+                active ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-700"
+              }`}
+            >
+              {sd.label}
+              <span className="text-xs font-normal">{sd.hint}</span>
+              <span
+                className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full tabular-nums ${
+                  active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {sideCounts ? sideCounts[sd.value].toLocaleString() : "…"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
 
@@ -547,6 +634,7 @@ export default function ReportWorkspace() {
         เกณฑ์วันที่ใช้กับรายการที่จับคู่แล้ว โดยดูทั้งกลุ่มย่อย — ถ้าฝั่งที่เลือกมีบรรทัดอยู่ในช่วงวันที่ จะดึงคู่ของอีกฝั่งมาด้วยแม้จะข้ามเดือน
         ถ้ากลุ่มไหนไม่มีบรรทัดฝั่งที่เลือกเลย (เช่นรายการพักไว้ที่มีแต่ฝั่ง BC) จะใช้วันที่ของอีกฝั่งแทน
         ส่วนรายการที่ยังไม่จับคู่ไม่มีคู่ให้ยึด จึงกรองด้วยวันที่ของตัวเองเสมอ
+        กลุ่มที่เป็น 1:N หรือ N:1 จะแสดงหลายแถวติดกัน (แถบสีม่วงด้านซ้าย) และผลต่างคิดรวมทั้งกลุ่ม แสดงที่แถวสุดท้ายของกลุ่ม
       </p>
 
       {/* ---------- การ์ดสรุป ---------- */}
@@ -557,14 +645,14 @@ export default function ReportWorkspace() {
           sub={t ? `${t.matches.toLocaleString()} match · Bank ${t.bankLines.toLocaleString()} / BC ${t.glLines.toLocaleString()} บรรทัด` : undefined}
         />
         <SummaryCard
-          label="ฝั่ง Bank สุทธิ"
-          value={t ? formatAmount(t.bankNet) : "…"}
-          sub={t ? `เข้า ${formatAmount(t.bankIn)} · ออก ${formatAmount(t.bankOut)}` : undefined}
+          label={`Bank ${sideHint}`}
+          value={t ? formatAmount(side === "AR" ? t.bankIn : t.bankOut) : "…"}
+          sub={t ? `${t.bankLines.toLocaleString()} บรรทัด` : undefined}
         />
         <SummaryCard
-          label="ฝั่ง BC สุทธิ"
-          value={t ? formatAmount(t.glNet) : "…"}
-          sub={t ? `เข้า ${formatAmount(t.glIn)} · ออก ${formatAmount(t.glOut)}` : undefined}
+          label={`BC ${sideHint}`}
+          value={t ? formatAmount(side === "AR" ? t.glIn : t.glOut) : "…"}
+          sub={t ? `${t.glLines.toLocaleString()} บรรทัด` : undefined}
         />
         <SummaryCard
           label="ผลต่าง (Bank − BC)"
@@ -604,7 +692,7 @@ export default function ReportWorkspace() {
                   ฝั่ง BC365 (GL)
                 </th>
                 <th rowSpan={2} className="px-3 py-2 text-right text-xs font-semibold whitespace-nowrap border-l border-gray-100">
-                  ผลต่าง
+                  ผลต่างของกลุ่ม
                   <span className="block text-[10px] font-normal text-gray-400">Bank − BC</span>
                 </th>
               </tr>
@@ -622,8 +710,8 @@ export default function ReportWorkspace() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <ReportTableRow key={row.rowKey} row={row} />
+              {displayRows.map(({ row, groupStart, shaded }) => (
+                <ReportTableRow key={row.rowKey} row={row} groupStart={groupStart} shaded={shaded} />
               ))}
             </tbody>
           </table>

@@ -78,8 +78,16 @@ export const menuItems: MenuItem[] = [
 export function getCurrentRole(): Role | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem('user');
-    if (!raw) return null;
+    return roleFromStoredUser(localStorage.getItem('user'));
+  } catch {
+    return null;
+  }
+}
+
+// แปลงค่าดิบของคีย์ 'user' ใน localStorage เป็นสิทธิ์ — แยกออกมาให้ RouteGuard คำนวณระหว่าง render ได้
+export function roleFromStoredUser(raw: string | null): Role | null {
+  if (!raw) return null;
+  try {
     return normalizeRole((JSON.parse(raw) as UserSession).roleProg);
   } catch {
     return null;

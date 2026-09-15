@@ -45,15 +45,15 @@ export default function UnmatchConfirmModal({
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.15 }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-md px-4"
       onClick={() => !busy && onCancel()}
     >
       <motion.div
-        initial={{ opacity: 0, scale: 0.96, y: 6 }}
+        initial={{ opacity: 0, scale: 0.9, y: 14 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.96, y: 6 }}
-        transition={{ duration: 0.15 }}
-        className="w-full max-w-lg bg-white rounded-2xl shadow-xl flex flex-col max-h-[85vh]"
+        exit={{ opacity: 0, scale: 0.96, y: 6, transition: { duration: 0.15 } }}
+        transition={{ type: "spring", stiffness: 420, damping: 26 }}
+        className="w-full max-w-lg bg-white/80 backdrop-blur-2xl backdrop-saturate-150 border border-white/70 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
@@ -94,7 +94,7 @@ export default function UnmatchConfirmModal({
             </div>
           </div>
 
-          <div className="border border-gray-200 rounded-xl divide-y divide-gray-100 mb-4 max-h-40 overflow-y-auto">
+          <div className="bg-white border border-gray-200 rounded-xl divide-y divide-gray-100 mb-4 max-h-40 overflow-y-auto">
             {targets.map((t) => (
               <div key={t.key} className="flex items-center gap-2 text-xs px-3 py-2">
                 <span className="font-medium text-gray-900 shrink-0">#{t.matchId}</span>

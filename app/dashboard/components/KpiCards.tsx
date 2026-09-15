@@ -1,5 +1,6 @@
 'use client';
 
+import { SourceTag } from './SourceTag';
 import StatCard from './StatCard';
 import {
   formatAmount,
@@ -42,13 +43,32 @@ export default function KpiCards({ data }: { data: DashboardData }) {
 
   const hasDiff = Math.abs(all.diff) >= 0.005;
 
+  // ทุกยอดเงินกำกับแหล่งที่มา (Bank / BC) ด้วยป้าย ไม่ต้องเดาว่าตัวเลขมาจากฝั่งไหน
+  // ดูฝั่งเดียว: เทียบยอดทิศทางเดียวกันระหว่าง Bank กับ BC ให้เห็นว่าผลต่างมาจากไหน
+  // ดูรวม: ยอดสองทิศทางหักล้างกันเอง จึงแสดงเงินเข้า/ออกฝั่ง Bank แทน
+  const moneyCards: { key: string; label: string; source: 'BANK' | 'GL'; value: number; tone: string }[] =
+    data.side === 'AR'
+      ? [
+          { key: 'in-bank', label: 'เงินเข้า จาก', source: 'BANK', value: all.bankIn, tone: 'text-emerald-600' },
+          { key: 'in-bc', label: 'เงินเข้า จาก', source: 'GL', value: all.glIn, tone: 'text-emerald-600' },
+        ]
+      : data.side === 'AP'
+        ? [
+            { key: 'out-bank', label: 'เงินออก จาก', source: 'BANK', value: all.bankOut, tone: 'text-rose-600' },
+            { key: 'out-bc', label: 'เงินออก จาก', source: 'GL', value: all.glOut, tone: 'text-rose-600' },
+          ]
+        : [
+            { key: 'in-bank', label: 'เงินเข้า จาก', source: 'BANK', value: all.bankIn, tone: 'text-emerald-600' },
+            { key: 'out-bank', label: 'เงินออก จาก', source: 'BANK', value: all.bankOut, tone: 'text-rose-600' },
+          ];
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="บรรทัดทั้งหมด"
           value={formatCount(all.lines)}
-          sub={`Bank ${formatCount(all.bankLines)} · GL ${formatCount(all.glLines)}`}
+          sub={`Bank ${formatCount(all.bankLines)} · BC ${formatCount(all.glLines)}`}
           delta={relDelta(all.lines, prev?.lines)}
           higherIsBetter="neutral"
         />
@@ -79,18 +99,22 @@ export default function KpiCards({ data }: { data: DashboardData }) {
 
       {/* แถบยอดเงิน — เป็นข้อมูลประกอบ ไม่ใช่ตัวชี้วัดหลัก จึงทำให้เตี้ยกว่าการ์ดด้านบน */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-        <div className="rounded-[20px] border border-white/80 bg-white px-6 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">เงินเข้า (Bank)</p>
-          <p className="mt-1 text-xl font-bold tabular-nums text-emerald-600">{formatAmount(all.bankIn)}</p>
-        </div>
+        {moneyCards.map((card) => (
+          <div
+            key={card.key}
+            className="rounded-[20px] border border-white/80 bg-white px-6 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]"
+          >
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
+              {card.label} <SourceTag source={card.source} />
+            </p>
+            <p className={`mt-1 text-xl font-bold tabular-nums ${card.tone}`}>{formatAmount(card.value)}</p>
+          </div>
+        ))}
 
         <div className="rounded-[20px] border border-white/80 bg-white px-6 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">เงินออก (Bank)</p>
-          <p className="mt-1 text-xl font-bold tabular-nums text-rose-600">{formatAmount(all.bankOut)}</p>
-        </div>
-
-        <div className="rounded-[20px] border border-white/80 bg-white px-6 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">ผลต่างสุทธิ Bank − GL</p>
+          <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">
+            ผลต่างสุทธิ <SourceTag source="BANK" /> − <SourceTag source="GL" />
+          </p>
           <p className={`mt-1 text-xl font-bold tabular-nums ${hasDiff ? 'text-rose-600' : 'text-slate-900'}`}>
             {formatAmount(all.diff)}
           </p>

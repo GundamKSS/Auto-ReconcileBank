@@ -1,5 +1,6 @@
 'use client';
 
+import { SourceTag } from './SourceTag';
 import { AGING_LABELS, STATUS_COLOR, STATUS_LABEL, compactAmount, formatCount, type DashboardData } from './shared';
 
 export default function AgingPanel({ data }: { data: DashboardData }) {
@@ -9,12 +10,15 @@ export default function AgingPanel({ data }: { data: DashboardData }) {
 
     const unmatched = pick('UNMATCHED');
     const suspense = pick('SUSPENSE');
+    const both = [...unmatched, ...suspense];
 
     return {
       label,
       unmatchedRows: unmatched.reduce((a, r) => a + r.rows, 0),
       suspenseRows: suspense.reduce((a, r) => a + r.rows, 0),
-      amount: [...unmatched, ...suspense].reduce((a, r) => a + r.amount, 0),
+      // เก็บยอดแยกแหล่งที่มา ไม่รวมเป็นก้อนเดียว — ไม่งั้นบอกไม่ได้ว่าเงินค้างอยู่ฝั่ง Bank หรือฝั่ง BC
+      bankAmount: both.reduce((a, r) => a + r.bankAmount, 0),
+      glAmount: both.reduce((a, r) => a + r.glAmount, 0),
     };
   });
 
@@ -45,8 +49,7 @@ export default function AgingPanel({ data }: { data: DashboardData }) {
             <div className="mb-1.5 flex items-baseline justify-between gap-3 text-sm">
               <span className="text-slate-600">{r.label}</span>
               <span className="tabular-nums text-slate-500">
-                <span className="font-semibold text-slate-900">{formatCount(total)}</span> รายการ ·{' '}
-                {compactAmount(r.amount)}
+                <span className="font-semibold text-slate-900">{formatCount(total)}</span> รายการ
               </span>
             </div>
 
@@ -61,6 +64,22 @@ export default function AgingPanel({ data }: { data: DashboardData }) {
                 style={{ width: `${(r.suspenseRows / max) * 100}%`, backgroundColor: STATUS_COLOR.SUSPENSE }}
               />
             </div>
+
+            {/* โชว์เฉพาะฝั่งที่มียอด — ป้ายบอกชัดว่าเป็นเงินค้างฝั่งไหน */}
+            {(r.bankAmount !== 0 || r.glAmount !== 0) && (
+              <div className="mt-1.5 flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-xs tabular-nums text-slate-500">
+                {r.bankAmount !== 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <SourceTag source="BANK" /> {compactAmount(r.bankAmount)}
+                  </span>
+                )}
+                {r.glAmount !== 0 && (
+                  <span className="inline-flex items-center gap-1">
+                    <SourceTag source="GL" /> {compactAmount(r.glAmount)}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

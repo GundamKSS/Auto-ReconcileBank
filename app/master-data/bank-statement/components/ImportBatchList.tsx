@@ -1,22 +1,25 @@
 "use client";
 
-import { FileSpreadsheet, ChevronRight, Trash2, Loader2, Inbox } from "lucide-react";
+import { FileSpreadsheet, ChevronRight, Trash2, Loader2, Inbox, Lock } from "lucide-react";
 
 export type ImportBatch = {
   ImportId: number;
   BankCode: string;
   FileName: string;
-  PeriodStart: string;
-  PeriodEnd: string;
+  PeriodStart: string | null;
+  PeriodEnd: string | null;
   ImportedRowCount: number;
   ImportedAt: string;
+  // จำนวนรายการในไฟล์ที่ยังจับคู่/พักไว้อยู่ — มากกว่า 0 = ลบทั้งไฟล์ไม่ได้จนกว่าจะยกเลิกการจับคู่
+  LockedCount: number;
 };
 
-function formatDate(iso: string) {
-  return new Date(iso).toISOString().slice(0, 10);
+export function formatDate(iso: string | null) {
+  return iso ? new Date(iso).toISOString().slice(0, 10) : "-";
 }
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+// API ส่งเวลามาเป็นเวลาจริงที่มี offset แล้ว — ระบุ time zone ไทยตรงๆ ให้ทุกเครื่องเห็นเวลาเดียวกัน
+export function formatDateTime(iso: string) {
+  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" });
 }
 
 export default function ImportBatchList({
@@ -24,13 +27,11 @@ export default function ImportBatchList({
   loading,
   onSelect,
   onDelete,
-  deletingId,
 }: {
   batches: ImportBatch[];
   loading: boolean;
   onSelect: (batch: ImportBatch) => void;
   onDelete: (batch: ImportBatch) => void;
-  deletingId: number | null;
 }) {
   if (loading) {
     return (
@@ -66,23 +67,35 @@ export default function ImportBatchList({
               <p className="text-sm font-semibold text-gray-900 truncate">{b.FileName}</p>
               <p className="text-xs text-gray-400 mt-0.5">
                 {formatDate(b.PeriodStart)} – {formatDate(b.PeriodEnd)} ·{" "}
-                <span className="text-gray-500 font-medium">{b.ImportedRowCount.toLocaleString()} รายการ</span> ·
-                นำเข้าเมื่อ {formatDateTime(b.ImportedAt)}
+                <span className="text-gray-500 font-medium">{b.ImportedRowCount.toLocaleString()} รายการ</span>
+                {b.LockedCount > 0 && (
+                  <>
+                    {" "}
+                    · <span className="text-green-700 font-medium">จับคู่แล้ว {b.LockedCount.toLocaleString()}</span>
+                  </>
+                )}{" "}
+                · นำเข้าเมื่อ {formatDateTime(b.ImportedAt)}
               </p>
             </div>
             <ChevronRight size={16} className="text-gray-300 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all shrink-0" />
           </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onDelete(b);
-            }}
-            disabled={deletingId === b.ImportId}
-            className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0 disabled:opacity-50"
-            title="ลบไฟล์นี้ทั้งหมด"
-          >
-            {deletingId === b.ImportId ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-          </button>
+          {b.LockedCount > 0 ? (
+            <span
+              title={`ลบไม่ได้ — มี ${b.LockedCount.toLocaleString()} รายการที่จับคู่/พักไว้อยู่ ต้องยกเลิกการจับคู่ก่อน`}
+              className="p-2 text-gray-300 shrink-0 cursor-not-allowed"
+            >
+              <Lock size={16} />
+            </span>
+          ) : (
+            <button
+              onClick={() => onDelete(b)}
+              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors shrink-0"
+              title="ลบไฟล์นี้ทั้งไฟล์"
+              aria-label={`ลบไฟล์ ${b.FileName}`}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       ))}
     </div>

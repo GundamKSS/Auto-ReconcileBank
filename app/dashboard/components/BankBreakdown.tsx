@@ -1,5 +1,6 @@
 'use client';
 
+import { SourceTag } from './SourceTag';
 import { bankLabel, formatAmount, formatCount, sumBuckets, type DashboardData } from './shared';
 
 /** ยุบ bucket ทั้งหมดให้เหลือแถวละธนาคาร แล้วเรียงจากที่มีบรรทัดเยอะสุด */
@@ -40,9 +41,17 @@ export default function BankBreakdown({ data }: { data: DashboardData }) {
             <th className="px-2 py-2">ธนาคาร</th>
             <th className="px-2 py-2 text-right">บรรทัด</th>
             <th className="px-2 py-2">อัตรากระทบยอด</th>
-            <th className="px-2 py-2 text-right">Bank สุทธิ</th>
-            <th className="px-2 py-2 text-right">GL สุทธิ</th>
-            <th className="px-2 py-2 text-right">ผลต่าง</th>
+            <th className="px-2 py-2 text-right">
+              <span className="inline-flex items-center gap-1.5">
+                สุทธิ <SourceTag source="BANK" />
+              </span>
+            </th>
+            <th className="px-2 py-2 text-right">
+              <span className="inline-flex items-center gap-1.5">
+                สุทธิ <SourceTag source="GL" />
+              </span>
+            </th>
+            <th className="px-2 py-2 text-right">ผลต่าง Bank − BC</th>
           </tr>
         </thead>
 
@@ -57,9 +66,9 @@ export default function BankBreakdown({ data }: { data: DashboardData }) {
 
                 <td className="px-2 py-2.5 text-right tabular-nums text-slate-700">
                   {formatCount(r.lines)}
-                  {/* แยกให้เห็นว่าบรรทัดมาจากฝั่งไหน — ธนาคารที่มีแต่ฝั่ง GL จะได้ยอด Bank สุทธิ 0 ซึ่งไม่ใช่ความผิดพลาด */}
+                  {/* แยกให้เห็นว่าบรรทัดมาจากฝั่งไหน — ธนาคารที่มีแต่ฝั่ง BC จะได้ยอดสุทธิฝั่ง Bank 0 ซึ่งไม่ใช่ความผิดพลาด */}
                   <span className="block text-[11px] text-slate-400">
-                    B {formatCount(r.bankLines)} · G {formatCount(r.glLines)}
+                    Bank {formatCount(r.bankLines)} · BC {formatCount(r.glLines)}
                   </span>
                 </td>
 

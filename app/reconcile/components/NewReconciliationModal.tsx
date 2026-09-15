@@ -111,16 +111,18 @@ export default function NewReconciliationModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4 transition-opacity ease-out"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-md px-4 transition-opacity ease-out"
       style={{ opacity: visible ? 1 : 0, transitionDuration: `${ANIM_MS}ms` }}
       onClick={() => !closing && closeWith(onCancel)}
     >
       <div
-        className="w-full max-w-md bg-white rounded-2xl shadow-xl transition-all ease-out"
+        className="w-full max-w-md bg-white/80 backdrop-blur-2xl backdrop-saturate-150 border border-white/70 rounded-2xl shadow-2xl transition-all ease-out"
         style={{
           opacity: visible ? 1 : 0,
-          transform: visible ? "scale(1) translateY(0)" : "scale(0.96) translateY(6px)",
-          transitionDuration: `${ANIM_MS}ms`,
+          transform: visible ? "scale(1) translateY(0)" : "scale(0.92) translateY(12px)",
+          // เปิด: เด้งเกินนิดแล้วเข้าที่ / ปิด: หดออกเร็วๆ ให้ทันจังหวะ closeWith
+          transitionDuration: visible ? "380ms" : `${ANIM_MS}ms`,
+          transitionTimingFunction: visible ? "cubic-bezier(0.34, 1.56, 0.64, 1)" : "ease-in",
         }}
         onClick={(e) => e.stopPropagation()}
       >

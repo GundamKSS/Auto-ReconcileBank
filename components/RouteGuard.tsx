@@ -1,54 +1,55 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { canAccessPath, firstAllowedPath, getCurrentRole } from '../lib/menu';
+import { useEffect, useSyncExternalStore } from 'react';
+import { canAccessPath, firstAllowedPath, roleFromStoredUser } from '../lib/menu';
 
-// หน้าที่เข้าได้โดยไม่ต้องมี session — ไม่ต้องเช็คสิทธิ์เมนู
-const PUBLIC_PATHS = ['/', '/login'];
+// หน้าที่เข้าได้โดยไม่ต้องมี session — ไม่ต้องเช็คสิทธิ์เมนู และไม่แสดง Sidebar
+export const PUBLIC_PATHS = ['/', '/login'];
 
 // ซ่อนเมนูใน Sidebar อย่างเดียวไม่พอ เพราะพิมพ์ URL เข้าตรงๆ ได้
 // ตัวนี้เช็ค path ปัจจุบันกับ auth ของเมนูใน lib/menu แล้วเด้งออกถ้าไม่มีสิทธิ์
 //
-// สำคัญ: ต้องไม่ render children จนกว่าจะเช็คสิทธิ์ของ "path ปัจจุบัน" เสร็จ
-// เดิม state เริ่มต้นเป็น "ผ่าน" ทำให้หน้าถูก render แล้ว effect ข้างในยิง API ออกไปก่อน
-// กว่าจะ redirect ก็ได้ข้อมูลกลับมาถึงเบราว์เซอร์ของคนที่ไม่มีสิทธิ์เรียบร้อยแล้ว
-// (ทดสอบแล้วเห็นจริง: role User เปิด /suspense แล้ว GET /api/history?matchType=SUSPENSE ตอบ 200)
+// สำคัญ: ต้องไม่ render children จนกว่าจะรู้ว่า "path ปัจจุบัน" เข้าได้
+// (เคยทดสอบเจอจริง: role User เปิด /suspense แล้ว GET /api/history?matchType=SUSPENSE ตอบ 200
+// เพราะหน้าถูก render และยิง API ออกไปก่อนจะ redirect)
 //
-// การจำ pathname ไว้คู่กับผลตรวจ ทำให้ตอนเปลี่ยนหน้าไม่เผลอใช้ผลตรวจของหน้าก่อนหน้าซ้ำ
+// ผลตรวจคำนวณระหว่าง render จากค่า localStorage โดยตรง — เดิมเก็บผลไว้ใน state แล้วตั้งค่าใน effect
+// ทำให้ทุกครั้งที่เปลี่ยนหน้ามีหนึ่งเฟรมที่หน้าจอว่างเปล่า (เห็นเป็นรอยกระพริบระหว่างหน้า)
+function subscribe(onChange: () => void) {
+  // เปลี่ยนใน tab เดียวกันไม่ต้องฟัง — getSnapshot ถูกอ่านใหม่ทุก render อยู่แล้ว
+  window.addEventListener('storage', onChange);
+  return () => window.removeEventListener('storage', onChange);
+}
+
+function readStoredUser() {
+  try {
+    return localStorage.getItem('user');
+  } catch {
+    return null;
+  }
+}
+
+const noSubscribe = () => () => {};
+
 export default function RouteGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [checked, setChecked] = useState<{ path: string; allowed: boolean } | null>(null);
+  // ฝั่ง server และตอน hydrate ยังอ่าน localStorage ไม่ได้ → ได้ null ทั้งคู่
+  const storedUser = useSyncExternalStore(subscribe, readStoredUser, () => null);
+  const hydrated = useSyncExternalStore(noSubscribe, () => true, () => false);
+
+  const isPublic = PUBLIC_PATHS.includes(pathname);
+  const role = roleFromStoredUser(storedUser);
+  const allowed = isPublic || (role !== null && canAccessPath(pathname, role));
 
   useEffect(() => {
-    // role อ่านจาก localStorage ได้เฉพาะหลัง mount — sync เข้า state ตรงๆ ไม่ได้
-    /* eslint-disable react-hooks/set-state-in-effect */
-    if (PUBLIC_PATHS.includes(pathname)) {
-      setChecked({ path: pathname, allowed: true });
-      return;
-    }
+    // ระหว่าง hydrate ค่า role ยังเป็น null เสมอ — ถ้า redirect ตอนนี้จะเตะคนที่ login อยู่แล้วออกไปหน้า login
+    if (!hydrated || allowed) return;
+    router.replace(role ? (firstAllowedPath(role) ?? '/login') : '/login');
+  }, [hydrated, allowed, role, router]);
 
-    const role = getCurrentRole();
-    if (!role) {
-      // ยังไม่ได้ login — ไม่ต้องรอ Sidebar เด้งให้ พาไปหน้า login เองเลย
-      setChecked({ path: pathname, allowed: false });
-      router.replace('/login');
-      return;
-    }
-
-    if (canAccessPath(pathname, role)) {
-      setChecked({ path: pathname, allowed: true });
-      return;
-    }
-
-    setChecked({ path: pathname, allowed: false });
-    router.replace(firstAllowedPath(role) ?? '/login');
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [pathname, router]);
-
-  // ยังตรวจไม่เสร็จ หรือผลตรวจเป็นของ path เก่า = ยังไม่ปล่อยให้หน้าทำงาน
-  if (checked?.path !== pathname || !checked.allowed) return null;
+  if (!allowed) return null;
 
   return <>{children}</>;
 }

@@ -584,7 +584,7 @@ function SuccessToast({ title, message, onClose }: { title: string; message: str
         @keyframes toastIn {
           from {
             opacity: 0;
-            transform: translateY(-10px) scale(0.98);
+            transform: translateY(-16px) scale(0.9);
           }
           to {
             opacity: 1;
@@ -593,11 +593,11 @@ function SuccessToast({ title, message, onClose }: { title: string; message: str
         }
       `}</style>
       <div
-        className="fixed top-5 right-5 z-50 flex items-start gap-3 bg-white border border-green-200 shadow-lg rounded-xl px-4 py-3 max-w-sm transition-all duration-200 ease-out"
+        className="fixed top-5 right-5 z-50 flex items-start gap-3 bg-white/85 backdrop-blur-xl backdrop-saturate-150 border border-green-200/60 shadow-xl rounded-xl px-4 py-3 max-w-sm transition-all duration-200 ease-out"
         style={
           leaving
             ? { opacity: 0, transform: "translateY(-10px) scale(0.98)" }
-            : { animation: "toastIn 250ms ease-out" }
+            : { animation: "toastIn 480ms cubic-bezier(0.34, 1.56, 0.64, 1)" }
         }
       >
         <CheckCircle2 size={20} className="text-green-600 shrink-0 mt-0.5" />
@@ -1126,47 +1126,7 @@ export default function ActiveWorkspace({
         />
       )}
 
-      {focusMode ? (
-        // โฟกัสตารางเต็มที่: เอาแถบหัวข้อ/filter เดิมออกจนหมด ไม่กินพื้นที่แถวใดๆ อีกต่อไป
-        // เหลือแค่กลุ่มไอคอนลอย (absolute) มุมขวาบน ลอยทับตารางแทน ให้ตารางขยายเต็มพื้นที่จริงๆ
-        // ปุ่มขยายกลับ (วงกลมแดง) ตั้งใจเน้นสีให้เห็นชัดว่ากดตรงนี้เพื่อย้อนกลับไปโหมดปกติได้
-        <div className="absolute top-3 right-4 sm:right-6 z-30 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-2rem)] bg-white/95 backdrop-blur border border-gray-200 rounded-full shadow-lg px-2 py-1.5">
-          <button
-            onClick={() => setFocusMode(false)}
-            className="p-2 text-red-600 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
-            title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
-          >
-            <Minimize2 size={14} />
-          </button>
-          <button
-            onClick={loadData}
-            disabled={loading || busy || syncingGl}
-            className="p-2 text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 disabled:opacity-50"
-            title="Reset — โหลดข้อมูลใหม่"
-          >
-            <RotateCcw size={14} />
-          </button>
-          <button
-            onClick={handleSuggestMatches}
-            disabled={loading || busy || syncingGl}
-            className="p-2 text-blue-600 border border-blue-200 bg-blue-50 rounded-full hover:bg-blue-100 disabled:opacity-50"
-            title="Suggest matches"
-          >
-            {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-          </button>
-          <button
-            onClick={onEditFilters}
-            className="p-2 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-50"
-            title="Edit — แก้ไขธนาคาร/ช่วงวันที่"
-          >
-            <Pencil size={14} />
-          </button>
-          <span className="hidden sm:inline text-xs text-gray-400 truncate max-w-[160px] pl-1">
-            {session.bankCode} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
-          </span>
-          {error && <span className="text-xs text-red-600 pl-1 basis-full">{error}</span>}
-        </div>
-      ) : (
+      {!focusMode && (
         <>
           <div className="px-4 sm:px-6 py-5 flex items-start justify-between gap-4 flex-wrap shrink-0">
             <div className="min-w-0">
@@ -1183,7 +1143,7 @@ export default function ActiveWorkspace({
                 title="ซ่อนแถบข้อมูลด้านบน เหลือแค่ไอคอน ให้เห็นตารางเทียบทั้ง 2 ฝั่งชัดขึ้น"
               >
                 <Maximize2 size={14} />
-                โฟกัสตาราง
+                Focus tables
               </button>
               <button
                 onClick={loadData}
@@ -1244,18 +1204,53 @@ export default function ActiveWorkspace({
                   />
                 </span>
               </button>
-              <button
-                onClick={onEditFilters}
-                className="flex items-center gap-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors"
-              >
-                <Pencil size={12} /> Edit
-              </button>
             </div>
           </div>
         </>
       )}
 
-      <div className="lg:flex-1 lg:min-h-0 px-4 sm:px-6 pb-4 lg:overflow-hidden">
+      <div className="relative lg:flex-1 lg:min-h-0 px-4 sm:px-6 pb-4 lg:overflow-hidden">
+        {focusMode && (
+          // โฟกัสตารางเต็มที่: เอาแถบหัวข้อ/filter เดิมออกจนหมด ไม่กินพื้นที่แถวใดๆ อีกต่อไป
+          // เหลือแค่กลุ่มไอคอนลอย (absolute) กึ่งกลางด้านล่างตาราง ลอยทับตารางแทน ให้ตารางขยายเต็มพื้นที่จริงๆ
+          // ปุ่มขยายกลับ (วงกลมแดง) ตั้งใจเน้นสีให้เห็นชัดว่ากดตรงนี้เพื่อย้อนกลับไปโหมดปกติได้
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-2rem)] bg-white/35 backdrop-blur-xl backdrop-saturate-150 border border-white/60 rounded-full shadow-xl px-2 py-1.5">
+            <button
+              onClick={() => setFocusMode(false)}
+              className="p-2 text-red-600 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
+              title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
+            >
+              <Minimize2 size={14} />
+            </button>
+            <button
+              onClick={loadData}
+              disabled={loading || busy || syncingGl}
+              className="p-2 text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 disabled:opacity-50"
+              title="Reset — โหลดข้อมูลใหม่"
+            >
+              <RotateCcw size={14} />
+            </button>
+            <button
+              onClick={handleSuggestMatches}
+              disabled={loading || busy || syncingGl}
+              className="p-2 text-blue-600 border border-blue-200 bg-blue-50 rounded-full hover:bg-blue-100 disabled:opacity-50"
+              title="Suggest matches"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+            </button>
+            <button
+              onClick={onEditFilters}
+              className="p-2 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-50"
+              title="เปลี่ยนเงื่อนไขการ Reconcile — ธนาคาร/ช่วงวันที่"
+            >
+              <Pencil size={14} />
+            </button>
+            <span className="hidden sm:inline text-xs text-gray-400 truncate max-w-[160px] pl-1">
+              {session.bankCode} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
+            </span>
+            {error && <span className="text-xs text-red-600 pl-1 basis-full">{error}</span>}
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:h-full">
           <Panel
             title="Bank statement"

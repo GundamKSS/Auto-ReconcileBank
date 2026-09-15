@@ -4,6 +4,19 @@ export type StatusKey = 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
 export type DateBasis = 'BANK' | 'GL';
 export type Direction = 'IN' | 'OUT';
 
+/** AR = เงินเข้า, AP = เงินออก — ความหมายเดียวกับแท็บในหน้า Reports; ALL = รวมทั้งสองฝั่ง */
+export type Side = 'AR' | 'AP' | 'ALL';
+
+export const SIDES: { value: Side; label: string; hint: string }[] = [
+  { value: 'AR', label: 'AR', hint: 'เงินเข้า' },
+  { value: 'AP', label: 'AP', hint: 'เงินออก' },
+  { value: 'ALL', label: 'รวม', hint: 'ทั้งสองฝั่ง' },
+];
+
+export function sideLabel(side: Side) {
+  return side === 'ALL' ? 'AR + AP' : `${side} (${side === 'AR' ? 'เงินเข้า' : 'เงินออก'})`;
+}
+
 export type SummaryBucket = {
   status: StatusKey;
   bankCode: string;
@@ -28,13 +41,17 @@ export type DashboardData = {
   basis: DateBasis;
   bankCode: string;
   trendMonths: number;
+  side: Side;
+  /** จำนวนบรรทัดของแต่ละฝั่ง ไม่ขึ้นกับฝั่งที่เลือก — ใช้เป็นป้ายบนแท็บ */
+  sideCounts: { AR: number; AP: number };
   summary: {
     total: number;
     buckets: SummaryBucket[];
     totals: Omit<SummaryBucket, 'status' | 'bankCode'>;
   };
   daily: { date: string | null; status: StatusKey; lines: number; bankIn: number; bankOut: number }[];
-  aging: { status: StatusKey; bucket: number; rows: number; amount: number }[];
+  /** ยอดเงินแยกแหล่งที่มา: bankAmount = ฝั่ง Bank Statement, glAmount = ฝั่ง BC365 */
+  aging: { status: StatusKey; bucket: number; rows: number; bankAmount: number; glAmount: number }[];
   outstanding: {
     rowKey: string;
     status: StatusKey;

@@ -1,6 +1,6 @@
 'use client';
 
-import { ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { DirectionTag, SourceTag } from './SourceTag';
 import { STATUS_BADGE, STATUS_LABEL, bankLabel, formatAmount, formatDay, type DashboardData } from './shared';
 
 export default function OutstandingList({ data }: { data: DashboardData }) {
@@ -21,18 +21,19 @@ export default function OutstandingList({ data }: { data: DashboardData }) {
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm text-slate-800">{item.label || '(ไม่มีคำอธิบาย)'}</p>
             <p className="mt-0.5 text-xs text-slate-400">
-              {formatDay(item.date)} · {item.side === 'BANK' ? 'Bank Statement' : 'BC365'}
+              {formatDay(item.date)}
               {item.bankCode ? ` · ${bankLabel(item.bankCode)}` : ''}
             </p>
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
-            {item.direction === 'IN' ? (
-              <ArrowDownLeft size={13} className="text-teal-600" />
-            ) : item.direction === 'OUT' ? (
-              <ArrowUpRight size={13} className="text-rose-500" />
-            ) : null}
+          {/* กำกับใต้ยอดเงินว่าเป็นเงินเข้า/ออก และมาจากฝั่ง Bank หรือ BC */}
+          <div className="flex shrink-0 flex-col items-end gap-1">
             <span className="text-sm font-semibold tabular-nums text-slate-900">{formatAmount(item.amount)}</span>
+            <span className="flex items-center gap-1 text-[10px] text-slate-400">
+              {item.direction && <DirectionTag direction={item.direction} />}
+              จาก
+              <SourceTag source={item.side} />
+            </span>
           </div>
         </li>
       ))}

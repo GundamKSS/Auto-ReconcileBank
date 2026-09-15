@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronRight,
-  ChevronDown,
   ChevronLeft,
   CalendarRange,
   SlidersHorizontal,
@@ -96,8 +96,11 @@ const GROUP_BADGE_COLORS = [
 function formatAmount(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
+// สร้าง formatter ครั้งเดียว — toLocaleString แบบใส่ options จะสร้าง Intl ใหม่ทุกครั้ง
+// ซึ่งหน้านี้เรียกทุกการ์ดทุกครั้งที่ติ๊ก checkbox (re-render ทั้งรายการ) ทำให้กดแล้วหน่วง
+const dateTimeFormatter = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short" });
 function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
+  return dateTimeFormatter.format(new Date(iso));
 }
 function formatDate(iso: string) {
   return new Date(iso).toISOString().slice(0, 10);
@@ -358,10 +361,14 @@ function MatchCard({
   const activeGlLineCount = activeGroups.reduce((s, g) => s + g.glLines.length, 0);
   const fullyReversed = activeGroups.length === 0;
 
+  // opacity ของการ์ดที่ยกเลิกหมดแล้วต้องใส่ผ่าน animate — framer ตั้ง opacity เป็น inline style ซึ่งจะทับ class opacity-70
   return (
-    <div
-      className={`bg-white border rounded-2xl overflow-hidden ${
-        fullyReversed ? "border-gray-200 opacity-70" : selectedCount > 0 ? "border-gray-900" : "border-gray-200"
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: fullyReversed ? 0.7 : 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className={`bg-white border rounded-2xl overflow-hidden transition-colors duration-200 ${
+        fullyReversed ? "border-gray-200" : selectedCount > 0 ? "border-gray-900" : "border-gray-200"
       }`}
     >
       <div className="w-full flex items-center gap-3 px-4 py-3">
@@ -382,11 +389,10 @@ function MatchCard({
           onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-3 flex-1 min-w-0 text-left hover:opacity-70"
         >
-          {expanded ? (
-            <ChevronDown size={14} className="text-gray-400 shrink-0" />
-          ) : (
-            <ChevronRight size={14} className="text-gray-400 shrink-0" />
-          )}
+          <ChevronRight
+            size={14}
+            className={`text-gray-400 shrink-0 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
+          />
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
               <span className="text-sm font-medium text-gray-900">Match #{match.matchId}</span>
@@ -451,21 +457,32 @@ function MatchCard({
         )}
       </div>
 
-      {expanded && (
-        <div className="border-t border-gray-100 p-3 flex flex-col gap-2 bg-gray-50/50">
-          {groups.map((g, idx) => (
-            <SubGroupBlock
-              key={g.key}
-              group={g}
-              colorIdx={idx}
-              selected={selectedKeys.has(g.key)}
-              onToggleSelect={() => onToggleGroup(g.key)}
-              onRequestUnmatch={() => onRequestUnmatch([g])}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="detail"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <div className="border-t border-gray-100 p-3 flex flex-col gap-2 bg-gray-50/50">
+              {groups.map((g, idx) => (
+                <SubGroupBlock
+                  key={g.key}
+                  group={g}
+                  colorIdx={idx}
+                  selected={selectedKeys.has(g.key)}
+                  onToggleSelect={() => onToggleGroup(g.key)}
+                  onRequestUnmatch={() => onRequestUnmatch([g])}
+                />
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -476,7 +493,13 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
   }, [onClose]);
 
   return (
-    <div className="fixed top-5 right-5 z-50 flex items-start gap-3 bg-white border border-green-200 shadow-lg rounded-xl px-4 py-3 max-w-sm">
+    <motion.div
+      initial={{ opacity: 0, y: -16, scale: 0.9 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -10, scale: 0.96, transition: { duration: 0.18 } }}
+      transition={{ type: "spring", stiffness: 480, damping: 24 }}
+      className="fixed top-5 right-5 z-50 flex items-start gap-3 bg-white/85 backdrop-blur-xl backdrop-saturate-150 border border-green-200/60 shadow-xl rounded-xl px-4 py-3 max-w-sm"
+    >
       <CheckCircle2 size={20} className="text-green-600 shrink-0 mt-0.5" />
       <div className="flex-1">
         <p className="text-sm font-medium text-gray-900">สำเร็จ</p>
@@ -485,7 +508,7 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
       <button onClick={onClose} className="text-gray-300 hover:text-gray-500 shrink-0">
         <X size={16} />
       </button>
-    </div>
+    </motion.div>
   );
 }
 
@@ -597,8 +620,14 @@ export default function MatchHistoryWorkspace() {
     if (!el || !hasMore) return;
 
     const nearViewport = () => el.getBoundingClientRect().top < window.innerHeight + 300;
+    // อ่าน layout แค่เฟรมละครั้ง — scroll event ยิงถี่กว่าเฟรม ถ้าเรียก getBoundingClientRect ทุกครั้งจะบังคับ reflow ซ้ำจนเลื่อนกระตุก
+    let frame = 0;
     const check = () => {
-      if (nearViewport()) loadMore();
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (nearViewport()) loadMore();
+      });
     };
 
     const io = new IntersectionObserver((entries) => {
@@ -613,6 +642,7 @@ export default function MatchHistoryWorkspace() {
       io.disconnect();
       window.removeEventListener("scroll", check);
       window.removeEventListener("resize", check);
+      cancelAnimationFrame(frame);
     };
   }, [loadMore, hasMore]);
 
@@ -756,41 +786,52 @@ export default function MatchHistoryWorkspace() {
 
   return (
     <div className="flex-1 min-w-0 p-4 sm:p-6">
-      {toast && <SuccessToast message={toast} onClose={() => setToast(null)} />}
-      {pendingUnmatch.length > 0 && (
-        <UnmatchConfirmModal
-          targets={pendingUnmatch}
-          busy={unmatchBusy}
-          onCancel={() => {
-            if (!unmatchBusy) {
-              setPendingUnmatch([]);
-              setUnmatchError("");
-            }
-          }}
-          onConfirm={handleConfirmUnmatch}
-        />
-      )}
+      <AnimatePresence>{toast && <SuccessToast message={toast} onClose={() => setToast(null)} />}</AnimatePresence>
+      {/* ต้องครอบ AnimatePresence ไม่งั้น exit animation ที่เขียนไว้ใน UnmatchConfirmModal จะไม่เคยเล่น — ปิดแล้วหายฉับ */}
+      <AnimatePresence>
+        {pendingUnmatch.length > 0 && (
+          <UnmatchConfirmModal
+            targets={pendingUnmatch}
+            busy={unmatchBusy}
+            onCancel={() => {
+              if (!unmatchBusy) {
+                setPendingUnmatch([]);
+                setUnmatchError("");
+              }
+            }}
+            onConfirm={handleConfirmUnmatch}
+          />
+        )}
+      </AnimatePresence>
 
-      {selectedGroups.length > 0 && (
-        <div
-          className={`fixed bottom-5 inset-x-0 z-40 flex justify-center px-4 pointer-events-none transition-all duration-300 ${
-            collapsed ? "lg:pl-[82px]" : "lg:pl-[300px]"
-          }`}
-        >
-          <div className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white rounded-full shadow-xl pl-5 pr-2 py-2">
-            <span className="text-sm font-medium">{selectedGroups.length} กลุ่มย่อยที่เลือก</span>
-            <button onClick={() => setSelectedKeys(new Set())} className="text-xs text-gray-300 hover:text-white px-2">
-              ล้าง
-            </button>
-            <button
-              onClick={() => requestUnmatch(selectedGroups)}
-              className="flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 px-4 py-2 rounded-full transition-colors"
+      <div
+        className={`fixed bottom-5 inset-x-0 z-40 flex justify-center px-4 pointer-events-none transition-[padding] duration-300 ${
+          collapsed ? "lg:pl-[82px]" : "lg:pl-[300px]"
+        }`}
+      >
+        <AnimatePresence>
+          {selectedGroups.length > 0 && (
+            <motion.div
+              initial={{ y: 90, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 90, opacity: 0 }}
+              transition={{ duration: 0.2, ease: "easeOut" }}
+              className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white rounded-full shadow-xl pl-5 pr-2 py-2"
             >
-              <Undo2 size={13} /> Unmatch ที่เลือก
-            </button>
-          </div>
-        </div>
-      )}
+              <span className="text-sm font-medium">{selectedGroups.length} กลุ่มย่อยที่เลือก</span>
+              <button onClick={() => setSelectedKeys(new Set())} className="text-xs text-gray-300 hover:text-white px-2">
+                ล้าง
+              </button>
+              <button
+                onClick={() => requestUnmatch(selectedGroups)}
+                className="flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 active:scale-95 px-4 py-2 rounded-full transition-all"
+              >
+                <Undo2 size={13} /> Unmatch ที่เลือก
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">ประวัติการจับคู่ (Match History)</h1>
       <p className="text-sm text-gray-500 mb-5">
@@ -879,7 +920,7 @@ export default function MatchHistoryWorkspace() {
         </div>
       </div>
 
-      {loading && (
+      {loading && matches.length === 0 && (
         <div className="flex items-center gap-2 text-sm text-gray-400 py-10 justify-center">
           <Loader2 size={16} className="animate-spin" /> กำลังโหลด...
         </div>
@@ -889,9 +930,14 @@ export default function MatchHistoryWorkspace() {
         <div className="text-center text-sm text-gray-400 py-10">ไม่พบประวัติการจับคู่ในช่วงวันที่และเงื่อนไขที่เลือก</div>
       )}
 
-      {!loading && matches.length > 0 && (
+      {matches.length > 0 && (
         <>
-          <div className="flex flex-col gap-3">
+          {/* ตอนเปลี่ยนตัวกรอง/หลัง Unmatch ให้คงรายการเดิมไว้แบบจางๆ ระหว่างรอผลใหม่ แทนการล้างเป็น spinner ทั้งหน้า
+              ซึ่งทำให้ความสูงหน้ายุบลงชั่วครู่ แล้ว scroll กระโดดกลับขึ้นบน */}
+          <div
+            aria-busy={loading}
+            className={`flex flex-col gap-3 transition-opacity duration-200 ${loading ? "opacity-50 pointer-events-none" : ""}`}
+          >
             {matches.map((m) => (
               <MatchCard
                 key={m.matchId}

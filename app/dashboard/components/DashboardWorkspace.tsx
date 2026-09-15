@@ -14,13 +14,16 @@ import TrendChart from './TrendChart';
 import ViewPicker from './ViewPicker';
 import {
   DEFAULT_WIDGETS,
+  SIDES,
   WIDGETS,
   bankLabel,
   currentMonth,
   monthLabel,
   shiftMonth,
+  sideLabel,
   type DashboardData,
   type DateBasis,
+  type Side,
   type WidgetId,
 } from './shared';
 
@@ -28,6 +31,7 @@ const PREFS_KEY = 'autorecon:dashboard:v1';
 
 type Prefs = {
   widgets: WidgetId[];
+  side: Side;
   basis: DateBasis;
   bankCode: string;
   trendMonths: number;
@@ -35,6 +39,7 @@ type Prefs = {
 
 const DEFAULT_PREFS: Prefs = {
   widgets: DEFAULT_WIDGETS,
+  side: 'AR',
   basis: 'BANK',
   bankCode: 'ALL',
   trendMonths: 6,
@@ -51,6 +56,7 @@ function readPrefs(): Prefs {
       widgets: Array.isArray(saved.widgets)
         ? WIDGETS.map((w) => w.id).filter((id) => saved.widgets!.includes(id) && known.has(id))
         : DEFAULT_PREFS.widgets,
+      side: saved.side === 'AP' || saved.side === 'ALL' ? saved.side : 'AR',
       basis: saved.basis === 'GL' ? 'GL' : 'BANK',
       bankCode: typeof saved.bankCode === 'string' ? saved.bankCode : 'ALL',
       trendMonths: saved.trendMonths === 12 ? 12 : 6,
@@ -106,10 +112,15 @@ export default function DashboardWorkspace() {
   }, []);
 
   const params = useMemo(() => {
-    const p = new URLSearchParams({ month, basis: prefs.basis, trendMonths: String(prefs.trendMonths) });
+    const p = new URLSearchParams({
+      month,
+      side: prefs.side,
+      basis: prefs.basis,
+      trendMonths: String(prefs.trendMonths),
+    });
     if (prefs.bankCode !== 'ALL') p.set('bankCode', prefs.bankCode);
     return p.toString();
-  }, [month, prefs.basis, prefs.bankCode, prefs.trendMonths]);
+  }, [month, prefs.side, prefs.basis, prefs.bankCode, prefs.trendMonths]);
 
   useEffect(() => {
     // รอให้อ่านค่าที่จำไว้เสร็จก่อน ไม่งั้นจะยิง request ด้วยค่า default ทิ้งไปเปล่าๆ หนึ่งรอบ
@@ -168,12 +179,41 @@ export default function DashboardWorkspace() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">สรุปประจำเดือน</h1>
             <p className="mt-1 text-[15px] text-slate-500">
-              {monthLabel(month)} · เกณฑ์วันที่{prefs.basis === 'BANK' ? 'ฝั่ง Bank Statement' : 'ฝั่ง BC365'}
+              {monthLabel(month)} · {sideLabel(prefs.side)} · เกณฑ์วันที่{prefs.basis === 'BANK' ? 'ฝั่ง Bank Statement' : 'ฝั่ง BC365'}
               {prefs.bankCode !== 'ALL' ? ` · ${bankLabel(prefs.bankCode)}` : ''}
             </p>
           </div>
 
           <ViewPicker selected={prefs.widgets} onChange={(widgets) => updatePrefs({ widgets })} />
+        </div>
+
+        {/* ---------- แท็บ AR / AP — ความหมายเดียวกับหน้า Reports ---------- */}
+        <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-slate-200">
+          {SIDES.map((sd) => {
+            const active = prefs.side === sd.value;
+            const counts = data?.sideCounts;
+            const count = counts ? (sd.value === 'ALL' ? counts.AR + counts.AP : counts[sd.value]) : null;
+            return (
+              <button
+                key={sd.value}
+                onClick={() => updatePrefs({ side: sd.value })}
+                aria-pressed={active}
+                className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+                  active ? 'border-slate-900 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-700'
+                }`}
+              >
+                {sd.label}
+                <span className="text-xs font-normal">{sd.hint}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
+                    active ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {count === null ? '…' : count.toLocaleString()}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* ---------- แถบเลือกเดือนและตัวกรอง ---------- */}
@@ -321,7 +361,7 @@ export default function DashboardWorkspace() {
             )}
 
             {show('status') && (
-              <Card className={SPAN.status} title="สัดส่วนสถานะ" subtitle="นับเป็นบรรทัด ทั้งฝั่ง Bank และ GL">
+              <Card className={SPAN.status} title="สัดส่วนสถานะ" subtitle="นับเป็นบรรทัด ทั้งฝั่ง Bank และ BC">
                 <StatusDonut data={data} />
               </Card>
             )}

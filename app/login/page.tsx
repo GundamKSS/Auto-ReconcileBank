@@ -129,6 +129,29 @@ export default function LoginPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.2, duration: 0.5 }}
           >
+            {/* แบรนด์ของโปรแกรม */}
+            <div className="mb-8 flex items-center gap-3.5">
+              <motion.img
+                src="/logo.svg"
+                alt=""
+                width={52}
+                height={52}
+                initial={{ scale: 0.5, rotate: -120, opacity: 0 }}
+                animate={{ scale: 1, rotate: 0, opacity: 1 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 16, delay: 0.25 }}
+                whileHover={{ rotate: -20, scale: 1.05 }}
+                className="h-[52px] w-[52px] rounded-[15px] shadow-lg shadow-blue-500/30"
+              />
+              <div>
+                <p className="text-lg font-bold leading-tight text-slate-900">
+                  Auto Reconcile Bank
+                </p>
+                <p className="text-sm text-slate-500">
+                  ระบบกระทบยอดธนาคารอัตโนมัติ
+                </p>
+              </div>
+            </div>
+
             <h2 className="text-3xl font-bold tracking-[-0.03em] text-slate-900">
               Sign in to your workspace
             </h2>
@@ -253,12 +276,9 @@ export default function LoginPage() {
               type="submit"
               disabled={isLoading}
               whileHover={{
-                scale: 1.01,
+                y: -1,
               }}
-              whileTap={{
-                scale: 0.98,
-              }}
-              className="h-[54px] w-full rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-[16px] font-semibold text-white shadow-lg shadow-blue-500/25 transition disabled:cursor-not-allowed disabled:opacity-60"
+              className="h-[54px] w-full rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 text-[16px] font-semibold text-white shadow-lg shadow-blue-500/25 transition-shadow hover:shadow-xl hover:shadow-blue-500/35 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isLoading ? (
                 <span className="flex items-center justify-center gap-3">

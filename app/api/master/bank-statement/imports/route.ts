@@ -5,7 +5,8 @@ import { getPool } from '../../../../../lib/db';
 import { requireRole } from '../../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../../lib/roles';
 // GET /api/master/bank-statement/imports?bankCode=BBL
-// รายชื่อไฟล์ (batch) ที่นำเข้าไว้ทั้งหมดของธนาคารนั้น ล่าสุดก่อน
+// รายชื่อไฟล์ (batch) ที่นำเข้าไว้และยังไม่ถูกลบของธนาคารนั้น ล่าสุดก่อน
+// LockedCount = จำนวนรายการในไฟล์ที่จับคู่/พักไว้อยู่ — มากกว่า 0 แปลว่ายังลบทั้งไฟล์ไม่ได้
 export async function GET(req: NextRequest) {
   const auth = await requireRole(RECONCILE_ROLES);
   if (!auth.ok) return auth.response;
@@ -21,10 +22,20 @@ export async function GET(req: NextRequest) {
       .request()
       .input('bankCode', sql.NVarChar, bankCode)
       .query(`
-        SELECT ImportId, BankCode, FileName, PeriodStart, PeriodEnd, ImportedRowCount, ImportedAt
-        FROM BankStatementImport
-        WHERE BankCode = @bankCode AND Status = 'SUCCESS'
-        ORDER BY ImportedAt DESC
+        SELECT i.ImportId, i.BankCode, i.FileName, i.PeriodStart, i.PeriodEnd, i.ImportedRowCount,
+               -- ImportedAt เป็น datetime เวลาไทยของเครื่อง DB แบบไม่มี offset ซึ่ง mssql อ่านเป็น UTC
+               -- ทำให้หน้าเว็บแสดงเวลาเลื่อนไป 7 ชั่วโมง จึงแนบ offset ของเครื่อง DB ให้เป็นเวลาจริงก่อนส่งออก
+               TODATETIMEOFFSET(i.ImportedAt, DATEPART(TZOFFSET, SYSDATETIMEOFFSET())) AS ImportedAt,
+               COALESCE(lk.LockedCount, 0) AS LockedCount
+        FROM BankStatementImport i
+        LEFT JOIN (
+          SELECT ImportId, COUNT(*) AS LockedCount
+          FROM BankStatementLine
+          WHERE MatchStatus <> 'UNMATCHED'
+          GROUP BY ImportId
+        ) lk ON lk.ImportId = i.ImportId
+        WHERE i.BankCode = @bankCode AND i.Status = 'SUCCESS'
+        ORDER BY i.ImportedAt DESC
       `);
 
     return NextResponse.json({ imports: result.recordset });

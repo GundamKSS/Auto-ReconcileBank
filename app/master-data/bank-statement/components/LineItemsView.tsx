@@ -1,20 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  ArrowLeft,
-  Pencil,
-  Trash2,
-  Plus,
-  Check,
-  X,
-  Loader2,
-  Lock,
-  ChevronLeft,
-  ChevronRight,
-  SlidersHorizontal,
-} from "lucide-react";
-import { ImportBatch } from "./ImportBatchList";
+import { ArrowLeft, Trash2, X, Loader2, Lock, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { ImportBatch, formatDate } from "./ImportBatchList";
 
 type Line = {
   LineId: number;
@@ -30,36 +18,12 @@ type Line = {
   MatchStatus: "UNMATCHED" | "MATCHED" | "SUSPENSE";
 };
 
-type EditForm = {
-  tranDate: string;
-  description: string;
-  debit: string;
-  credit: string;
-  balance: string;
-  chequeNo: string;
-  channel: string;
-};
-
 function formatAmount(n: number | null) {
   if (n === null || n === undefined) return "-";
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function toDateInput(iso: string) {
   return iso ? iso.slice(0, 10) : "";
-}
-function emptyForm(): EditForm {
-  return { tranDate: "", description: "", debit: "", credit: "", balance: "", chequeNo: "", channel: "" };
-}
-function lineToForm(l: Line): EditForm {
-  return {
-    tranDate: toDateInput(l.TranDate),
-    description: l.Description ?? "",
-    debit: l.Debit !== null ? String(l.Debit) : "",
-    credit: l.Credit !== null ? String(l.Credit) : "",
-    balance: l.Balance !== null ? String(l.Balance) : "",
-    chequeNo: l.ChequeNo ?? "",
-    channel: l.Channel ?? "",
-  };
 }
 
 function StatusBadge({ status }: { status: Line["MatchStatus"] }) {
@@ -75,15 +39,20 @@ function StatusBadge({ status }: { status: Line["MatchStatus"] }) {
   );
 }
 
-export default function LineItemsView({ batch, onBack }: { batch: ImportBatch; onBack: () => void }) {
+// รายการในไฟล์เป็นแบบอ่านอย่างเดียว — Bank Statement เป็นเอกสารต้นฉบับจากธนาคาร แก้ไข/เพิ่ม/ลบทีละรายการไม่ได้
+// ถ้าไฟล์ผิดต้องลบทั้งไฟล์ (เก็บประวัติผู้ลบ/เหตุผล/เวลา) แล้วนำเข้าไฟล์ที่ถูกต้องใหม่
+export default function LineItemsView({
+  batch,
+  onBack,
+  onDelete,
+}: {
+  batch: ImportBatch;
+  onBack: () => void;
+  onDelete: (batch: ImportBatch) => void;
+}) {
   const [lines, setLines] = useState<Line[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState<EditForm>(emptyForm());
-  const [busyId, setBusyId] = useState<number | "new" | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [addForm, setAddForm] = useState<EditForm>(emptyForm());
 
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
@@ -151,105 +120,7 @@ export default function LineItemsView({ batch, onBack }: { batch: ImportBatch; o
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [batch.ImportId]);
 
-  function startEdit(line: Line) {
-    setEditingId(line.LineId);
-    setEditForm(lineToForm(line));
-    setError("");
-  }
-  function cancelEdit() {
-    setEditingId(null);
-    setError("");
-  }
-
-  async function saveEdit(lineId: number) {
-    setBusyId(lineId);
-    setError("");
-    try {
-      const res = await fetch(`/api/master/bank-statement/lines/${lineId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tranDate: editForm.tranDate,
-          description: editForm.description || null,
-          debit: editForm.debit ? Number(editForm.debit) : null,
-          credit: editForm.credit ? Number(editForm.credit) : null,
-          balance: editForm.balance ? Number(editForm.balance) : null,
-          chequeNo: editForm.chequeNo || null,
-          channel: editForm.channel || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "แก้ไขไม่สำเร็จ");
-        return;
-      }
-      setEditingId(null);
-      await loadLines();
-    } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function deleteLine(line: Line) {
-    if (!confirm(`ลบรายการ "${line.Description}" วันที่ ${toDateInput(line.TranDate)} ใช่ไหม?`)) return;
-    setBusyId(line.LineId);
-    setError("");
-    try {
-      const res = await fetch(`/api/master/bank-statement/lines/${line.LineId}`, { method: "DELETE" });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "ลบไม่สำเร็จ");
-        return;
-      }
-      await loadLines();
-    } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  async function submitAdd() {
-    if (!addForm.tranDate || (!addForm.debit && !addForm.credit)) {
-      setError("กรุณากรอกวันที่และยอดเงินอย่างน้อย 1 ฝั่ง");
-      return;
-    }
-    setBusyId("new");
-    setError("");
-    try {
-      const res = await fetch(`/api/master/bank-statement/lines`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          importId: batch.ImportId,
-          bankCode: batch.BankCode,
-          tranDate: addForm.tranDate,
-          description: addForm.description || null,
-          debit: addForm.debit ? Number(addForm.debit) : null,
-          credit: addForm.credit ? Number(addForm.credit) : null,
-          balance: addForm.balance ? Number(addForm.balance) : null,
-          chequeNo: addForm.chequeNo || null,
-          channel: addForm.channel || null,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "เพิ่มรายการไม่สำเร็จ");
-        return;
-      }
-      setAdding(false);
-      setAddForm(emptyForm());
-      await loadLines();
-    } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
-    } finally {
-      setBusyId(null);
-    }
-  }
-
-  const inputCls = "border border-gray-200 rounded-md px-2 py-1 text-sm w-full";
+  const locked = batch.LockedCount > 0;
 
   return (
     <div>
@@ -257,11 +128,11 @@ export default function LineItemsView({ batch, onBack }: { batch: ImportBatch; o
         <ArrowLeft size={14} /> กลับไปเลือกไฟล์
       </button>
 
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3 pb-5 border-b border-gray-100">
-        <div>
-          <h2 className="text-lg font-bold text-gray-900">{batch.FileName}</h2>
+      <div className="flex items-start justify-between mb-5 flex-wrap gap-3 pb-5 border-b border-gray-100">
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-gray-900 break-all">{batch.FileName}</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {toDateInput(batch.PeriodStart)} – {toDateInput(batch.PeriodEnd)} ·{" "}
+            {formatDate(batch.PeriodStart)} – {formatDate(batch.PeriodEnd)} ·{" "}
             {hasActiveFilters ? (
               <span className="text-gray-500 font-medium">
                 {filteredLines.length.toLocaleString()} จาก {lines.length.toLocaleString()} รายการ
@@ -270,16 +141,25 @@ export default function LineItemsView({ batch, onBack }: { batch: ImportBatch; o
               <span className="text-gray-500 font-medium">{lines.length.toLocaleString()} รายการ</span>
             )}
           </p>
+          <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
+            <Lock size={12} className="shrink-0" />
+            อ่านอย่างเดียว — แก้ไข เพิ่ม หรือลบทีละรายการไม่ได้ ถ้าไฟล์ผิดให้ลบทั้งไฟล์แล้วนำเข้าใหม่
+          </p>
         </div>
-        <button
-          onClick={() => {
-            setAdding(true);
-            setAddForm({ ...emptyForm(), tranDate: toDateInput(batch.PeriodEnd) });
-          }}
-          className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-full transition-colors shadow-sm shadow-blue-500/20"
-        >
-          <Plus size={14} /> เพิ่มรายการ
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={() => onDelete(batch)}
+            disabled={locked}
+            className="flex items-center gap-1.5 text-sm font-medium text-red-600 border border-red-200 bg-white hover:bg-red-50 px-4 py-2 rounded-full transition-colors disabled:text-gray-400 disabled:border-gray-200 disabled:bg-gray-50 disabled:cursor-not-allowed"
+          >
+            {locked ? <Lock size={14} /> : <Trash2 size={14} />} ลบไฟล์นี้
+          </button>
+          {locked && (
+            <p className="text-[11px] text-amber-600">
+              มี {batch.LockedCount.toLocaleString()} รายการจับคู่แล้ว — ต้องยกเลิกการจับคู่ก่อนจึงลบได้
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
@@ -347,7 +227,7 @@ export default function LineItemsView({ batch, onBack }: { batch: ImportBatch; o
       )}
 
       <div className="table-scroll border border-gray-200 rounded-2xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[900px]">
+        <table className="w-full text-sm min-w-[820px]">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide">
             <tr>
               <th className="px-3 py-3 text-left">วันที่</th>
@@ -358,153 +238,47 @@ export default function LineItemsView({ batch, onBack }: { batch: ImportBatch; o
               <th className="px-3 py-3 text-left">เลขเช็ค</th>
               <th className="px-3 py-3 text-left">ช่องทาง</th>
               <th className="px-3 py-3 text-center">สถานะ</th>
-              <th className="px-3 py-3 text-center">จัดการ</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {loading && (
               <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
                   <Loader2 size={16} className="animate-spin inline mr-2" /> กำลังโหลด...
                 </td>
               </tr>
             )}
 
-            {adding && (
-              <tr className="bg-blue-50/50">
-                <td className="px-3 py-2">
-                  <input type="date" className={inputCls} value={addForm.tranDate} onChange={(e) => setAddForm({ ...addForm, tranDate: e.target.value })} />
-                </td>
-                <td className="px-3 py-2">
-                  <input className={inputCls} placeholder="รายละเอียด" value={addForm.description} onChange={(e) => setAddForm({ ...addForm, description: e.target.value })} />
-                </td>
-                <td className="px-3 py-2">
-                  <input className={inputCls + " text-right"} placeholder="0.00" value={addForm.debit} onChange={(e) => setAddForm({ ...addForm, debit: e.target.value })} />
-                </td>
-                <td className="px-3 py-2">
-                  <input className={inputCls + " text-right"} placeholder="0.00" value={addForm.credit} onChange={(e) => setAddForm({ ...addForm, credit: e.target.value })} />
-                </td>
-                <td className="px-3 py-2">
-                  <input className={inputCls + " text-right"} placeholder="0.00" value={addForm.balance} onChange={(e) => setAddForm({ ...addForm, balance: e.target.value })} />
-                </td>
-                <td className="px-3 py-2">
-                  <input className={inputCls} value={addForm.chequeNo} onChange={(e) => setAddForm({ ...addForm, chequeNo: e.target.value })} />
-                </td>
-                <td className="px-3 py-2">
-                  <input className={inputCls} value={addForm.channel} onChange={(e) => setAddForm({ ...addForm, channel: e.target.value })} />
-                </td>
-                <td className="px-3 py-2"></td>
-                <td className="px-3 py-2">
-                  <div className="flex items-center justify-center gap-1">
-                    <button onClick={submitAdd} disabled={busyId === "new"} className="p-1.5 text-green-600 hover:bg-green-50 rounded-md">
-                      {busyId === "new" ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                    </button>
-                    <button onClick={() => setAdding(false)} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-md">
-                      <X size={14} />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            )}
-
             {!loading &&
-              pageLines.map((l) => {
-                const locked = l.MatchStatus !== "UNMATCHED";
-                const isEditing = editingId === l.LineId;
+              pageLines.map((l) => (
+                <tr
+                  key={l.LineId}
+                  className="relative bg-white transition-all duration-200 ease-out hover:z-10 hover:-translate-y-[3px] hover:bg-white hover:shadow-[0_16px_30px_-10px_rgba(15,23,42,0.3)] hover:ring-1 hover:ring-blue-200"
+                >
+                  <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{toDateInput(l.TranDate)}</td>
+                  <td className="px-3 py-2 text-gray-800 max-w-[260px] truncate">{l.Description}</td>
+                  <td className="px-3 py-2 text-right text-red-600 tabular-nums">{formatAmount(l.Debit)}</td>
+                  <td className="px-3 py-2 text-right text-teal-700 tabular-nums">{formatAmount(l.Credit)}</td>
+                  <td className="px-3 py-2 text-right text-gray-500 tabular-nums">{formatAmount(l.Balance)}</td>
+                  <td className="px-3 py-2 text-gray-500">{l.ChequeNo || "-"}</td>
+                  <td className="px-3 py-2 text-gray-500">{l.Channel || "-"}</td>
+                  <td className="px-3 py-2 text-center">
+                    <StatusBadge status={l.MatchStatus} />
+                  </td>
+                </tr>
+              ))}
 
-                if (isEditing) {
-                  return (
-                    <tr key={l.LineId} className="bg-blue-50/50">
-                      <td className="px-3 py-2">
-                        <input type="date" className={inputCls} value={editForm.tranDate} onChange={(e) => setEditForm({ ...editForm, tranDate: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input className={inputCls} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input className={inputCls + " text-right"} value={editForm.debit} onChange={(e) => setEditForm({ ...editForm, debit: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input className={inputCls + " text-right"} value={editForm.credit} onChange={(e) => setEditForm({ ...editForm, credit: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input className={inputCls + " text-right"} value={editForm.balance} onChange={(e) => setEditForm({ ...editForm, balance: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input className={inputCls} value={editForm.chequeNo} onChange={(e) => setEditForm({ ...editForm, chequeNo: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <input className={inputCls} value={editForm.channel} onChange={(e) => setEditForm({ ...editForm, channel: e.target.value })} />
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <StatusBadge status={l.MatchStatus} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => saveEdit(l.LineId)} disabled={busyId === l.LineId} className="p-1.5 text-green-600 hover:bg-green-50 rounded-md">
-                            {busyId === l.LineId ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-                          </button>
-                          <button onClick={cancelEdit} className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-md">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                }
-
-                return (
-                  <tr
-                    key={l.LineId}
-                    className="relative bg-white transition-all duration-200 ease-out hover:z-10 hover:-translate-y-[3px] hover:bg-white hover:shadow-[0_16px_30px_-10px_rgba(15,23,42,0.3)] hover:ring-1 hover:ring-blue-200"
-                  >
-                    <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{toDateInput(l.TranDate)}</td>
-                    <td className="px-3 py-2 text-gray-800 max-w-[260px] truncate">{l.Description}</td>
-                    <td className="px-3 py-2 text-right text-red-600 tabular-nums">{formatAmount(l.Debit)}</td>
-                    <td className="px-3 py-2 text-right text-teal-700 tabular-nums">{formatAmount(l.Credit)}</td>
-                    <td className="px-3 py-2 text-right text-gray-500 tabular-nums">{formatAmount(l.Balance)}</td>
-                    <td className="px-3 py-2 text-gray-500">{l.ChequeNo || "-"}</td>
-                    <td className="px-3 py-2 text-gray-500">{l.Channel || "-"}</td>
-                    <td className="px-3 py-2 text-center">
-                      <StatusBadge status={l.MatchStatus} />
-                    </td>
-                    <td className="px-3 py-2">
-                      <div className="flex items-center justify-center gap-1">
-                        {locked ? (
-                          <span title="รายการนี้จับคู่ไปแล้ว แก้ไข/ลบไม่ได้" className="p-1.5 text-gray-300">
-                            <Lock size={14} />
-                          </span>
-                        ) : (
-                          <>
-                            <button onClick={() => startEdit(l)} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-md">
-                              <Pencil size={14} />
-                            </button>
-                            <button
-                              onClick={() => deleteLine(l)}
-                              disabled={busyId === l.LineId}
-                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md disabled:opacity-50"
-                            >
-                              {busyId === l.LineId ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-
-            {!loading && lines.length === 0 && !adding && (
+            {!loading && lines.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
                   ไม่มีรายการในไฟล์นี้
                 </td>
               </tr>
             )}
 
-            {!loading && lines.length > 0 && filteredLines.length === 0 && !adding && (
+            {!loading && lines.length > 0 && filteredLines.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-3 py-10 text-center text-gray-400">
+                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
                   ไม่พบรายการที่ตรงกับตัวกรอง —{" "}
                   <button onClick={clearFilters} className="text-blue-600 hover:underline font-medium">
                     ล้างตัวกรอง

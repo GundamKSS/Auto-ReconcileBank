@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     if (!username || !password) {
       return NextResponse.json({ error: 'กรุณากรอก username และ password' }, { status: 400 });
     }
-
+    console.log(`Login TRW_API_BASE: ${TRW_API_BASE}/auth/auth_permission_prog`);
     const res = await fetch(`${TRW_API_BASE}/auth/auth_permission_prog`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

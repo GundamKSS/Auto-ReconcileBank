@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
+  --background: #f8fafc;
   --foreground: #171717;
 }
 
@@ -23,4 +23,60 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ------------------------------------------------------------------
+ * Motion — ใช้ร่วมกันทั้งแอป
+ * ใช้ fill-mode "backwards" ทุกตัว: หลังเล่นจบจะไม่ค้าง transform ไว้บน element
+ * เพราะ transform ที่ค้างอยู่จะทำให้ลูกที่เป็น position: fixed (modal / toast) ไปยึดกล่องนี้แทน viewport
+ * ------------------------------------------------------------------ */
+@theme {
+  --animate-pop-in: pop-in 420ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+  --animate-overlay-in: overlay-in 200ms ease-out backwards;
+  --animate-toast-in: toast-in 480ms cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
+
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.92); }
+  }
+  @keyframes overlay-in {
+    from { opacity: 0; }
+  }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateY(-16px) scale(0.9); }
+  }
+}
+
+/* เนื้อหาหน้าใหม่ค่อยๆ ขึ้นมา — ใช้ scale จากขอบบนแทนการเลื่อนลง
+   เพราะการเลื่อนลงจะดันเนื้อหาเกินจอชั่วครู่ แล้ว scrollbar โผล่/หายจนหน้ากระตุก (เห็นชัดในหน้า Reconcile ที่สูงเท่าจอพอดี) */
+.page-enter {
+  transform-origin: 50% 0;
+  animation: page-enter 380ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes page-enter {
+  from { opacity: 0; transform: scale(0.985); }
+}
+
+.sidebar-enter {
+  animation: sidebar-enter 460ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+@keyframes sidebar-enter {
+  from { opacity: 0; transform: translateX(-16px); }
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #bfdbfe;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .sidebar-enter,
+  .animate-pop-in,
+  .animate-overlay-in,
+  .animate-toast-in {
+    animation: none;
+  }
 }

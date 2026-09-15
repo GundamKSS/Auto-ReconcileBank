@@ -243,7 +243,7 @@ function PreviewPanel({
   const selectedCount = new Set(items.filter((i) => selectedClusterIds.has(i.clusterId)).map((i) => i.id)).size;
 
   return (
-    <div className="flex flex-col border border-gray-200 rounded-xl overflow-hidden min-w-0 lg:h-full">
+    <div className="flex flex-col bg-white border border-gray-200 rounded-xl overflow-hidden min-w-0 lg:h-full">
       <div className="px-3 py-2.5 border-b border-gray-100 shrink-0">
         <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
         <p className="text-xs text-gray-400">
@@ -463,8 +463,8 @@ export default function SuggestPreviewModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm px-4 py-6">
-      <div className="w-full max-w-5xl h-[90vh] bg-white rounded-2xl shadow-xl flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-md px-4 py-6 animate-overlay-in">
+      <div className="w-full max-w-5xl h-[90vh] bg-white/80 backdrop-blur-2xl backdrop-saturate-150 border border-white/70 rounded-2xl shadow-2xl flex flex-col overflow-hidden animate-pop-in">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles size={16} className="text-blue-600" />

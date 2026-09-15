@@ -169,11 +169,11 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: -10, scale: 0.98 }}
+      initial={{ opacity: 0, y: -16, scale: 0.9 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={{ opacity: 0, y: -10, scale: 0.98 }}
-      transition={{ duration: 0.2 }}
-      className="fixed top-5 right-5 z-[60] flex items-start gap-3 bg-white border border-green-200 shadow-lg rounded-xl px-4 py-3 max-w-sm"
+      exit={{ opacity: 0, y: -10, scale: 0.96, transition: { duration: 0.18 } }}
+      transition={{ type: "spring", stiffness: 480, damping: 24 }}
+      className="fixed top-5 right-5 z-[60] flex items-start gap-3 bg-white/85 backdrop-blur-xl backdrop-saturate-150 border border-green-200/60 shadow-xl rounded-xl px-4 py-3 max-w-sm"
     >
       <CheckCircle2 size={20} className="text-green-600 shrink-0 mt-0.5" />
       <p className="text-sm font-medium text-gray-900">{message}</p>

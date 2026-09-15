@@ -9,19 +9,34 @@ import sql from 'mssql';
  * ไม่ได้ใช้ cross join แบบ vw_ReconciliationPairReport เพราะกลุ่มที่เป็น 1:N / N:1
  * จะถูกคูณจำนวนแถวจนยอดรวมผิด — วิธีนี้กลุ่ม 1:3 จะได้ 3 แถว (ฝั่ง bank ว่าง 2 แถว)
  * ทำให้ทุกบรรทัดถูกนับพอดี 1 ครั้งเสมอ
+ *
+ * ผลต่างคิดระดับกลุ่ม (ไม่ใช่รายแถว) เพราะในกลุ่ม 1:N การจับคู่ตามลำดับเป็นแค่การจัดวาง
+ * ถ้าคิดรายแถวจะได้ตัวเลขบวก/ลบหักล้างกันเองทั้งที่ทั้งกลุ่มบาลานซ์ — ส่งค่าไว้ที่แถวสุดท้ายของกลุ่มแถวเดียว
+ *
+ * รีพอร์ตแยกเป็น 2 ฝั่ง: AR = เงินเข้า (IN), AP = เงินออก (OUT)
+ * ใช้ทิศทางของบรรทัดเป็นตัวแบ่งเพราะมีทั้งฝั่ง Bank และ BC (Source_Code มีแต่ฝั่ง BC และแบ่งไม่ตรง)
  */
 
 export type DateBasis = 'BANK' | 'GL';
 export type StatusFilter = 'MATCHED' | 'SUSPENSE' | 'UNMATCHED' | 'ALL';
+export type ReportSide = 'AR' | 'AP';
+export type Direction = 'IN' | 'OUT';
+
+export const SIDE_DIRECTION: Record<ReportSide, Direction> = { AR: 'IN', AP: 'OUT' };
 
 export type ReportFilters = {
   from: string; // YYYY-MM-DD
   to: string; // YYYY-MM-DD
   basis: DateBasis;
   status: StatusFilter;
+  /** ไม่ใส่ = AR; มีผลเฉพาะ query ที่สร้างด้วย buildReportCte แบบไม่ใช่ allSides */
+  side?: ReportSide;
   bankCode: string | null;
   q: string | null;
 };
+
+/** filter ของหน้า Reports — ผ่าน parseFilters แล้วมีฝั่งเสมอ */
+export type ReportPageFilters = ReportFilters & { side: ReportSide };
 
 export const PAGE_SIZE = 50;
 export const MAX_EXPORT_ROWS = 50000;
@@ -43,7 +58,7 @@ export function defaultRange(now = new Date()) {
   return { from: toIsoDate(first), to: toIsoDate(last) };
 }
 
-export function parseFilters(params: URLSearchParams): ReportFilters {
+export function parseFilters(params: URLSearchParams): ReportPageFilters {
   const fallback = defaultRange();
   const rawFrom = params.get('from');
   const rawTo = params.get('to');
@@ -58,6 +73,7 @@ export function parseFilters(params: URLSearchParams): ReportFilters {
     status: (['MATCHED', 'SUSPENSE', 'UNMATCHED', 'ALL'] as const).includes(rawStatus as StatusFilter)
       ? (rawStatus as StatusFilter)
       : 'MATCHED',
+    side: params.get('side')?.toUpperCase() === 'AP' ? 'AP' : 'AR',
     bankCode: bankCode && bankCode !== 'ALL' ? bankCode : null,
     q: q ? q : null,
   };
@@ -66,6 +82,7 @@ export function parseFilters(params: URLSearchParams): ReportFilters {
 export function bindFilters(request: sql.Request, f: ReportFilters) {
   request.input('from', sql.Date, new Date(`${f.from}T00:00:00Z`));
   request.input('to', sql.Date, new Date(`${f.to}T00:00:00Z`));
+  request.input('direction', sql.VarChar(3), SIDE_DIRECTION[f.side ?? 'AR']);
   if (f.bankCode) request.input('bankCode', sql.NVarChar, f.bankCode);
   if (f.q) request.input('q', sql.NVarChar, `%${f.q}%`);
   if (f.status === 'MATCHED' || f.status === 'SUSPENSE') {
@@ -119,10 +136,12 @@ function groupDateFilter(basis: DateBasis) {
 }
 
 /**
- * สร้างส่วน WITH ... ทั้งหมดจบที่ CTE ชื่อ Unified
- * ผู้เรียกต่อท้ายเองว่าจะ SELECT อะไรจาก Unified (หน้าตาราง / สรุปยอด)
+ * สร้างส่วน WITH ... ทั้งหมดจบที่ CTE ชื่อ Scoped (กรองฝั่ง AR/AP + คำค้นแล้ว)
+ * ผู้เรียกต่อท้ายเองว่าจะ SELECT อะไร โดยอ่านจาก `Scoped WHERE GroupHit = 1`
+ *
+ * allSides = true ไม่กรองฝั่ง ใช้ตอนรวมยอดสรุปเพื่อนับจำนวนของทั้ง AR และ AP ใน query เดียว
  */
-export function buildUnifiedCte(f: ReportFilters): string {
+export function buildReportCte(f: ReportFilters, { allSides = false }: { allSides?: boolean } = {}): string {
   const includePairs = f.status !== 'UNMATCHED';
   const includeUnmatched = f.status === 'UNMATCHED' || f.status === 'ALL';
   const matchTypeFilter = f.status === 'MATCHED' || f.status === 'SUSPENSE' ? 'AND rm.MatchType = @matchType' : '';
@@ -193,12 +212,21 @@ export function buildUnifiedCte(f: ReportFilters): string {
   const branches: string[] = [];
 
   if (includePairs) {
+    // หน้าต่าง (window) ระดับกลุ่มคำนวณก่อน paging เสมอ ผลต่าง/จำนวนแถวของกลุ่มจึงถูกต้องแม้กลุ่มถูกตัดข้ามหน้า
+    // กลุ่มเดียวไม่เคยมีทั้ง IN และ OUT ปนกัน (หน้า Reconcile จับคู่แยกทิศทาง) Direction ของแถวแรกจึงแทนทั้งกลุ่มได้
+    const groupWindow = 'OVER (PARTITION BY p.MatchId, p.GroupNum)';
     branches.push(`
     SELECT
       CAST(CONCAT('M', p.MatchId, '-', p.GroupNum, '-', p.PairRn) AS NVARCHAR(60)) AS RowKey,
+      CAST(CONCAT('M', p.MatchId, '-', p.GroupNum) AS NVARCHAR(60)) AS GroupKey,
       CAST(p.MatchType AS VARCHAR(10)) AS Status,
+      CAST(COALESCE(p.BankDirection, p.GLDirection) AS VARCHAR(3)) AS Direction,
       CAST(p.MatchId AS INT) AS MatchId,
       CAST(p.GroupNum AS INT) AS GroupNum,
+      CAST(p.PairRn AS INT) AS PairRn,
+      CAST(COUNT(*) ${groupWindow} AS INT) AS GroupRows,
+      CAST(CASE WHEN p.PairRn = MAX(p.PairRn) ${groupWindow} THEN 1 ELSE 0 END AS INT) AS IsGroupEnd,
+      CAST(SUM(COALESCE(p.BankSigned, 0)) ${groupWindow} - SUM(COALESCE(p.GLSigned, 0)) ${groupWindow} AS DECIMAL(18,2)) AS GroupDiff,
       CAST(p.BankCode AS NVARCHAR(20)) AS BankCode,
       CAST(p.CreatedBy AS NVARCHAR(100)) AS CreatedBy,
       CAST(p.CreatedAt AS DATETIME2) AS CreatedAt,
@@ -217,18 +245,26 @@ export function buildUnifiedCte(f: ReportFilters): string {
       CAST(p.GLDirection AS VARCHAR(3)) AS GLDirection,
       CAST(p.GLAmount AS DECIMAL(18,2)) AS GLAmount,
       CAST(p.GLSigned AS DECIMAL(18,2)) AS GLSigned,
-      CAST(p.EffDate AS DATE) AS EffDate
+      CAST(p.EffDate AS DATE) AS EffDate,
+      CAST(MIN(p.EffDate) ${groupWindow} AS DATE) AS GroupEffDate
     FROM Paired p`);
   }
 
   if (includeUnmatched) {
     // รายการค้าง (outstanding) ไม่มีคู่ให้ยึด จึงกรองด้วยวันที่ของตัวเองเสมอ ไม่ขึ้นกับเกณฑ์วันที่ที่เลือก
+    // แต่ละบรรทัดนับเป็นกลุ่มของตัวเอง 1 แถว
     branches.push(`
     SELECT
       CAST(CONCAT('B', bsl.LineId) AS NVARCHAR(60)) AS RowKey,
+      CAST(CONCAT('B', bsl.LineId) AS NVARCHAR(60)) AS GroupKey,
       CAST('UNMATCHED' AS VARCHAR(10)) AS Status,
+      CAST(CASE WHEN bsl.Credit IS NOT NULL THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS Direction,
       CAST(NULL AS INT) AS MatchId,
       CAST(NULL AS INT) AS GroupNum,
+      CAST(NULL AS INT) AS PairRn,
+      CAST(1 AS INT) AS GroupRows,
+      CAST(1 AS INT) AS IsGroupEnd,
+      CAST(COALESCE(bsl.Credit, 0) - COALESCE(bsl.Debit, 0) AS DECIMAL(18,2)) AS GroupDiff,
       CAST(bsl.BankCode AS NVARCHAR(20)) AS BankCode,
       CAST(NULL AS NVARCHAR(100)) AS CreatedBy,
       CAST(NULL AS DATETIME2) AS CreatedAt,
@@ -247,10 +283,13 @@ export function buildUnifiedCte(f: ReportFilters): string {
       CAST(NULL AS VARCHAR(3)) AS GLDirection,
       CAST(NULL AS DECIMAL(18,2)) AS GLAmount,
       CAST(NULL AS DECIMAL(18,2)) AS GLSigned,
-      CAST(bsl.TranDate AS DATE) AS EffDate
+      CAST(bsl.TranDate AS DATE) AS EffDate,
+      CAST(bsl.TranDate AS DATE) AS GroupEffDate
     FROM BankStatementLine bsl
     WHERE bsl.TranDate >= @from AND bsl.TranDate <= @to
       ${f.bankCode ? 'AND bsl.BankCode = @bankCode' : ''}
+      /* ไฟล์ที่ลบในหน้า Master Data เก็บบรรทัดไว้เป็น MatchStatus = 'DELETED' (soft delete) — ไม่ใช่รายการค้าง */
+      AND bsl.MatchStatus <> 'DELETED'
       AND NOT EXISTS (
         SELECT 1 FROM ReconciliationMatchLine u_rml
         JOIN ReconciliationMatch u_rm ON u_rm.MatchId = u_rml.MatchId AND u_rm.Status = 'ACTIVE'
@@ -260,9 +299,15 @@ export function buildUnifiedCte(f: ReportFilters): string {
     branches.push(`
     SELECT
       CAST(CONCAT('G', e.Entry_No) AS NVARCHAR(60)) AS RowKey,
+      CAST(CONCAT('G', e.Entry_No) AS NVARCHAR(60)) AS GroupKey,
       CAST('UNMATCHED' AS VARCHAR(10)) AS Status,
+      CAST(CASE WHEN e.Debit_Amount_LCY > 0 THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS Direction,
       CAST(NULL AS INT) AS MatchId,
       CAST(NULL AS INT) AS GroupNum,
+      CAST(NULL AS INT) AS PairRn,
+      CAST(1 AS INT) AS GroupRows,
+      CAST(1 AS INT) AS IsGroupEnd,
+      CAST(0 - (COALESCE(e.Debit_Amount_LCY, 0) - COALESCE(e.Credit_Amount_LCY, 0)) AS DECIMAL(18,2)) AS GroupDiff,
       CAST(m.BankCode AS NVARCHAR(20)) AS BankCode,
       CAST(NULL AS NVARCHAR(100)) AS CreatedBy,
       CAST(NULL AS DATETIME2) AS CreatedAt,
@@ -281,7 +326,8 @@ export function buildUnifiedCte(f: ReportFilters): string {
       CAST(CASE WHEN e.Debit_Amount_LCY > 0 THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS GLDirection,
       CAST(CASE WHEN e.Debit_Amount_LCY > 0 THEN e.Debit_Amount_LCY ELSE e.Credit_Amount_LCY END AS DECIMAL(18,2)) AS GLAmount,
       CAST(COALESCE(e.Debit_Amount_LCY, 0) - COALESCE(e.Credit_Amount_LCY, 0) AS DECIMAL(18,2)) AS GLSigned,
-      CAST(e.Posting_Date AS DATE) AS EffDate
+      CAST(e.Posting_Date AS DATE) AS EffDate,
+      CAST(e.Posting_Date AS DATE) AS GroupEffDate
     FROM BankAccountLedgerEntries e
     JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
     WHERE m.BankCode IS NOT NULL
@@ -298,29 +344,39 @@ export function buildUnifiedCte(f: ReportFilters): string {
   Unified AS (${branches.join('\n    UNION ALL')}
   )`;
 
-  return `WITH${[...ctes, unified].join(',')}`;
+  // คำค้นเจอบรรทัดไหนในกลุ่ม ให้ติดมาทั้งกลุ่ม — ไม่งั้นแถวสุดท้ายที่ถือผลต่างของกลุ่มอาจถูกกรองหายไป
+  const groupHit = f.q
+    ? `MAX(CASE WHEN
+          u.BankDescription LIKE @q
+          OR u.BankRef LIKE @q
+          OR u.GLDocumentNo LIKE @q
+          OR u.GLBankAccountName LIKE @q
+          OR CAST(u.MatchId AS NVARCHAR(20)) LIKE @q
+        THEN 1 ELSE 0 END) OVER (PARTITION BY u.GroupKey)`
+    : '1';
+
+  const scoped = `
+  Scoped AS (
+    SELECT u.*, ${groupHit} AS GroupHit
+    FROM Unified u
+    ${allSides ? '' : 'WHERE u.Direction = @direction'}
+  )`;
+
+  return `WITH${[...ctes, unified, scoped].join(',')}`;
 }
 
-/** เงื่อนไขค้นหาข้อความ ใช้ต่อท้าย WHERE ของ query ที่อ่านจาก Unified */
-export function searchCondition(f: ReportFilters) {
-  if (!f.q) return '';
-  return `
-    AND (
-      BankDescription LIKE @q
-      OR BankRef LIKE @q
-      OR GLDocumentNo LIKE @q
-      OR GLBankAccountName LIKE @q
-      OR CAST(MatchId AS NVARCHAR(20)) LIKE @q
-    )`;
-}
-
-export const ORDER_BY = 'ORDER BY EffDate, Status, COALESCE(MatchId, 0), COALESCE(GroupNum, 0), RowKey';
+// เรียงตามวันที่ของกลุ่มก่อน ทุกแถวของกลุ่มเดียวกันจึงติดกันเสมอ (วันที่ของแต่ละแถวในกลุ่มอาจต่างกันได้)
+export const ORDER_BY =
+  'ORDER BY GroupEffDate, Status, COALESCE(MatchId, 0), COALESCE(GroupNum, 0), COALESCE(PairRn, 0), RowKey';
 
 export type ReportRow = {
   rowKey: string;
   status: 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
+  direction: Direction;
   matchId: number | null;
   groupNum: number | null;
+  pairRn: number | null;
+  groupRows: number;
   bankCode: string | null;
   createdBy: string | null;
   createdAt: string | null;
@@ -330,7 +386,7 @@ export type ReportRow = {
     date: string | null;
     description: string | null;
     ref: string | null;
-    direction: 'IN' | 'OUT';
+    direction: Direction;
     amount: number;
   } | null;
   gl: {
@@ -339,10 +395,11 @@ export type ReportRow = {
     documentNo: string | null;
     accountNo: string | null;
     accountName: string | null;
-    direction: 'IN' | 'OUT';
+    direction: Direction;
     amount: number;
   } | null;
-  diff: number;
+  /** ผลต่างของทั้งกลุ่ม (Bank − BC) มีค่าเฉพาะแถวสุดท้ายของกลุ่ม แถวอื่นเป็น null */
+  diff: number | null;
 };
 
 function isoDay(value: unknown): string | null {
@@ -353,14 +410,16 @@ function isoDay(value: unknown): string | null {
 }
 
 export function mapRow(r: Record<string, unknown>): ReportRow {
-  const bankSigned = r.BankSigned === null || r.BankSigned === undefined ? 0 : Number(r.BankSigned);
-  const glSigned = r.GLSigned === null || r.GLSigned === undefined ? 0 : Number(r.GLSigned);
+  const isGroupEnd = Number(r.IsGroupEnd ?? 1) === 1;
 
   return {
     rowKey: String(r.RowKey),
     status: r.Status as ReportRow['status'],
+    direction: r.Direction as Direction,
     matchId: r.MatchId === null ? null : Number(r.MatchId),
     groupNum: r.GroupNum === null ? null : Number(r.GroupNum),
+    pairRn: r.PairRn === null || r.PairRn === undefined ? null : Number(r.PairRn),
+    groupRows: Number(r.GroupRows ?? 1),
     bankCode: (r.BankCode as string) ?? null,
     createdBy: (r.CreatedBy as string) ?? null,
     createdAt: r.CreatedAt ? new Date(r.CreatedAt as string).toISOString() : null,
@@ -373,7 +432,7 @@ export function mapRow(r: Record<string, unknown>): ReportRow {
             date: isoDay(r.BankTranDate),
             description: (r.BankDescription as string) ?? null,
             ref: (r.BankRef as string) ?? null,
-            direction: r.BankDirection as 'IN' | 'OUT',
+            direction: r.BankDirection as Direction,
             amount: Number(r.BankAmount ?? 0),
           },
     gl:
@@ -385,10 +444,10 @@ export function mapRow(r: Record<string, unknown>): ReportRow {
             documentNo: (r.GLDocumentNo as string) ?? null,
             accountNo: (r.GLBankAccountNo as string) ?? null,
             accountName: (r.GLBankAccountName as string) ?? null,
-            direction: r.GLDirection as 'IN' | 'OUT',
+            direction: r.GLDirection as Direction,
             amount: Number(r.GLAmount ?? 0),
           },
-    diff: Number((bankSigned - glSigned).toFixed(2)),
+    diff: isGroupEnd ? Number(Number(r.GroupDiff ?? 0).toFixed(2)) : null,
   };
 }
 
@@ -414,8 +473,10 @@ export type ReportSummary = {
   totals: Omit<SummaryBucket, 'status' | 'bankCode'>;
 };
 
-export const SUMMARY_SELECT = `
+/** รวมยอดของทั้งสองฝั่งใน query เดียว (ใช้กับ CTE ที่สร้างด้วย allSides: true) แล้วค่อยแยกฝั่งใน JS */
+export const SUMMARY_QUERY = `
   SELECT
+    Direction,
     Status,
     COALESCE(BankCode, N'-') AS BankCode,
     COUNT(*) AS Rows_,
@@ -428,10 +489,13 @@ export const SUMMARY_SELECT = `
     SUM(CASE WHEN GLDirection = 'IN' THEN GLAmount ELSE 0 END) AS GlIn_,
     SUM(CASE WHEN GLDirection = 'OUT' THEN GLAmount ELSE 0 END) AS GlOut_,
     SUM(COALESCE(GLSigned, 0)) AS GlNet_
-  FROM Unified
-  WHERE 1=1`;
+  FROM Scoped
+  WHERE GroupHit = 1
+  GROUP BY Direction, Status, COALESCE(BankCode, N'-')`;
 
 export function buildSummary(recordset: Record<string, unknown>[]): ReportSummary {
+  const round2 = (n: number) => Number(n.toFixed(2));
+
   const buckets: SummaryBucket[] = recordset.map((r) => {
     const bankNet = Number(r.BankNet_ ?? 0);
     const glNet = Number(r.GlNet_ ?? 0);
@@ -448,11 +512,9 @@ export function buildSummary(recordset: Record<string, unknown>[]): ReportSummar
       glIn: Number(r.GlIn_ ?? 0),
       glOut: Number(r.GlOut_ ?? 0),
       glNet,
-      diff: Number((bankNet - glNet).toFixed(2)),
+      diff: round2(bankNet - glNet),
     };
   });
-
-  const round2 = (n: number) => Number(n.toFixed(2));
 
   const totals = buckets.reduce(
     (acc, b) => ({
@@ -468,19 +530,7 @@ export function buildSummary(recordset: Record<string, unknown>[]): ReportSummar
       glNet: acc.glNet + b.glNet,
       diff: 0,
     }),
-    {
-      rows: 0,
-      matches: 0,
-      bankLines: 0,
-      glLines: 0,
-      bankIn: 0,
-      bankOut: 0,
-      bankNet: 0,
-      glIn: 0,
-      glOut: 0,
-      glNet: 0,
-      diff: 0,
-    }
+    { rows: 0, matches: 0, bankLines: 0, glLines: 0, bankIn: 0, bankOut: 0, bankNet: 0, glIn: 0, glOut: 0, glNet: 0, diff: 0 }
   );
   totals.bankIn = round2(totals.bankIn);
   totals.bankOut = round2(totals.bankOut);
@@ -493,4 +543,15 @@ export function buildSummary(recordset: Record<string, unknown>[]): ReportSummar
   // matches ของแต่ละ bucket นับแยกกัน รวมกันตรงๆ อาจซ้ำถ้า match เดียวมีหลาย BankCode
   // ในทางปฏิบัติ 1 match = 1 BankCode เสมอ (ตอนบันทึกใน /api/reconcile/match) จึงรวมได้
   return { total: totals.rows, buckets, totals };
+}
+
+/** แยกผลของ SUMMARY_QUERY เป็นยอดสรุปของฝั่งที่เลือก + จำนวนแถวของทั้ง AR/AP สำหรับป้ายบนแท็บ */
+export function summarizeBySide(recordset: Record<string, unknown>[], side: ReportSide) {
+  const ofDirection = (dir: Direction) => recordset.filter((r) => r.Direction === dir);
+  const count = (dir: Direction) => ofDirection(dir).reduce((s, r) => s + Number(r.Rows_ ?? 0), 0);
+
+  return {
+    summary: buildSummary(ofDirection(SIDE_DIRECTION[side])),
+    sideCounts: { AR: count('IN'), AP: count('OUT') } as Record<ReportSide, number>,
+  };
 }
