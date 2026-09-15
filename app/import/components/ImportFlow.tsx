@@ -25,7 +25,14 @@ type PreviewResponse = {
   warnings: {
     missingDate: number;
     possibleDuplicates: number;
-    alreadyImported: { fileName: string; importedAt: string } | null;
+    // รายการที่นำเข้าไว้แล้ว ตอนนำเข้าจะข้ามไปและบันทึกเฉพาะ newCount รายการ
+    overlap: {
+      overlapCount: number;
+      newCount: number;
+      newPeriodStart: string | null;
+      newPeriodEnd: string | null;
+      imports: { importId: number; fileName: string; importedAt: string; lineCount: number }[];
+    } | null;
   };
 };
 
@@ -51,7 +58,7 @@ export default function ImportFlow() {
 
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
-  const [importSuccess, setImportSuccess] = useState<{ rowCount: number } | null>(null);
+  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; skippedCount: number } | null>(null);
 
   const [syncingGl, setSyncingGl] = useState(false);
   const [glSyncError, setGlSyncError] = useState("");
@@ -115,7 +122,7 @@ export default function ImportFlow() {
         setImportError(data.error || "นำเข้าไม่สำเร็จ");
         return;
       }
-      setImportSuccess({ rowCount: data.rowCount });
+      setImportSuccess({ rowCount: data.rowCount, skippedCount: data.skippedCount ?? 0 });
     } catch {
       setImportError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
     } finally {
@@ -490,16 +497,25 @@ export default function ImportFlow() {
                         </span>
                       </div>
                     )}
-                    {preview.warnings.alreadyImported && (
+                    {preview.warnings.overlap && preview.warnings.overlap.newCount === 0 && (
                       <div className="flex items-start gap-2">
-                        <AlertTriangle size={18} className="text-red-500 mt-0.5" />
+                        <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
                         <span className="text-sm text-red-700">
-                          ไฟล์นี้เคยนำเข้าไปแล้ว ({preview.warnings.alreadyImported.fileName} เมื่อ{" "}
-                          {new Date(preview.warnings.alreadyImported.importedAt).toLocaleString("th-TH", {
-                            dateStyle: "medium",
-                            timeStyle: "short",
-                          })}
-                          )
+                          ทุกรายการในไฟล์นี้นำเข้าไปแล้ว (
+                          {preview.warnings.overlap.imports.map((i) => i.fileName).join(", ")}) ไม่มีรายการใหม่ให้นำเข้า
+                        </span>
+                      </div>
+                    )}
+                    {preview.warnings.overlap && preview.warnings.overlap.newCount > 0 && (
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle size={18} className="text-yellow-500 mt-0.5 shrink-0" />
+                        <span className="text-sm text-slate-700">
+                          ข้าม {preview.warnings.overlap.overlapCount.toLocaleString()} รายการที่นำเข้าแล้ว (
+                          {preview.warnings.overlap.imports.map((i) => i.fileName).join(", ")}) · จะนำเข้าเฉพาะ{" "}
+                          <span className="font-semibold">
+                            {preview.warnings.overlap.newCount.toLocaleString()} รายการใหม่
+                          </span>{" "}
+                          ({preview.warnings.overlap.newPeriodStart} – {preview.warnings.overlap.newPeriodEnd})
                         </span>
                       </div>
                     )}
@@ -515,20 +531,22 @@ export default function ImportFlow() {
                 {importSuccess ? (
                   <div className="p-4 bg-green-50 border border-green-100 rounded-xl text-sm text-green-700">
                     นำเข้าสำเร็จ {importSuccess.rowCount.toLocaleString()} รายการ
+                    {importSuccess.skippedCount > 0 &&
+                      ` · ข้ามรายการที่นำเข้าแล้ว ${importSuccess.skippedCount.toLocaleString()} รายการ`}
                   </div>
                 ) : (
                   <div className="mt-auto flex flex-col gap-3">
                     <button
                       onClick={handleConfirmImport}
-                      disabled={importing || Boolean(preview.warnings.alreadyImported)}
+                      disabled={importing || preview.warnings.overlap?.newCount === 0}
                       className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {importing && <Loader2 size={16} className="animate-spin" />}
-                      {preview.warnings.alreadyImported
-                        ? "ไฟล์นี้ถูกนำเข้าไปแล้ว"
+                      {preview.warnings.overlap?.newCount === 0
+                        ? "ไม่มีรายการใหม่ให้นำเข้า"
                         : importing
                         ? "กำลังนำเข้า..."
-                        : `Import ${preview.totalRows.toLocaleString()} rows`}
+                        : `Import ${(preview.warnings.overlap?.newCount ?? preview.totalRows).toLocaleString()} rows`}
                     </button>
                     <button
                       onClick={() => setStep(2)}

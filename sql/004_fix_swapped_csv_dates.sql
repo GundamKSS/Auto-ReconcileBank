@@ -28,6 +28,20 @@
     3. รัน STEP 3 เพื่อยืนยันผลหลังแก้
 
   คำเตือน: สำรองฐานข้อมูลก่อนรัน STEP 2 เสมอ
+
+  ***************************************************************************
+  รันกับ [Reconcile_Bank] แล้วเมื่อ 15 ก.ย. 2026 — ห้ามรัน STEP 2 ซ้ำ
+  ***************************************************************************
+  แก้ BBL import #8 (BBL-Table 1.csv) ไป 115 แถว ตอนนี้ทุกแถวอยู่ใน 2026-05-02..2026-05-31
+  ถ้ารันซ้ำ แถววันที่ 1–12 พ.ค. ที่ถูกแล้วจะถูกสลับกลับเป็นผิดอีกรอบ — STEP 2 จึงมีเงื่อนไข
+  OBJECT_ID('dbo.BankStatementLine_Backup_004') IS NULL กันไว้ (มีตาราง backup อยู่ = เคยแก้แล้ว ไม่แก้อะไร)
+
+  ค่าก่อนแก้เก็บไว้ที่:
+    dbo.BankStatementLine_Backup_004    (LineId, ImportId, OldTranDate, NewTranDate, BackedUpAt)
+    dbo.BankStatementImport_Backup_004  (ImportId, OldPeriodStart, OldPeriodEnd, BackedUpAt)
+  ย้อนกลับได้ด้วย UPDATE l SET TranDate = b.OldTranDate FROM BankStatementLine l
+                  JOIN dbo.BankStatementLine_Backup_004 b ON b.LineId = l.LineId
+  ไฟล์ .csv ที่นำเข้าหลังแก้ parser (4 ก.ย. 2026) วันที่ถูกอยู่แล้ว ห้ามใช้สคริปต์นี้กับไฟล์เหล่านั้น
 */
 
 -- ===========================================================================
@@ -84,7 +98,8 @@ BEGIN TRANSACTION;
     JOIN BankStatementImport i ON i.ImportId = l.ImportId
     WHERE i.FileName LIKE '%.csv'
       AND i.Status = 'SUCCESS'
-      AND DAY(l.TranDate) <= 12;
+      AND DAY(l.TranDate) <= 12
+      AND OBJECT_ID('dbo.BankStatementLine_Backup_004') IS NULL; -- รันแล้ว 15 ก.ย. 2026 ดูหัวไฟล์
 
     PRINT CONCAT('แก้วันที่ไป ', @@ROWCOUNT, ' แถว');
 
@@ -100,7 +115,8 @@ BEGIN TRANSACTION;
     ) x
     WHERE i.FileName LIKE '%.csv'
       AND i.Status = 'SUCCESS'
-      AND x.MinDate IS NOT NULL;
+      AND x.MinDate IS NOT NULL
+      AND OBJECT_ID('dbo.BankStatementLine_Backup_004') IS NULL;
 
     PRINT CONCAT('อัปเดตช่วงวันที่ของไฟล์ไป ', @@ROWCOUNT, ' ไฟล์');
 

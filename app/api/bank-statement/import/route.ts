@@ -6,8 +6,24 @@ import { parseBankStatement, BankCode, NormalizedStatementLine } from '../../../
 import { readStatementRows, MAX_FILE_BYTES, MAX_IMPORT_ROWS } from '../../../../lib/bankParsers/workbook';
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
+import { findOverlapWithImportedLines } from '../../../../lib/bankStatementOverlap';
 
 const VALID_BANKS: BankCode[] = ['BBL', 'KBANK', 'SCB'];
+
+// เงื่อนไขที่ไม่ยอมให้นำเข้า (ไฟล์/รายการซ้ำ) — แยกจาก error ของระบบ เพื่อตอบ 4xx พร้อมข้อความตรงๆ หลัง rollback
+class ImportBlockedError extends Error {
+  body: Record<string, unknown>;
+  status: number;
+  constructor(body: { error: string } & Record<string, unknown>, status: number) {
+    super(body.error);
+    this.body = body;
+    this.status = status;
+  }
+}
+
+function formatImportedAt(value: string | Date): string {
+  return new Date(value).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' });
+}
 
 // จำนวนแถวต่อ 1 คำสั่ง INSERT — เดิมแทรกทีละแถวจึงต้องวิ่งไป-กลับ SQL Server เท่าจำนวนแถว
 // (วัดได้ราว 38 ms ต่อครั้ง = ไฟล์ 424 แถวใช้เวลาราว 16 วินาที โดยเปิด transaction ค้างไว้ตลอด)
@@ -120,42 +136,57 @@ export async function POST(req: NextRequest) {
   try {
     const pool = await getPool();
 
-    // เช็คไฟล์ซ้ำก่อนทำอะไรทั้งหมด: ถ้าเนื้อหาไฟล์นี้เคย import สำเร็จไปแล้ว ไม่ยอมให้บันทึกซ้ำ
-    const dupCheck = await pool
-      .request()
-      .input('fileHash', sql.Char(64), fileHash)
-      .query(`
-        SELECT TOP 1 ImportId, FileName, ImportedAt
-        FROM BankStatementImport
-        WHERE FileHash = @fileHash AND Status = 'SUCCESS'
-      `);
-
-    if (dupCheck.recordset.length > 0) {
-      const existing = dupCheck.recordset[0];
-      return NextResponse.json(
-        {
-          error: `ไฟล์นี้เคยนำเข้าไปแล้ว (${existing.FileName} เมื่อ ${new Date(
-            existing.ImportedAt
-          ).toLocaleString('th-TH', { dateStyle: 'medium', timeStyle: 'short' })}) ไม่นำเข้าซ้ำ`,
-          duplicate: true,
-          existingImportId: existing.ImportId,
-        },
-        { status: 409 }
-      );
-    }
-
     // บันทึกลง SQL Server ทั้งหมดในทรานแซกชันเดียว
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
     try {
+      // ให้นำเข้า statement ได้ทีละไฟล์จนจบ transaction — ไม่งั้นสองคนกดนำเข้าไฟล์ที่ข้อมูลซ้ำกันพร้อมกัน
+      // ทั้งคู่จะเช็คซ้ำผ่านก่อนที่อีกฝั่งจะ commit แล้วเข้าไปทั้งสองไฟล์
+      const lock = await new sql.Request(transaction).query(`
+        DECLARE @result INT;
+        EXEC @result = sp_getapplock @Resource = 'BankStatementImport', @LockMode = 'Exclusive',
+                                     @LockOwner = 'Transaction', @LockTimeout = 30000;
+        SELECT @result AS Result;
+      `);
+      if (Number(lock.recordset[0]?.Result) < 0) {
+        throw new ImportBlockedError({ error: 'มีการนำเข้าไฟล์อื่นอยู่ กรุณาลองใหม่อีกครั้ง' }, 409);
+      }
+
+      // กันซ้ำด้วยการเทียบระดับรายการ ไม่ใช่ hash ของไฟล์ — ไฟล์ที่ดาวน์โหลดใหม่ / save ใหม่ / เปลี่ยนชื่อ ได้ hash ใหม่
+      // ทั้งที่รายการข้างในซ้ำเดิม และบัญชีนำเข้าทับช่วงกันได้ (เช่นทำ 1–15 แล้วรอบหน้าอัปไฟล์ทั้งเดือน)
+      // จึงนำเข้าเฉพาะรายการที่ยังไม่มีในระบบ รายการที่มีอยู่แล้ว (รวมที่จับคู่ไปแล้ว) ไม่แตะ
+      // FileHash ยังบันทึกไว้เป็นหลักฐาน แต่ไม่ใช้บล็อก: ถ้าลบไฟล์ 1–15 ทิ้งแล้วอัปไฟล์ทั้งเดือนเดิมอีกรอบ
+      // hash จะตรงกับรอบ 16–31 ที่ยังอยู่ ทั้งที่รายการ 1–15 ไม่มีในระบบแล้ว
+      const overlap = await findOverlapWithImportedLines(transaction, bankCode, lines, periodStart, periodEnd);
+      if (overlap.newLines.length === 0) {
+        const sources = overlap.imports
+          .map((i) => `${i.fileName} เมื่อ ${formatImportedAt(i.importedAt)}`)
+          .join(', ');
+        throw new ImportBlockedError(
+          {
+            error: `ทุกรายการในไฟล์นี้นำเข้าไปแล้ว (${sources}) ไม่มีรายการใหม่ให้นำเข้า`,
+            duplicate: true,
+            existingImportId: overlap.imports[0]?.importId ?? null,
+          },
+          409
+        );
+      }
+
+      // ช่วงวันที่และจำนวนของหัวไฟล์นับตามรายการที่นำเข้าจริง ไม่ใช่ทั้งไฟล์ —
+      // หน้า Reconcile ใช้ PeriodStart/PeriodEnd นี้เติมช่วงวันที่ให้ตอนเริ่ม session
+      const newLines = overlap.newLines;
+      const newDates = newLines.map((l) => l.tranDate).sort();
+      const newPeriodStart = newDates[0];
+      const newPeriodEnd = newDates[newDates.length - 1];
+
       const importRequest = new sql.Request(transaction);
       const importResult = await importRequest
         .input('bankCode', sql.NVarChar, bankCode)
         .input('fileName', sql.NVarChar, fileName)
-        .input('periodStart', sql.Date, periodStart)
-        .input('periodEnd', sql.Date, periodEnd)
-        .input('rowCount', sql.Int, lines.length)
+        .input('periodStart', sql.Date, newPeriodStart)
+        .input('periodEnd', sql.Date, newPeriodEnd)
+        .input('rowCount', sql.Int, newLines.length)
         .input('fileHash', sql.Char(64), fileHash)
         .query(`
           INSERT INTO BankStatementImport (BankCode, FileName, PeriodStart, PeriodEnd, ImportedRowCount, FileHash, Status)
@@ -165,19 +196,23 @@ export async function POST(req: NextRequest) {
 
       const importId = importResult.recordset[0].ImportId;
 
-      await insertLinesInBatches(transaction, importId, bankCode, lines);
+      await insertLinesInBatches(transaction, importId, bankCode, newLines);
 
       await transaction.commit();
 
       return NextResponse.json({
         importId,
         bankCode,
-        rowCount: lines.length,
-        periodStart,
-        periodEnd,
+        rowCount: newLines.length,
+        skippedCount: overlap.overlapCount,
+        periodStart: newPeriodStart,
+        periodEnd: newPeriodEnd,
       });
     } catch (err) {
       await transaction.rollback();
+      if (err instanceof ImportBlockedError) {
+        return NextResponse.json(err.body, { status: err.status });
+      }
       throw err;
     }
   } catch (err) {

@@ -11,12 +11,19 @@ type RawCluster = { bankIds: number[]; glIds: number[] };
 // หา subset ของ items ที่ผลรวมเท่ากับ target พอดี (ภายในความคลาดเคลื่อน 0.005)
 function findSubsetSum(items: Item[], target: number, maxSize = 5): Item[] | null {
   const sorted = [...items].sort((a, b) => b.amount - a.amount);
+  const reach = [0];
+  for (const item of sorted) reach.push(reach[reach.length - 1] + Math.max(item.amount, 0));
   const chosen: Item[] = [];
   function backtrack(startIdx: number, remaining: number): boolean {
     if (Math.abs(remaining) < 0.005 && chosen.length > 0) return true;
-    if (chosen.length >= maxSize) return false;
+    const slots = maxSize - chosen.length;
+    if (slots <= 0) return false;
     for (let i = startIdx; i < sorted.length; i++) {
       if (sorted[i].amount - remaining > 0.005) continue;
+      // หยิบรายการใหญ่สุดที่เหลือจนเต็มโควตาก็ไม่ถึงเป้า = ไม่มีทางเจอ (ไม่ตัดจะบล็อก server ทั้งตัวหลายวินาทีตอนวันที่ GL เยอะ)
+      if (reach[Math.min(i + slots, sorted.length)] - reach[i] < remaining - 0.005) break;
+      // ยอดซ้ำตัวก่อนหน้าในระดับเดียวกัน = กิ่งเดิมที่ลองแล้วไม่เจอ
+      if (i > startIdx && sorted[i].amount === sorted[i - 1].amount) continue;
       chosen.push(sorted[i]);
       if (backtrack(i + 1, remaining - sorted[i].amount)) return true;
       chosen.pop();

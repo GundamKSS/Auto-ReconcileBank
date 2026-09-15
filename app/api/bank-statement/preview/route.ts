@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import sql from 'mssql';
-import crypto from 'crypto';
 import { getPool } from '../../../../lib/db';
 import { parseBankStatement, BankCode, NormalizedStatementLine } from '../../../../lib/bankParsers/index';
 import { readStatementRows, MAX_FILE_BYTES, MAX_IMPORT_ROWS } from '../../../../lib/bankParsers/workbook';
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
+import { findOverlapWithImportedLines } from '../../../../lib/bankStatementOverlap';
 
 const VALID_BANKS: BankCode[] = ['BBL', 'KBANK', 'SCB'];
 
@@ -41,7 +40,6 @@ export async function POST(req: NextRequest) {
   let lines: NormalizedStatementLine[];
   let periodStart: string | null;
   let periodEnd: string | null;
-  let fileHash: string;
   let file: File;
   let bankCode: string;
 
@@ -72,7 +70,6 @@ export async function POST(req: NextRequest) {
     bankCode = rawBank;
 
     const fileBuffer = Buffer.from(await file.arrayBuffer());
-    fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
 
     const rows = readStatementRows(file.name, fileBuffer, bankCode);
     const result = parseBankStatement(bankCode as BankCode, rows);
@@ -104,15 +101,8 @@ export async function POST(req: NextRequest) {
 
   try {
     const pool = await getPool();
-    const dupCheck = await pool
-      .request()
-      .input('fileHash', sql.Char(64), fileHash)
-      .query(`
-        SELECT TOP 1 FileName, ImportedAt
-        FROM BankStatementImport
-        WHERE FileHash = @fileHash AND Status = 'SUCCESS'
-      `);
-    const alreadyImported = dupCheck.recordset[0] ?? null;
+    const overlap = await findOverlapWithImportedLines(pool, bankCode, lines, periodStart, periodEnd);
+    const newDates = overlap.newLines.map((l) => l.tranDate).sort();
 
     const periodDays = daysBetween(periodStart, periodEnd);
 
@@ -129,9 +119,17 @@ export async function POST(req: NextRequest) {
         possibleDuplicates: findPossibleDuplicates(lines),
         // statement ปกติครอบคลุมราวหนึ่งเดือน ถ้ากว้างกว่านี้มากมักแปลว่าหยิบไฟล์ผิด
         widePeriodDays: periodDays !== null && periodDays > WIDE_PERIOD_DAYS ? periodDays : null,
-        alreadyImported: alreadyImported
-          ? { fileName: alreadyImported.FileName, importedAt: alreadyImported.ImportedAt }
-          : null,
+        // รายการที่นำเข้าไว้แล้ว (แม้ชื่อไฟล์หรือ hash ต่างกัน) — ตอนนำเข้าจะข้ามไป และบันทึกเฉพาะ newCount รายการ
+        overlap:
+          overlap.overlapCount > 0
+            ? {
+                overlapCount: overlap.overlapCount,
+                newCount: overlap.newLines.length,
+                newPeriodStart: newDates[0] ?? null,
+                newPeriodEnd: newDates[newDates.length - 1] ?? null,
+                imports: overlap.imports,
+              }
+            : null,
       },
     });
   } catch (err) {

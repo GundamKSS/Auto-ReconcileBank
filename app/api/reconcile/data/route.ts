@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     if (bankCode) bankRequest.input('bankCode', sql.NVarChar, bankCode);
     if (fromDate) bankRequest.input('from', sql.Date, fromDate);
     if (toDate) bankRequest.input('to', sql.Date, toDate);
-    const bankResult = await bankRequest.query(`
+    const bankQuery = bankRequest.query(`
       SELECT LineId, BankCode, TranDate, Description, Debit, Credit, ChequeNo
       FROM BankStatementLine
       WHERE MatchStatus = 'UNMATCHED'
@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
     if (bankCode) glRequest.input('bankCode', sql.NVarChar, bankCode);
     if (fromDate) glRequest.input('from', sql.Date, fromDate);
     if (glToDate) glRequest.input('to', sql.Date, glToDate);
-    const glResult = await glRequest.query(`
+    const glQuery = glRequest.query(`
       SELECT e.Entry_No, m.BankCode, e.Bank_Account_No, m.BankAccountName, e.Posting_Date,
              e.Document_No, e.Debit_Amount_LCY, e.Credit_Amount_LCY
       FROM BankAccountLedgerEntries e
@@ -75,6 +75,9 @@ export async function GET(req: NextRequest) {
         ${glToDate ? 'AND e.Posting_Date <= @to' : ''}
       ORDER BY e.Posting_Date DESC, e.Entry_No DESC
     `);
+
+    // สอง query ไม่ขึ้นต่อกัน ยิงพร้อมกันบน pool ได้ ไม่ต้องรอ bank เสร็จก่อนค่อยเริ่ม GL
+    const [bankResult, glResult] = await Promise.all([bankQuery, glQuery]);
 
     const bankLines = bankResult.recordset.map((r) => ({
       id: `bank-${r.LineId}`,

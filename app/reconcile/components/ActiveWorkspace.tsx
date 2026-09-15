@@ -71,19 +71,26 @@ function formatDate(iso: string) {
   return new Date(iso).toISOString().slice(0, 10);
 }
 
-// หา subset ของ items ที่ผลรวมเท่ากับ target พอดี (เหมือน backend ตอน suggest matches)
+// หา subset ของ items ที่ผลรวมเท่ากับ target พอดี — ต้องตรงกับ findSubsetSum ใน api/reconcile/suggest ทุกประการ
 function findSubsetSumClient(
   items: { id: string; amount: number }[],
   target: number,
   maxSize = 5
 ): { id: string; amount: number }[] | null {
   const sorted = [...items].sort((a, b) => b.amount - a.amount);
+  const reach = [0];
+  for (const item of sorted) reach.push(reach[reach.length - 1] + Math.max(item.amount, 0));
   const chosen: { id: string; amount: number }[] = [];
   function backtrack(startIdx: number, remaining: number): boolean {
     if (Math.abs(remaining) < 0.005 && chosen.length > 0) return true;
-    if (chosen.length >= maxSize) return false;
+    const slots = maxSize - chosen.length;
+    if (slots <= 0) return false;
     for (let i = startIdx; i < sorted.length; i++) {
       if (sorted[i].amount - remaining > 0.005) continue;
+      // หยิบรายการใหญ่สุดที่เหลือจนเต็มโควตาก็ไม่ถึงเป้า = ไม่มีทางเจอ (ไม่ตัด SCB 31/08 GL 149 รายการค้าง ~5 วินาที)
+      if (reach[Math.min(i + slots, sorted.length)] - reach[i] < remaining - 0.005) break;
+      // ยอดซ้ำตัวก่อนหน้าในระดับเดียวกัน = กิ่งเดิมที่ลองแล้วไม่เจอ
+      if (i > startIdx && sorted[i].amount === sorted[i - 1].amount) continue;
       chosen.push(sorted[i]);
       if (backtrack(i + 1, remaining - sorted[i].amount)) return true;
       chosen.pop();
@@ -226,32 +233,32 @@ function GroupTabs({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const totalCount = groups.reduce((s, g) => s + g.count, 0);
-  if (groups.length <= 1) return null; // มีบัญชีเดียว ไม่ต้องโชว์แท็บให้รก
-  return (
-    <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1 flex-wrap shrink-0">
-      <button
-        onClick={() => onChange("ALL")}
-        className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-          value === "ALL" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-        }`}
-      >
-        All {totalCount}
-      </button>
-      {groups.map((g) => (
-        <button
-          key={g.key}
-          onClick={() => onChange(g.key)}
-          className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
-            value === g.key ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-          }`}
-          title={g.label}
-        >
-          {g.label} {g.count}
-        </button>
-      ))}
-    </div>
-  );
+  // const totalCount = groups.reduce((s, g) => s + g.count, 0);
+  // if (groups.length <= 1) return null; // มีบัญชีเดียว ไม่ต้องโชว์แท็บให้รก
+  // return (
+    // <div className="flex items-center gap-1.5 px-4 pt-2.5 pb-1 flex-wrap shrink-0">
+    //   <button
+    //     onClick={() => onChange("ALL")}
+    //     className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+    //       value === "ALL" ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+    //     }`}
+    //   >
+    //     All {totalCount}
+    //   </button>
+    //   {groups.map((g) => (
+    //     <button
+    //       key={g.key}
+    //       onClick={() => onChange(g.key)}
+    //       className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+    //         value === g.key ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
+    //       }`}
+    //       title={g.label}
+    //     >
+    //       {g.label} {g.count}
+    //     </button>
+    //   ))}
+    // </div>
+  // );
 }
 
 function CircleCheckbox({
@@ -320,6 +327,8 @@ function DateGroupRow({
   matchReady,
   rowRef,
   highlighted,
+  onHoverStart,
+  onHoverEnd,
   clusterOf,
   dateClusterNumbering,
 }: {
@@ -332,6 +341,8 @@ function DateGroupRow({
   matchReady: boolean;
   rowRef?: (el: HTMLDivElement | null) => void;
   highlighted?: boolean;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
 }) {
@@ -344,6 +355,10 @@ function DateGroupRow({
   // ห้ามคำนวณแยกในแต่ละ panel เอง — เพราะฝั่ง bank/GL ดึงข้อมูลมาคนละ query เรียงคนละลำดับ
   // ถ้าต่างฝั่งคำนวณเลขกลุ่มเอง raw cluster เดียวกันจะได้เลขกำกับไม่ตรงกันข้ามฝั่ง (ดูสีผิด ดูเหมือนยอดไม่ตรง)
   const localClusterNo = dateClusterNumbering.get(date) ?? new Map<number, number>();
+
+  // วาดแถวย่อยเฉพาะวันที่เคยคลี่ (หลายพันแถวทำให้โหลด/ติ๊กช้า) และไม่ unmount ตอนหุบ เพื่อให้ animation หุบยังเล่นได้
+  const [hasOpened, setHasOpened] = useState(expanded);
+  if (expanded && !hasOpened) setHasOpened(true);
 
   function toggleGroup(e: React.MouseEvent) {
     e.stopPropagation();
@@ -364,8 +379,12 @@ function DateGroupRow({
   return (
     <div
       ref={rowRef}
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
       className={`border-b border-gray-50 last:border-b-0 transition-all duration-300 ${rowBg} ${
-        highlighted ? "ring-2 ring-inset ring-blue-400 bg-blue-50/70" : ""
+        highlighted
+          ? "ring-2 ring-inset ring-blue-400 bg-blue-50/70"
+          : "outline-transparent data-[hover=true]:outline-2 data-[hover=true]:outline-dashed data-[hover=true]:-outline-offset-2 data-[hover=true]:outline-blue-400"
       }`}
     >
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer" onClick={onToggleExpand}>
@@ -407,7 +426,7 @@ function DateGroupRow({
       >
         <div className="overflow-hidden">
           <div className="bg-gray-50/60">
-            {items.map((item) => {
+            {hasOpened && items.map((item) => {
               const isSelected = selected.has(item.id);
               const rawCluster = clusterOf.get(item.id);
               const groupNo = rawCluster !== undefined ? localClusterNo.get(rawCluster) : undefined;
@@ -450,6 +469,7 @@ function DateGroupRow({
 
 function Panel({
   title,
+  totalLabel,
   allItems,
   groups,
   groupTab,
@@ -464,6 +484,7 @@ function Panel({
   onToggleExpand,
   registerRowRef,
   highlightedDate,
+  onHoverDate,
   clusterOf,
   dateClusterNumbering,
   onSync,
@@ -471,6 +492,7 @@ function Panel({
   syncDisabled,
 }: {
   title: string;
+  totalLabel: string;
   allItems: LineItem[];
   groups: { key: string; label: string; count: number }[];
   groupTab: string;
@@ -485,6 +507,7 @@ function Panel({
   onToggleExpand: (date: string) => void;
   registerRowRef: (date: string, el: HTMLDivElement | null) => void;
   highlightedDate: string | null;
+  onHoverDate: (date: string | null) => void;
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
   onSync?: () => void;
@@ -495,6 +518,7 @@ function Panel({
   const filtered = byGroup.filter((item) => item.direction === filter);
   // นับ "selected" เฉพาะฝั่งทิศทางที่กำลังดูอยู่ (filter) — ไม่ใช่ selected.size ดิบซึ่งรวมอีกฝั่งที่ไม่เกี่ยวด้วย
   const selectedInDirection = filtered.filter((item) => selected.has(item.id)).length;
+  const pendingTotal = filtered.reduce((sum, item) => sum + item.amount, 0);
 
   const byDate = useMemo(() => {
     const map = new Map<string, LineItem[]>();
@@ -509,11 +533,20 @@ function Panel({
   return (
     <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden min-w-0 lg:h-full">
       <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 flex-wrap shrink-0">
-        <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
-          <h2 className="font-semibold text-[15px] text-gray-900 whitespace-nowrap">{title}</h2>
-          <span className="text-xs text-gray-400 whitespace-nowrap">
-            {selectedInDirection} selected · {filtered.length} pending
-          </span>
+        <div className="min-w-0">
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <h2 className="font-semibold text-[15px] text-gray-900 whitespace-nowrap">{title}</h2>
+            <span className="text-xs text-gray-400 whitespace-nowrap">
+              {selectedInDirection} selected · {filtered.length} pending
+            </span>
+          </div>
+          <p className="text-[11px] font-medium text-gray-400 tracking-wide mt-0.5 whitespace-nowrap">
+            {totalLabel}{" "}
+            <span className="text-sm font-semibold text-gray-900 tabular-nums tracking-normal">
+              {loading ? "—" : formatAmount(pendingTotal)}
+            </span>{" "}
+            บาท
+          </p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {onSync && (
@@ -531,7 +564,7 @@ function Panel({
         </div>
       </div>
 
-      <GroupTabs groups={groups} value={groupTab} onChange={onGroupTabChange} />
+      {/* <GroupTabs groups={groups} value={groupTab} onChange={onGroupTabChange} /> */}
 
       <div className="flex flex-col overflow-y-auto max-h-[55vh] lg:max-h-none lg:flex-1 lg:min-h-0">
         {loading && (
@@ -555,6 +588,8 @@ function Panel({
               matchReady={matchReadyDates.has(date)}
               rowRef={(el) => registerRowRef(date, el)}
               highlighted={highlightedDate === date}
+              onHoverStart={() => onHoverDate(date)}
+              onHoverEnd={() => onHoverDate(null)}
               clusterOf={clusterOf}
               dateClusterNumbering={dateClusterNumbering}
             />
@@ -656,10 +691,10 @@ export default function ActiveWorkspace({
   const [linkDates, setLinkDates] = useState(true);
   const [expandedBankDates, setExpandedBankDates] = useState<Set<string>>(new Set());
   const [expandedGlDates, setExpandedGlDates] = useState<Set<string>>(new Set());
-  const [highlight, setHighlight] = useState<{ side: "bank" | "gl"; date: string } | null>(null);
+  // วันที่ที่คลี่ดูล่าสุด — ตีกรอบน้ำเงินค้างไว้ทั้ง 2 ฝั่ง จนกว่าจะไปคลี่วันอื่น
+  const [activeDate, setActiveDate] = useState<string | null>(null);
   const bankRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const glRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const highlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function registerBankRowRef(date: string, el: HTMLDivElement | null) {
     if (el) bankRowRefs.current.set(date, el);
@@ -670,14 +705,25 @@ export default function ActiveWorkspace({
     else glRowRefs.current.delete(date);
   }
 
-  function flashHighlight(side: "bank" | "gl", date: string) {
-    setHighlight({ side, date });
-    if (highlightTimer.current) clearTimeout(highlightTimer.current);
-    highlightTimer.current = setTimeout(() => setHighlight(null), 1500);
+  // hover วันไหนก็ตีเส้นประวันเดียวกันทั้ง 2 ฝั่ง — ตั้ง attribute ตรงผ่าน ref เพราะ state จะ re-render หลายพันแถวทุกครั้งที่เมาส์ข้ามแถว
+  const hoveredDateRef = useRef<string | null>(null);
+  function markHoverDate(date: string | null) {
+    const prev = hoveredDateRef.current;
+    if (prev === date) return;
+    if (prev) {
+      bankRowRefs.current.get(prev)?.removeAttribute("data-hover");
+      glRowRefs.current.get(prev)?.removeAttribute("data-hover");
+    }
+    hoveredDateRef.current = date;
+    if (date) {
+      bankRowRefs.current.get(date)?.setAttribute("data-hover", "true");
+      glRowRefs.current.get(date)?.setAttribute("data-hover", "true");
+    }
   }
 
   function toggleBankExpand(date: string) {
     const willExpand = !expandedBankDates.has(date);
+    if (willExpand) setActiveDate(date);
     setExpandedBankDates((prev) => {
       const next = new Set(prev);
       willExpand ? next.add(date) : next.delete(date);
@@ -693,13 +739,13 @@ export default function ActiveWorkspace({
         requestAnimationFrame(() => {
           glRowRefs.current.get(date)?.scrollIntoView({ behavior: "smooth", block: "center" });
         });
-        flashHighlight("gl", date);
       }
     }
   }
 
   function toggleGlExpand(date: string) {
     const willExpand = !expandedGlDates.has(date);
+    if (willExpand) setActiveDate(date);
     setExpandedGlDates((prev) => {
       const next = new Set(prev);
       willExpand ? next.add(date) : next.delete(date);
@@ -715,7 +761,6 @@ export default function ActiveWorkspace({
         requestAnimationFrame(() => {
           bankRowRefs.current.get(date)?.scrollIntoView({ behavior: "smooth", block: "center" });
         });
-        flashHighlight("bank", date);
       }
     }
   }
@@ -1152,14 +1197,14 @@ export default function ActiveWorkspace({
               >
                 <RotateCcw size={14} /> Reset
               </button>
-              <button
+              {/* <button
                 onClick={handleSuggestMatches}
                 disabled={loading || busy || syncingGl}
                 className="flex items-center gap-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3.5 py-2 rounded-full hover:bg-blue-100 disabled:opacity-50"
               >
                 {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
                 Suggest matches
-              </button>
+              </button> */}
             </div>
           </div>
 
@@ -1245,7 +1290,7 @@ export default function ActiveWorkspace({
             >
               <Pencil size={14} />
             </button>
-            <span className="hidden sm:inline text-xs text-gray-400 truncate max-w-[160px] pl-1">
+            <span className="hidden sm:inline text-xs text-gray-400 truncate max-w-[250px] pl-1">
               {session.bankCode} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
             </span>
             {error && <span className="text-xs text-red-600 pl-1 basis-full">{error}</span>}
@@ -1254,6 +1299,7 @@ export default function ActiveWorkspace({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:h-full">
           <Panel
             title="Bank statement"
+            totalLabel="BANK TOTAL"
             allItems={bankLines}
             groups={bankGroups}
             groupTab="ALL"
@@ -1267,12 +1313,14 @@ export default function ActiveWorkspace({
             expandedDates={expandedBankDates}
             onToggleExpand={toggleBankExpand}
             registerRowRef={registerBankRowRef}
-            highlightedDate={highlight?.side === "bank" ? highlight.date : null}
+            highlightedDate={activeDate}
+            onHoverDate={markHoverDate}
             clusterOf={clusterOf}
             dateClusterNumbering={dateClusterNumbering}
           />
           <Panel
             title="General Ledger (BC365)"
+            totalLabel="GL TOTAL"
             allItems={glLines}
             groups={glGroups}
             groupTab={glGroupTab}
@@ -1285,7 +1333,8 @@ export default function ActiveWorkspace({
             expandedDates={expandedGlDates}
             onToggleExpand={toggleGlExpand}
             registerRowRef={registerGlRowRef}
-            highlightedDate={highlight?.side === "gl" ? highlight.date : null}
+            highlightedDate={activeDate}
+            onHoverDate={markHoverDate}
             matchReadyDates={matchReadyDates}
             clusterOf={clusterOf}
             dateClusterNumbering={dateClusterNumbering}
