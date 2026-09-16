@@ -119,6 +119,29 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 1b) รายการฝั่ง GL ต้องมีอยู่จริงและยังไม่อยู่ใน match ที่ ACTIVE — เดิมเช็คแค่ฝั่ง Bank
+      //     ทำให้ GL ตัวเดียวถูกจับคู่ซ้ำได้ ถ้ามี 2 คนเปิดหน้าค้างไว้ หรือกดจาก popup ที่ข้อมูลเก่า
+      if (seenGl.size > 0) {
+        const glCsv = [...seenGl].join(','); // ทุกตัวผ่าน Number.isInteger แล้ว ต่อเข้า IN(...) ได้ปลอดภัย
+        const glFound = await new sql.Request(transaction).query(
+          `SELECT COUNT(DISTINCT Entry_No) AS N FROM BankAccountLedgerEntries WHERE Entry_No IN (${glCsv})`
+        );
+        if (Number(glFound.recordset[0]?.N ?? 0) !== seenGl.size) {
+          throw new Error('มีรายการฝั่ง GL ที่ไม่พบในระบบ กรุณารีเฟรชหน้าใหม่');
+        }
+        const glTaken = await new sql.Request(transaction).query(`
+          SELECT DISTINCT rml.GLEntryNo
+          FROM ReconciliationMatchLine rml
+          JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
+          WHERE rml.SourceType = 'GL' AND rml.Status = 'ACTIVE' AND rml.GLEntryNo IN (${glCsv})
+        `);
+        if (glTaken.recordset.length > 0) {
+          throw new Error(
+            `รายการฝั่ง GL ${glTaken.recordset.map((r) => r.GLEntryNo).join(', ')} ถูกจับคู่ไปแล้ว กรุณารีเฟรชหน้าใหม่`
+          );
+        }
+      }
+
       // 2) แต่ละกลุ่มของ MATCHED ต้องมียอดสองฝั่งดุลกัน — ตรวจจากยอดจริงใน DB ไม่ใช่ตัวเลขที่ client ส่งมา
       //    ด่านนี้จำเป็นเพราะฝั่ง UI เคยส่งกลุ่มที่ยอดไม่ดุลมาได้ (ตอนผู้ใช้เลือกข้ามวันแล้วบางรายการถูกตัดทิ้ง)
       if (matchType === 'MATCHED') {

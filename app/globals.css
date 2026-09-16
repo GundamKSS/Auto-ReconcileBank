@@ -44,6 +44,29 @@ body {
   @keyframes toast-in {
     from { opacity: 0; transform: translateY(-16px) scale(0.9); }
   }
+
+  /* ออร่าของผู้ช่วยหาคู่ (MatchAssistantModal) — วนไม่รู้จบ ใช้กับชิ้นตกแต่งที่ไม่มีลูก position: fixed เท่านั้น */
+  --animate-aura-spin: aura-spin 7s linear infinite;
+  --animate-aura-spin-fast: aura-spin 2.6s linear infinite;
+  --animate-aura-breathe: aura-breathe 2.6s ease-in-out infinite;
+  --animate-aura-ping: aura-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  --animate-aura-shimmer: aura-shimmer 2.4s linear infinite;
+
+  @keyframes aura-spin {
+    to { transform: rotate(360deg); }
+  }
+  @keyframes aura-breathe {
+    0%, 100% { opacity: 0.6; transform: scale(0.94); }
+    50% { opacity: 1; transform: scale(1.06); }
+  }
+  @keyframes aura-ping {
+    from { opacity: 0.75; transform: scale(0.8); }
+    to { opacity: 0; transform: scale(1.9); }
+  }
+  @keyframes aura-shimmer {
+    from { background-position: 200% 0; }
+    to { background-position: -200% 0; }
+  }
 }
 
 /* เนื้อหาหน้าใหม่ค่อยๆ ขึ้นมา — ใช้ scale จากขอบบนแทนการเลื่อนลง
@@ -76,7 +99,12 @@ html {
   .sidebar-enter,
   .animate-pop-in,
   .animate-overlay-in,
-  .animate-toast-in {
+  .animate-toast-in,
+  .animate-aura-spin,
+  .animate-aura-spin-fast,
+  .animate-aura-breathe,
+  .animate-aura-ping,
+  .animate-aura-shimmer {
     animation: none;
   }
 }

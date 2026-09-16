@@ -25,7 +25,7 @@ class DeleteBlockedError extends Error {
 // และ mark ทุกบรรทัดในไฟล์ MatchStatus = 'DELETED' เพราะ:
 //   - ReconciliationMatchLine ที่ยกเลิกการจับคู่ไปแล้ว (REVERSED) ยังอ้าง LineId ในไฟล์อยู่ (ไม่มี FK)
 //     ถ้าลบแถวทิ้ง ฝั่ง Bank ของประวัติเหล่านั้นจะหายจากหน้า Match History เงียบๆ
-//   - Reconcile/Suggest ดึงเฉพาะ MatchStatus = 'UNMATCHED' จึงไม่เห็นรายการของไฟล์ที่ลบทันที
+//   - Reconcile/ผู้ช่วยหาคู่ ดึงเฉพาะ MatchStatus = 'UNMATCHED' จึงไม่เห็นรายการของไฟล์ที่ลบทันที
 //     ส่วนรายงาน/Dashboard/Export กรอง MatchStatus <> 'DELETED' ไว้ใน reports/reconciliation/query.ts
 //   - เช็คไฟล์ซ้ำตอนนำเข้าดูเฉพาะ Status = 'SUCCESS' จึงนำเข้าไฟล์เดิมใหม่ได้หลังลบ
 //

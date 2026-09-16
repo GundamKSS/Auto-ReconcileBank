@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RotateCcw,
   RefreshCw,
-  Sparkles,
   X,
   ArrowDownLeft,
   ArrowUpRight,
@@ -18,9 +17,13 @@ import {
   Link2,
   Maximize2,
   Minimize2,
+  WandSparkles,
 } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { ReconcileSession } from "./types";
-import SuggestPreviewModal, { Cluster } from "./Suggestpreviewmodal";
+import MatchAssistantModal from "./MatchAssistantModal";
+import SuspenseConfirmModal from "./SuspenseConfirmModal";
+import { AURA_GRADIENT } from "./AuraOrb";
 
 type Direction = "IN" | "OUT";
 
@@ -64,6 +67,9 @@ type LineItem = {
   amount: number;
 };
 
+// รายการในกลุ่มที่ระบบติ๊กให้ แยกตามประเภท — ใช้กับปุ่มเลือก/ยกเลิกทั้งหมดตามประเภท
+type ClusterKind = { count: number; bankIds: string[]; glIds: string[] };
+
 function formatAmount(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -71,7 +77,8 @@ function formatDate(iso: string) {
   return new Date(iso).toISOString().slice(0, 10);
 }
 
-// หา subset ของ items ที่ผลรวมเท่ากับ target พอดี — ต้องตรงกับ findSubsetSum ใน api/reconcile/suggest ทุกประการ
+// หา subset ของ items ที่ผลรวมเท่ากับ target พอดี — ต้องตรงกับ findSubsetSum ใน lib/matchAssistant.ts ทุกประการ
+// (ผู้ช่วยหาคู่ใช้ตัวนั้นกันรายการที่ตารางติ๊กไว้แล้ว ถ้าผลต่างกันจะเสนอคู่ข้ามวันที่ขัดกับกลุ่มบนตาราง)
 function findSubsetSumClient(
   items: { id: string; amount: number }[],
   target: number,
@@ -331,6 +338,7 @@ function DateGroupRow({
   onHoverEnd,
   clusterOf,
   dateClusterNumbering,
+  lumpClusterIds,
 }: {
   date: string;
   items: LineItem[];
@@ -345,6 +353,7 @@ function DateGroupRow({
   onHoverEnd: () => void;
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
+  lumpClusterIds: Set<number>;
 }) {
   const total = items.reduce((sum, i) => sum + i.amount, 0);
   const selectedInGroup = items.filter((i) => selected.has(i.id)).length;
@@ -411,7 +420,6 @@ function DateGroupRow({
           </div>
           <div className="flex items-center gap-2 text-xs">
             <DirectionBadge direction={items[0]?.direction ?? "IN"} />
-            <span className="text-gray-400">ยอดรวม {formatAmount(total)}</span>
           </div>
         </div>
         <div className="text-right shrink-0">
@@ -453,6 +461,14 @@ function DateGroupRow({
                           กลุ่ม {groupNo}
                         </span>
                       )}
+                      {rawCluster !== undefined && lumpClusterIds.has(rawCluster) && (
+                        <span
+                          className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700"
+                          title="กลุ่มรวมยอด (1:N / N:1) — ยอดอาจตรงกันโดยบังเอิญ ควรตรวจก่อนกด Match"
+                        >
+                          รวมยอด
+                        </span>
+                      )}
                     </div>
                     <p className="text-sm text-gray-800 truncate">{item.description}</p>
                   </div>
@@ -487,6 +503,7 @@ function Panel({
   onHoverDate,
   clusterOf,
   dateClusterNumbering,
+  lumpClusterIds,
   onSync,
   syncing,
   syncDisabled,
@@ -510,6 +527,7 @@ function Panel({
   onHoverDate: (date: string | null) => void;
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
+  lumpClusterIds: Set<number>;
   onSync?: () => void;
   syncing?: boolean;
   syncDisabled?: boolean;
@@ -518,16 +536,16 @@ function Panel({
   const filtered = byGroup.filter((item) => item.direction === filter);
   // นับ "selected" เฉพาะฝั่งทิศทางที่กำลังดูอยู่ (filter) — ไม่ใช่ selected.size ดิบซึ่งรวมอีกฝั่งที่ไม่เกี่ยวด้วย
   const selectedInDirection = filtered.filter((item) => selected.has(item.id)).length;
-  const pendingTotal = filtered.reduce((sum, item) => sum + item.amount, 0);
-
-  const byDate = useMemo(() => {
+  const { byDate, pendingTotal } = useMemo(() => {
     const map = new Map<string, LineItem[]>();
+    let total = 0;
     for (const item of filtered) {
+      total += item.amount;
       const d = formatDate(item.date);
       if (!map.has(d)) map.set(d, []);
       map.get(d)!.push(item);
     }
-    return [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+    return { byDate: [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)), pendingTotal: total };
   }, [filtered]);
 
   return (
@@ -592,10 +610,49 @@ function Panel({
               onHoverEnd={() => onHoverDate(null)}
               clusterOf={clusterOf}
               dateClusterNumbering={dateClusterNumbering}
+              lumpClusterIds={lumpClusterIds}
             />
           ))}
       </div>
     </div>
+  );
+}
+
+// ปุ่มเลือก/ยกเลิกทั้งหมดตามประเภทกลุ่มที่ระบบติ๊กให้ — แทนปุ่ม Suggest matches เดิมที่ให้ผลซ้ำกับการติ๊กอัตโนมัติ
+function ClusterKindToggle({
+  label,
+  count,
+  checked,
+  tone,
+  title,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  checked: boolean;
+  tone: "green" | "amber";
+  title: string;
+  onClick: () => void;
+}) {
+  const onStyle =
+    tone === "green" ? "border-green-200 bg-green-50 text-green-700" : "border-amber-200 bg-amber-50 text-amber-700";
+  const dotStyle = tone === "green" ? "border-green-600 bg-green-600" : "border-amber-500 bg-amber-500";
+  return (
+    <button
+      onClick={onClick}
+      disabled={count === 0}
+      title={title}
+      className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+        checked ? onStyle : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
+      }`}
+    >
+      <span
+        className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border ${checked ? dotStyle : "border-gray-300"}`}
+      >
+        {checked && <Check size={9} className="text-white" strokeWidth={3} />}
+      </span>
+      {label} ({count})
+    </button>
   );
 }
 
@@ -685,7 +742,9 @@ export default function ActiveWorkspace({
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
   const [syncingGl, setSyncingGl] = useState(false);
   const [clusterOf, setClusterOf] = useState<Map<string, number>>(new Map());
-  const [previewClusters, setPreviewClusters] = useState<Cluster[] | null>(null);
+  // ผู้ช่วยหาคู่ (popup หาคู่ที่ยอดตรงแต่ลงคนละวัน) — ดู MatchAssistantModal
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [confirmSuspenseOpen, setConfirmSuspenseOpen] = useState(false);
 
   // สวิชลิงค์วันที่: เปิด = กดขยายฝั่งไหน อีกฝั่งขยาย+เลื่อนตามให้อัตโนมัติ / ปิด = 2 ฝั่งอิสระต่อกัน
   const [linkDates, setLinkDates] = useState(true);
@@ -824,8 +883,9 @@ export default function ActiveWorkspace({
         date: l.date,
         ref: l.ref,
         direction: l.direction,
-        // ต่อชื่อบัญชีเฉพาะตอนมีค่าจริง ไม่งั้นได้ "... · null" ติดมาทุกแถว
-        description: l.accountName ? `${l.description} · ${l.accountName}` : l.description,
+        // ฝั่ง GL ref กับ description เป็น Document_No ตัวเดียวกัน (แถวแสดง ref อยู่แล้ว)
+        // จึงแสดงชื่อบัญชีแทน — เดิมต่อเป็น "Document_No · ชื่อบัญชี" ทำให้เลขเอกสารขึ้นซ้ำ 2 ครั้งทุกแถว
+        description: l.accountName ?? l.description,
         amount: l.amount,
       })),
     [glLinesRaw]
@@ -895,6 +955,71 @@ export default function ActiveWorkspace({
     }
     return map;
   }, [bankLines, clusterOf]);
+
+  // สมาชิกของแต่ละกลุ่มที่ระบบติ๊กให้ — ใช้แยกกลุ่ม 1:1 ออกจากกลุ่มรวมยอด (1:N / N:1)
+  const clusterMembers = useMemo(() => {
+    const map = new Map<number, { direction: Direction; bankIds: string[]; glIds: string[] }>();
+    function add(id: string, direction: Direction, side: "bankIds" | "glIds") {
+      const cluster = clusterOf.get(id);
+      if (cluster === undefined) return;
+      let members = map.get(cluster);
+      if (!members) {
+        members = { direction, bankIds: [], glIds: [] };
+        map.set(cluster, members);
+      }
+      members[side].push(id);
+    }
+    bankLinesRaw.forEach((l) => add(l.id, l.direction, "bankIds"));
+    glLinesRaw.forEach((l) => add(l.id, l.direction, "glIds"));
+    return map;
+  }, [bankLinesRaw, glLinesRaw, clusterOf]);
+
+  // กลุ่มรวมยอดมีโอกาสยอดตรงกันโดยบังเอิญมากกว่า 1:1 — ติดป้าย "รวมยอด" ให้ตรวจละเอียดก่อนกด Match
+  const lumpClusterIds = useMemo(
+    () =>
+      new Set(
+        [...clusterMembers]
+          .filter(([, m]) => m.bankIds.length > 1 || m.glIds.length > 1)
+          .map(([cluster]) => cluster)
+      ),
+    [clusterMembers]
+  );
+
+  // นับเฉพาะทิศทางที่กำลังดู — เลือก/ยกเลิกทั้งหมดต้องไม่ไปแตะแท็บ IN/OUT อีกฝั่งที่อาจเป็นคนละคนดูแล
+  const clusterKinds = useMemo(() => {
+    const empty = (): ClusterKind => ({ count: 0, bankIds: [], glIds: [] });
+    const kinds = { oneToOne: empty(), lumpSum: empty() };
+    for (const [cluster, m] of clusterMembers) {
+      if (m.direction !== directionFilter) continue;
+      const kind = lumpClusterIds.has(cluster) ? kinds.lumpSum : kinds.oneToOne;
+      kind.count += 1;
+      kind.bankIds.push(...m.bankIds);
+      kind.glIds.push(...m.glIds);
+    }
+    return kinds;
+  }, [clusterMembers, lumpClusterIds, directionFilter]);
+
+  function isKindSelected(kind: ClusterKind) {
+    return (
+      kind.count > 0 &&
+      kind.bankIds.every((id) => selectedBank.has(id)) &&
+      kind.glIds.every((id) => selectedGl.has(id))
+    );
+  }
+
+  function toggleKind(kind: ClusterKind) {
+    const select = !isKindSelected(kind);
+    const apply = (prev: Set<string>, ids: string[]) => {
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (select) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    };
+    setSelectedBank((prev) => apply(prev, kind.bankIds));
+    setSelectedGl((prev) => apply(prev, kind.glIds));
+  }
 
   function toggleBank(id: string) {
     setSelectedBank((prev) => {
@@ -1097,37 +1222,23 @@ export default function ActiveWorkspace({
     }
   }
 
-  async function handleSuggestMatches() {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      const res = await fetch("/api/reconcile/suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bankCode: session.bankCode,
-          from: session.periodStart,
-          to: session.periodEnd,
-          glExtendDays: session.includeSuspenseBuffer ? "7" : "0",
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "Suggest matches ไม่สำเร็จ");
-        return;
-      }
-      if (data.clusters.length === 0) {
-        setError("ไม่พบรายการที่จับคู่กันได้แบบชัดเจน (1:1, 1:N, N:1) — เหลือแต่เคสซับซ้อนที่ต้องเลือกเอง");
-        return;
-      }
-      setPreviewClusters(data.clusters);
-    } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
-    } finally {
-      setBusy(false);
-    }
+  // ปิดผู้ช่วยหาคู่ — ถ้าจับคู่ไประหว่างเปิด popup ต้องโหลดตารางใหม่ ไม่งั้นรายการที่จับไปแล้วยังค้างอยู่บนจอ
+  function handleAssistantClose(matchedPairs: number) {
+    setAssistantOpen(false);
+    if (matchedPairs === 0) return;
+    setToast({ title: "จับคู่สำเร็จ", message: `ผู้ช่วยหาคู่จับคู่ข้ามวันแล้ว ${matchedPairs} คู่` });
+    loadData();
   }
+
+  // ยอด Bank ที่ยังไม่มีคู่ในทิศทางที่กำลังดู — ส่งให้ออร่าของผู้ช่วยหาคู่วิ่งโชว์ระหว่างค้นหา
+  const assistantPreviewAmounts = useMemo(
+    () =>
+      bankLinesRaw
+        .filter((l) => l.direction === directionFilter && !clusterOf.has(l.id))
+        .slice(0, 40)
+        .map((l) => Number(l.amount)),
+    [bankLinesRaw, directionFilter, clusterOf]
+  );
 
   // ให้บัญชีกดหลังแก้ไขข้อมูลใน BC365 (ERP) เสร็จแล้ว — ดึงรายการ GL ล่าสุด 40 วันมาอัปเดต SQL แล้วโหลดหน้า reconcile ใหม่
   async function handleSyncGl() {
@@ -1157,19 +1268,35 @@ export default function ActiveWorkspace({
       }`}
     >
       {toast && <SuccessToast title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
-      {previewClusters && (
-        <SuggestPreviewModal
-          clusters={previewClusters}
-          bankCode={session.bankCode}
-          directionFilter={directionFilter}
-          onClose={() => setPreviewClusters(null)}
-          onConfirmed={async (message) => {
-            setPreviewClusters(null);
-            setToast({ title: "จับคู่สำเร็จ", message });
-            await loadData();
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {assistantOpen && (
+          <MatchAssistantModal
+            key="match-assistant"
+            bankCode={session.bankCode}
+            periodStart={session.periodStart}
+            periodEnd={session.periodEnd}
+            direction={directionFilter}
+            previewAmounts={assistantPreviewAmounts}
+            onClose={handleAssistantClose}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {confirmSuspenseOpen && (
+          <SuspenseConfirmModal
+            key="suspense-confirm"
+            lines={selectedGlItems}
+            direction={directionFilter}
+            autoMatchedCount={selectedGlItems.filter((l) => clusterOf.has(l.id)).length}
+            busy={busy}
+            onCancel={() => setConfirmSuspenseOpen(false)}
+            onConfirm={async () => {
+              await handleMoveToSuspense();
+              setConfirmSuspenseOpen(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {!focusMode && (
         <>
@@ -1197,14 +1324,22 @@ export default function ActiveWorkspace({
               >
                 <RotateCcw size={14} /> Reset
               </button>
-              {/* <button
-                onClick={handleSuggestMatches}
+              <button
+                onClick={() => setAssistantOpen(true)}
                 disabled={loading || busy || syncingGl}
-                className="flex items-center gap-1.5 text-sm font-medium text-blue-600 border border-blue-200 bg-blue-50 px-3.5 py-2 rounded-full hover:bg-blue-100 disabled:opacity-50"
+                title="ผู้ช่วยหาคู่ — หารายการที่ยอดตรงกันพอดีแต่ Bank กับ GL ลงคนละวัน"
+                className="group relative overflow-hidden rounded-full p-[1.5px] shadow-[0_0_18px_rgba(139,92,246,0.35)] transition-shadow hover:shadow-[0_0_26px_rgba(139,92,246,0.55)] disabled:opacity-50"
               >
-                {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
-                Suggest matches
-              </button> */}
+                <span
+                  aria-hidden
+                  className="absolute left-1/2 top-1/2 aspect-square w-[140%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
+                  style={{ background: AURA_GRADIENT }}
+                />
+                <span className="relative flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-sm font-medium text-violet-700 group-hover:bg-violet-50">
+                  <WandSparkles size={14} />
+                  ผู้ช่วยหาคู่
+                </span>
+              </button>
             </div>
           </div>
 
@@ -1276,12 +1411,20 @@ export default function ActiveWorkspace({
               <RotateCcw size={14} />
             </button>
             <button
-              onClick={handleSuggestMatches}
+              onClick={() => setAssistantOpen(true)}
               disabled={loading || busy || syncingGl}
-              className="p-2 text-blue-600 border border-blue-200 bg-blue-50 rounded-full hover:bg-blue-100 disabled:opacity-50"
-              title="Suggest matches"
+              title="ผู้ช่วยหาคู่"
+              aria-label="ผู้ช่วยหาคู่"
+              className="relative overflow-hidden rounded-full p-[1.5px] disabled:opacity-50"
             >
-              {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              <span
+                aria-hidden
+                className="absolute left-1/2 top-1/2 aspect-square w-[200%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
+                style={{ background: AURA_GRADIENT }}
+              />
+              <span className="relative flex rounded-full bg-white p-[7px] text-violet-700">
+                <WandSparkles size={14} />
+              </span>
             </button>
             <button
               onClick={onEditFilters}
@@ -1317,6 +1460,7 @@ export default function ActiveWorkspace({
             onHoverDate={markHoverDate}
             clusterOf={clusterOf}
             dateClusterNumbering={dateClusterNumbering}
+            lumpClusterIds={lumpClusterIds}
           />
           <Panel
             title="General Ledger (BC365)"
@@ -1338,6 +1482,7 @@ export default function ActiveWorkspace({
             matchReadyDates={matchReadyDates}
             clusterOf={clusterOf}
             dateClusterNumbering={dateClusterNumbering}
+            lumpClusterIds={lumpClusterIds}
             onSync={handleSyncGl}
             syncing={syncingGl}
             syncDisabled={loading || busy || syncingGl}
@@ -1372,11 +1517,27 @@ export default function ActiveWorkspace({
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
+            <ClusterKindToggle
+              label="1:1"
+              count={clusterKinds.oneToOne.count}
+              checked={isKindSelected(clusterKinds.oneToOne)}
+              tone="green"
+              title="เลือก/ยกเลิกทั้งหมด — กลุ่มที่ Bank 1 รายการยอดตรงกับ GL 1 รายการในวันเดียวกัน"
+              onClick={() => toggleKind(clusterKinds.oneToOne)}
+            />
+            <ClusterKindToggle
+              label="รวมยอด 1:N·N:1"
+              count={clusterKinds.lumpSum.count}
+              checked={isKindSelected(clusterKinds.lumpSum)}
+              tone="amber"
+              title="เลือก/ยกเลิกทั้งหมด — กลุ่มที่ต้องรวมหลายรายการให้ยอดเท่ากัน ยอดอาจตรงกันโดยบังเอิญ ควรตรวจก่อนกด Match"
+              onClick={() => toggleKind(clusterKinds.lumpSum)}
+            />
             <button onClick={handleClear} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 px-3 py-2">
               <X size={14} /> Clear
             </button>
             <button
-              onClick={handleMoveToSuspense}
+              onClick={() => setConfirmSuspenseOpen(true)}
               disabled={!canMoveToSuspense || busy || syncingGl}
               className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
             >

@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
 
         // คืนสถานะฝั่ง Bank เป็น UNMATCHED ให้กลับไปจับคู่ใหม่ได้ในหน้า Reconcile
         // (ฝั่ง GL ไม่มีคอลัมน์สถานะแยก — ใช้ Status ของ ReconciliationMatchLine ที่กำลังจะเปลี่ยนเป็น
-        //  REVERSED นี่แหละเป็นตัวบอกว่า GL entry นี้ว่างพอจะจับคู่ใหม่ได้แล้ว ผ่าน query ฝั่ง data/suggest)
+        //  REVERSED นี่แหละเป็นตัวบอกว่า GL entry นี้ว่างพอจะจับคู่ใหม่ได้แล้ว ผ่าน query ฝั่ง data/assistant)
         if (bankLineIds.length > 0) {
           const updateBank = new sql.Request(transaction);
           await updateBank.query(
