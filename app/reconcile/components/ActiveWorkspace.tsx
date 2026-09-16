@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject, type UIEvent } from "react";
 import {
   RotateCcw,
   RefreshCw,
@@ -25,6 +25,7 @@ import { ReconcileSession } from "./types";
 import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
+import DifferenceBadge from "./DifferenceBadge";
 import { AURA_GRADIENT } from "./AuraOrb";
 
 type Direction = "IN" | "OUT";
@@ -73,6 +74,64 @@ type LineItem = {
 
 // รายการในกลุ่มที่ระบบติ๊กให้ แยกตามประเภท — ใช้กับปุ่มเลือก/ยกเลิกทั้งหมดตามประเภท
 type ClusterKind = { count: number; bankIds: string[]; glIds: string[] };
+
+type MatchActivity = {
+  bankRows: number;
+  glRows: number;
+  stage: "saving" | "refreshing" | "success" | "error";
+  errorMessage?: string;
+};
+
+type WorkspaceDraft = {
+  version: 1;
+  savedAt: number;
+  directionFilter: Direction;
+  glGroupTab: string;
+  selectedBank: string[];
+  selectedGl: string[];
+  linkDates: boolean;
+  expandedBankDates: string[];
+  expandedGlDates: string[];
+  activeDate: string | null;
+  focusMode: boolean;
+  bankScrollTop: number;
+  glScrollTop: number;
+};
+
+const WORKSPACE_DRAFT_PREFIX = "reconcile-workspace-v1";
+
+function workspaceDraftKey(session: ReconcileSession) {
+  return [
+    WORKSPACE_DRAFT_PREFIX,
+    session.bankCode,
+    session.bankAccountNo ?? "all",
+    session.importId ?? "no-import",
+    session.periodStart,
+    session.periodEnd,
+    session.includeSuspenseBuffer ? "buffer" : "normal",
+  ].join(":");
+}
+
+function readWorkspaceDraft(key: string): WorkspaceDraft | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<WorkspaceDraft>;
+    if (
+      parsed.version !== 1 ||
+      (parsed.directionFilter !== "IN" && parsed.directionFilter !== "OUT") ||
+      !Array.isArray(parsed.selectedBank) ||
+      !Array.isArray(parsed.selectedGl)
+    ) {
+      sessionStorage.removeItem(key);
+      return null;
+    }
+    return parsed as WorkspaceDraft;
+  } catch {
+    sessionStorage.removeItem(key);
+    return null;
+  }
+}
 
 function formatAmount(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -490,6 +549,7 @@ function DateGroupRow({
 function Panel({
   title,
   subtitle,
+  notchSide,
   totalLabel,
   allItems,
   groups,
@@ -512,10 +572,15 @@ function Panel({
   onSync,
   syncing,
   syncDisabled,
+  scrollRef,
+  onScroll,
 }: {
   title: string;
   // บัญชีที่ตารางนี้กำลังแสดง — ต้องเห็นตลอดเวลา เพราะยอดรวมด้านล่างหมายถึงบัญชีนี้บัญชีเดียว
   subtitle?: string;
+  // มุมบนด้านในที่ถูกกล่องผลต่าง "แหว่ง" ไป — เว้นที่ให้ด้วยการเติม padding แถวแรกของหัวตาราง
+  // ("right" = ตารางฝั่งซ้ายโดนแหว่งมุมบนขวา / "left" = ตารางฝั่งขวาโดนแหว่งมุมบนซ้าย)
+  notchSide?: "left" | "right";
   totalLabel: string;
   allItems: LineItem[];
   groups: { key: string; label: string; count: number }[];
@@ -538,6 +603,8 @@ function Panel({
   onSync?: () => void;
   syncing?: boolean;
   syncDisabled?: boolean;
+  scrollRef?: RefObject<HTMLDivElement | null>;
+  onScroll?: (event: UIEvent<HTMLDivElement>) => void;
 }) {
   const byGroup = groupTab === "ALL" ? allItems : allItems.filter((i) => i.groupKey === groupTab);
   const filtered = byGroup.filter((item) => item.direction === filter);
@@ -557,8 +624,14 @@ function Panel({
 
   return (
     <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden min-w-0 lg:h-full">
-      <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-gray-100 flex-wrap shrink-0">
-        <div className="min-w-0">
+      {/* หัวตาราง 2 แถว: แถวบนเป็นข้อความล้วน (เว้นที่ให้รอยแหว่งได้) แถวล่างเป็นปุ่มควบคุม
+          เดิมรวมเป็นแถวเดียวโดยเอาปุ่มไว้ขวาสุด ซึ่งชนกับรอยแหว่งที่มุมบนด้านในพอดี */}
+      <div className="px-4 py-3 border-b border-gray-100 shrink-0">
+        <div
+          className={`min-w-0 ${
+            notchSide === "right" ? "lg:pr-[122px]" : notchSide === "left" ? "lg:pl-[122px]" : ""
+          }`}
+        >
           <div className="flex items-baseline gap-2 flex-wrap">
             <h2 className="font-semibold text-[15px] text-gray-900 whitespace-nowrap">{title}</h2>
             <span className="text-xs text-gray-400 whitespace-nowrap">
@@ -578,8 +651,8 @@ function Panel({
             บาท
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {onSync && (
+        <div className="mt-3 flex items-center justify-between gap-2">
+          {onSync ? (
             <button
               onClick={onSync}
               disabled={syncDisabled}
@@ -589,6 +662,8 @@ function Panel({
               <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
               {syncing ? "กำลังซิงค์..." : "ซิงค์จาก BC365"}
             </button>
+          ) : (
+            <span />
           )}
           <FilterTabs value={filter} onChange={onFilterChange} />
         </div>
@@ -596,7 +671,11 @@ function Panel({
 
       {/* <GroupTabs groups={groups} value={groupTab} onChange={onGroupTabChange} /> */}
 
-      <div className="flex flex-col overflow-y-auto max-h-[55vh] lg:max-h-none lg:flex-1 lg:min-h-0">
+      <div
+        ref={scrollRef}
+        onScroll={onScroll}
+        className="flex flex-col overflow-y-auto max-h-[55vh] lg:max-h-none lg:flex-1 lg:min-h-0"
+      >
         {loading && (
           <div className="px-4 py-10 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
             <Loader2 size={16} className="animate-spin" /> กำลังโหลด...
@@ -767,6 +846,8 @@ export default function ActiveWorkspace({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [matchActivity, setMatchActivity] = useState<MatchActivity | null>(null);
+  const matchInFlightRef = useRef(false);
   const [toast, setToast] = useState<{ title: string; message: string } | null>(null);
   const [syncingGl, setSyncingGl] = useState(false);
   const [clusterOf, setClusterOf] = useState<Map<string, number>>(new Map());
@@ -780,6 +861,12 @@ export default function ActiveWorkspace({
   const [expandedGlDates, setExpandedGlDates] = useState<Set<string>>(new Set());
   // วันที่ที่คลี่ดูล่าสุด — ตีกรอบน้ำเงินค้างไว้ทั้ง 2 ฝั่ง จนกว่าจะไปคลี่วันอื่น
   const [activeDate, setActiveDate] = useState<string | null>(null);
+  const draftKey = useMemo(() => workspaceDraftKey(session), [session]);
+  const draftReadyRef = useRef(false);
+  const bankScrollRef = useRef<HTMLDivElement>(null);
+  const glScrollRef = useRef<HTMLDivElement>(null);
+  const bankScrollTopRef = useRef(0);
+  const glScrollTopRef = useRef(0);
   const bankRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const glRowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -852,7 +939,19 @@ export default function ActiveWorkspace({
     }
   }
 
-  const loadData = useCallback(async () => {
+  const restoreScrollPositions = useCallback((draft: WorkspaceDraft) => {
+    bankScrollTopRef.current = Number(draft.bankScrollTop) || 0;
+    glScrollTopRef.current = Number(draft.glScrollTop) || 0;
+    // รอ React วาดรายการและคลี่กลุ่มวันที่ให้เสร็จก่อน จึงคืนตำแหน่ง scroll ที่บันทึกไว้
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (bankScrollRef.current) bankScrollRef.current.scrollTop = bankScrollTopRef.current;
+        if (glScrollRef.current) glScrollRef.current.scrollTop = glScrollTopRef.current;
+      });
+    });
+  }, []);
+
+  const loadData = useCallback(async (draftToRestore?: WorkspaceDraft | null) => {
     setLoading(true);
     setError("");
     try {
@@ -874,10 +973,19 @@ export default function ActiveWorkspace({
       setAccountDimensionReady(data.accountDimensionReady !== false);
       setUnassignedBankLines(Number(data.unassignedBankLines ?? 0));
 
-      // auto-tick ทุกวันที่ยอด Bank กับ GL เท่ากันพอดีให้เลย ผู้ใช้แค่ตรวจแล้วกด Match ได้ทันที
+      // ครั้งแรกของ workspace ใหม่จะ auto-tick ตามปกติ แต่ถ้ากลับมาจากหน้าอื่นให้คืนสิ่งที่ user เลือกไว้
+      // พร้อมกรอง id ที่ถูกคนอื่น Match/ย้าย Suspense ไปแล้วออก ไม่ปล่อย selection เก่าค้างเป็นข้อมูลผี
       const { readyBankIds, readyGlIds, clusterOf: newClusterOf } = computeReadyIds(data.bankLines, data.glLines);
-      setSelectedBank(new Set(readyBankIds));
-      setSelectedGl(new Set(readyGlIds));
+      if (draftToRestore) {
+        const availableBank = new Set<string>(data.bankLines.map((line: BankApiLine) => line.id));
+        const availableGl = new Set<string>(data.glLines.map((line: GlApiLine) => line.id));
+        setSelectedBank(new Set(draftToRestore.selectedBank.filter((id) => availableBank.has(id))));
+        setSelectedGl(new Set(draftToRestore.selectedGl.filter((id) => availableGl.has(id))));
+        restoreScrollPositions(draftToRestore);
+      } else {
+        setSelectedBank(new Set(readyBankIds));
+        setSelectedGl(new Set(readyGlIds));
+      }
       setClusterOf(newClusterOf);
     } catch {
       setError("เชื่อมต่อ server ไม่ได้");
@@ -885,6 +993,7 @@ export default function ActiveWorkspace({
       setLoading(false);
     }
   }, [
+    restoreScrollPositions,
     session.bankCode,
     session.bankAccountNo,
     session.periodStart,
@@ -893,10 +1002,88 @@ export default function ActiveWorkspace({
   ]);
 
   useEffect(() => {
-    // โหลดข้อมูลใหม่จาก server ทุกครั้งที่เปลี่ยนช่วงวันที่/บัญชีธนาคาร — fetch-on-mount ปกติ ไม่มีทางเลี่ยง setState ในนี้ได้
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadData();
-  }, [loadData]);
+    const draft = readWorkspaceDraft(draftKey);
+    if (draft) {
+      // คืน snapshot จาก sessionStorage ตอน mount เท่านั้น จึงต้อง sync state หลายชิ้นใน effect เดียวกัน
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setDirectionFilter(draft.directionFilter);
+      setGlGroupTab(draft.glGroupTab || "ALL");
+      setLinkDates(draft.linkDates !== false);
+      setExpandedBankDates(new Set(draft.expandedBankDates ?? []));
+      setExpandedGlDates(new Set(draft.expandedGlDates ?? []));
+      setActiveDate(draft.activeDate ?? null);
+      setFocusModeState(Boolean(draft.focusMode));
+      onFocusModeChange?.(Boolean(draft.focusMode));
+    }
+    // โหลดข้อมูลใหม่จาก server ทุกครั้งที่เปลี่ยนช่วงวันที่/บัญชีธนาคาร แล้วค่อยคืน draft ที่ยังใช้ได้
+    void loadData(draft).finally(() => {
+      draftReadyRef.current = true;
+    });
+  }, [draftKey, loadData, onFocusModeChange]);
+
+  useEffect(() => {
+    if (!draftReadyRef.current || loading) return;
+    const draft: WorkspaceDraft = {
+      version: 1,
+      savedAt: Date.now(),
+      directionFilter,
+      glGroupTab,
+      selectedBank: [...selectedBank],
+      selectedGl: [...selectedGl],
+      linkDates,
+      expandedBankDates: [...expandedBankDates],
+      expandedGlDates: [...expandedGlDates],
+      activeDate,
+      focusMode,
+      bankScrollTop: bankScrollTopRef.current,
+      glScrollTop: glScrollTopRef.current,
+    };
+    sessionStorage.setItem(draftKey, JSON.stringify(draft));
+  }, [
+    activeDate,
+    directionFilter,
+    draftKey,
+    expandedBankDates,
+    expandedGlDates,
+    focusMode,
+    glGroupTab,
+    linkDates,
+    loading,
+    selectedBank,
+    selectedGl,
+  ]);
+
+  function persistScroll(side: "bank" | "gl", top: number) {
+    if (side === "bank") bankScrollTopRef.current = top;
+    else glScrollTopRef.current = top;
+    if (!draftReadyRef.current) return;
+    const draft = readWorkspaceDraft(draftKey);
+    if (!draft) return;
+    if (side === "bank") draft.bankScrollTop = top;
+    else draft.glScrollTop = top;
+    draft.savedAt = Date.now();
+    sessionStorage.setItem(draftKey, JSON.stringify(draft));
+  }
+
+  function handleResetWorkspace() {
+    draftReadyRef.current = false;
+    sessionStorage.removeItem(draftKey);
+    bankScrollTopRef.current = 0;
+    glScrollTopRef.current = 0;
+    if (bankScrollRef.current) bankScrollRef.current.scrollTop = 0;
+    if (glScrollRef.current) glScrollRef.current.scrollTop = 0;
+    setDirectionFilter("IN");
+    setGlGroupTab("ALL");
+    setLinkDates(true);
+    setExpandedBankDates(new Set());
+    setExpandedGlDates(new Set());
+    setActiveDate(null);
+    setFocusModeState(false);
+    onFocusModeChange?.(false);
+    void loadData().finally(() => {
+      draftReadyRef.current = true;
+    });
+  }
 
   const bankLines: LineItem[] = useMemo(
     () =>
@@ -973,6 +1160,18 @@ export default function ActiveWorkspace({
   }, [bankLines, glLines, sumByDateDirection]);
 
   const matchReadyDates = matchReadyDatesByDirection[directionFilter];
+
+  // ยอดคงค้างของแต่ละฝั่งในทิศทางที่กำลังดู — ต้องคำนวณด้วยกติกาเดียวกับ pendingTotal ใน Panel เป๊ะ
+  // (กรองตามแท็บกลุ่มก่อน แล้วค่อยกรองตามทิศทาง) ไม่งั้นตัวเลขบนป้ายผลต่างกับในหัวตารางจะไม่ตรงกัน
+  const sumPending = useCallback(
+    (lines: LineItem[], groupTab: string) =>
+      lines
+        .filter((l) => (groupTab === "ALL" || l.groupKey === groupTab) && l.direction === directionFilter)
+        .reduce((sum, l) => sum + l.amount, 0),
+    [directionFilter]
+  );
+  const bankPendingTotal = useMemo(() => sumPending(bankLines, "ALL"), [bankLines, sumPending]);
+  const glPendingTotal = useMemo(() => sumPending(glLines, glGroupTab), [glLines, glGroupTab, sumPending]);
 
   // เลขกลุ่ม "กลุ่ม N" ที่โชว์บนจอต้องคำนวณครั้งเดียวใช้ร่วมกันทั้งฝั่ง bank และ GL ของวันเดียวกัน
   // ไล่จาก bankLines พอ เพราะทุก cluster ที่ computeReadyIds สร้างมีฝั่ง bank อย่างน้อย 1 รายการเสมอ
@@ -1155,18 +1354,35 @@ export default function ActiveWorkspace({
     const glById = new Map(selectedGlItems.map((l) => [l.entryNo, l]));
 
     const raw = [...groupSelectionByDateDirection().values()];
-    const groups = raw.filter((g) => g.bankIds.length > 0 && g.glIds.length > 0);
-    const leftoverBank = raw.filter((g) => g.glIds.length === 0).flatMap((g) => g.bankIds);
-    const leftoverGl = raw.filter((g) => g.bankIds.length === 0).flatMap((g) => g.glIds);
+    const groups: { bankIds: number[]; glIds: number[] }[] = [];
+    const unresolvedBank: number[] = [];
+    const unresolvedGl: number[] = [];
 
-    if (leftoverBank.length > 0 && leftoverGl.length > 0) {
-      // ทั้งสองฝั่งมีรายการเหลือ = ผู้ใช้ตั้งใจจับคู่ข้ามวัน รวมเป็นกลุ่มเดียวให้
-      groups.push({ bankIds: leftoverBank, glIds: leftoverGl });
-    } else if (leftoverBank.length > 0 || leftoverGl.length > 0) {
-      const isBank = leftoverBank.length > 0;
+    // กลุ่มวันเดียวที่ดุลแล้วแยกบันทึกได้ตามเดิม ส่วนกลุ่มที่ขาดฝั่งใดฝั่งหนึ่ง
+    // หรือมีทั้งสองฝั่งแต่ยอดยังไม่ดุล ต้องนำไปรวมกับรายการข้ามวันก่อนตรวจยอด
+    // เช่น Bank วันที่ 31 = 70 + Bank วันที่ 28 = 12 จับกับ GL วันที่ 31 = 82
+    for (const group of raw) {
+      const bankSum = group.bankIds.reduce((s, id) => s + (bankById.get(id)?.amount ?? 0), 0);
+      const glSum = group.glIds.reduce((s, id) => s + (glById.get(id)?.amount ?? 0), 0);
+      const completeAndBalanced =
+        group.bankIds.length > 0 &&
+        group.glIds.length > 0 &&
+        Math.abs(bankSum - glSum) < AMOUNT_TOLERANCE;
+
+      if (completeAndBalanced) groups.push(group);
+      else {
+        unresolvedBank.push(...group.bankIds);
+        unresolvedGl.push(...group.glIds);
+      }
+    }
+
+    if (unresolvedBank.length > 0 && unresolvedGl.length > 0) {
+      groups.push({ bankIds: unresolvedBank, glIds: unresolvedGl });
+    } else if (unresolvedBank.length > 0 || unresolvedGl.length > 0) {
+      const isBank = unresolvedBank.length > 0;
       const refs = isBank
-        ? leftoverBank.map((id) => bankById.get(id)?.ref ?? `L-${id}`)
-        : leftoverGl.map((id) => glById.get(id)?.ref ?? `#${id}`);
+        ? unresolvedBank.map((id) => bankById.get(id)?.ref ?? `L-${id}`)
+        : unresolvedGl.map((id) => glById.get(id)?.ref ?? `#${id}`);
       const shown = refs.slice(0, 3).join(", ");
       const more = refs.length > 3 ? ` และอีก ${refs.length - 3} รายการ` : "";
       return {
@@ -1197,8 +1413,16 @@ export default function ActiveWorkspace({
   const canMatch = matchPlan.groups.length > 0 && matchPlan.problem === null;
 
   async function handleMatch() {
-    if (!canMatch || busy || syncingGl) return;
+    if (!canMatch || busy || syncingGl || matchInFlightRef.current) return;
+    const startedAt = Date.now();
+    matchInFlightRef.current = true;
     setBusy(true);
+    setMatchActivity({
+      bankRows: selectedBankItems.length,
+      glRows: selectedGlItems.length,
+      stage: "saving",
+    });
+    let keepResultVisible = false;
     try {
       const groups = matchPlan.groups.map((g) => ({ bankLineIds: g.bankIds, glEntryNos: g.glIds }));
 
@@ -1214,9 +1438,25 @@ export default function ActiveWorkspace({
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Match ไม่สำเร็จ");
+        const message = data.error || "Match ไม่สำเร็จ";
+        setError(message);
+        keepResultVisible = true;
+        setMatchActivity((current) =>
+          current ? { ...current, stage: "error", errorMessage: message } : current
+        );
         return;
       }
+      setMatchActivity((current) => (current ? { ...current, stage: "refreshing" } : current));
+      await loadData();
+
+      // กัน overlay กระพริบวาบในเคส server ตอบเร็วมาก ให้ผู้ใช้เห็นชัดว่ารับคำสั่ง Match แล้ว
+      const remainingFeedbackMs = Math.max(0, 650 - (Date.now() - startedAt));
+      if (remainingFeedbackMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, remainingFeedbackMs));
+      }
+      setMatchActivity((current) => (current ? { ...current, stage: "success" } : current));
+      // ค้างสถานะเขียวไว้สั้นๆ ให้ผู้ใช้รับรู้ผลสำเร็จก่อนกลับสู่ตาราง
+      await new Promise((resolve) => setTimeout(resolve, 850));
       setToast({
         title: "จับคู่สำเร็จ",
         message:
@@ -1224,10 +1464,16 @@ export default function ActiveWorkspace({
             ? `จับคู่สำเร็จ (MatchId ${data.matchId}) ยอด ${formatAmount(bankTotal)} บาท`
             : `จับคู่สำเร็จ ${groups.length} กลุ่มย่อย ภายใต้ MatchId ${data.matchId}`,
       });
-      await loadData();
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      const message = "เชื่อมต่อ server ไม่ได้";
+      setError(message);
+      keepResultVisible = true;
+      setMatchActivity((current) =>
+        current ? { ...current, stage: "error", errorMessage: message } : current
+      );
     } finally {
+      matchInFlightRef.current = false;
+      if (!keepResultVisible) setMatchActivity(null);
       setBusy(false);
     }
   }
@@ -1315,6 +1561,129 @@ export default function ActiveWorkspace({
       }`}
     >
       {toast && <SuccessToast title={toast.title} message={toast.message} onClose={() => setToast(null)} />}
+      {matchActivity && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/[0.08] px-4 backdrop-blur-[2px]"
+          role="status"
+          aria-live="assertive"
+          aria-busy="true"
+          aria-label="กำลังจับคู่รายการ"
+        >
+          <div className="animate-match-card-in relative w-full max-w-[350px] overflow-hidden rounded-[1.75rem] border border-white/90 bg-white/80 shadow-[0_24px_70px_rgba(15,23,42,0.16),inset_0_1px_0_white] backdrop-blur-2xl backdrop-saturate-150">
+            <div
+              aria-hidden
+              className={`absolute -right-12 -top-16 h-36 w-36 rounded-full blur-3xl ${
+                matchActivity.stage === "success"
+                  ? "bg-emerald-200/35"
+                  : matchActivity.stage === "error"
+                    ? "bg-rose-200/35"
+                    : "bg-blue-200/25"
+              }`}
+            />
+            <div aria-hidden className="absolute left-8 right-8 top-0 h-px bg-white" />
+
+            <div className="relative px-5 pb-4 pt-5">
+              <div className="flex items-center gap-3.5">
+                <div
+                  className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border bg-white/75 shadow-[0_7px_20px_rgba(15,23,42,0.08),inset_0_1px_0_white] ${
+                    matchActivity.stage === "success"
+                      ? "border-emerald-200 text-emerald-600"
+                      : matchActivity.stage === "error"
+                        ? "border-rose-200 text-rose-600"
+                        : "animate-match-breathe border-slate-200/70 text-blue-600"
+                  }`}
+                >
+                  <span
+                    aria-hidden
+                    className={`absolute inset-1.5 rounded-full ${
+                      matchActivity.stage === "success"
+                        ? "bg-emerald-500/[0.08]"
+                        : matchActivity.stage === "error"
+                          ? "bg-rose-500/[0.08]"
+                          : "bg-blue-500/[0.07]"
+                    }`}
+                  />
+                  {matchActivity.stage === "success" ? (
+                    <CheckCircle2 className="animate-match-result relative" size={20} strokeWidth={2.3} />
+                  ) : matchActivity.stage === "error" ? (
+                    <AlertTriangle className="animate-match-result relative" size={20} strokeWidth={2.2} />
+                  ) : (
+                    <ArrowLeftRight className="relative" size={19} strokeWidth={2} />
+                  )}
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p
+                      className={`text-[10px] font-semibold uppercase tracking-[0.17em] ${
+                        matchActivity.stage === "success"
+                          ? "text-emerald-600"
+                          : matchActivity.stage === "error"
+                            ? "text-rose-600"
+                            : "text-slate-400"
+                      }`}
+                    >
+                      {matchActivity.stage === "success"
+                        ? "Completed"
+                        : matchActivity.stage === "error"
+                          ? "Unable to match"
+                          : "Reconciliation"}
+                    </p>
+                    <span className="rounded-full border border-slate-200/70 bg-white/55 px-2 py-0.5 text-[10px] font-medium tabular-nums text-slate-500">
+                      {matchActivity.bankRows + matchActivity.glRows} แถว
+                    </span>
+                  </div>
+                  <p
+                    key={matchActivity.stage}
+                    className="animate-match-stage mt-1 text-[15px] font-semibold tracking-[-0.01em] text-slate-800"
+                  >
+                    {matchActivity.stage === "saving"
+                      ? "กำลังจับคู่รายการ"
+                      : matchActivity.stage === "refreshing"
+                        ? "กำลังอัปเดตตาราง"
+                        : matchActivity.stage === "success"
+                          ? "จับคู่สำเร็จแล้ว"
+                          : "จับคู่ไม่สำเร็จ"}
+                  </p>
+                  {matchActivity.stage === "error" ? (
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-rose-600/80">
+                      {matchActivity.errorMessage}
+                    </p>
+                  ) : (
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Bank {matchActivity.bankRows} <span className="mx-1 text-slate-300">·</span> GL {matchActivity.glRows}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 h-[3px] overflow-hidden rounded-full bg-slate-200/60">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    matchActivity.stage === "success"
+                      ? "w-full bg-emerald-500"
+                      : matchActivity.stage === "error"
+                        ? "w-full bg-rose-500"
+                        : "animate-match-progress w-[38%] bg-gradient-to-r from-blue-500 via-sky-400 to-indigo-500"
+                  }`}
+                />
+              </div>
+
+              {matchActivity.stage === "error" && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setMatchActivity(null)}
+                    className="rounded-full border border-slate-200 bg-white/70 px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm transition-colors hover:bg-white"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       <AnimatePresence>
         {assistantOpen && (
           <MatchAssistantModal
@@ -1366,7 +1735,7 @@ export default function ActiveWorkspace({
                 Focus tables
               </button>
               <button
-                onClick={loadData}
+                onClick={handleResetWorkspace}
                 disabled={loading || busy || syncingGl}
                 className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-3.5 py-2 rounded-full hover:bg-gray-50 disabled:opacity-50"
               >
@@ -1472,23 +1841,29 @@ export default function ActiveWorkspace({
         </>
       )}
 
-      <div className="relative lg:flex-1 lg:min-h-0 px-4 sm:px-6 pb-4 lg:overflow-hidden">
+      <div className="relative lg:flex-1 lg:min-h-0 px-4 sm:px-6 pb-4 lg:overflow-hidden lg:pt-4">
         {focusMode && (
           // โฟกัสตารางเต็มที่: เอาแถบหัวข้อ/filter เดิมออกจนหมด ไม่กินพื้นที่แถวใดๆ อีกต่อไป
           // เหลือแค่กลุ่มไอคอนลอย (absolute) กึ่งกลางด้านล่างตาราง ลอยทับตารางแทน ให้ตารางขยายเต็มพื้นที่จริงๆ
           // ปุ่มขยายกลับ (วงกลมแดง) ตั้งใจเน้นสีให้เห็นชัดว่ากดตรงนี้เพื่อย้อนกลับไปโหมดปกติได้
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 flex-wrap max-w-[calc(100%-2rem)] bg-white/35 backdrop-blur-xl backdrop-saturate-150 border border-white/60 rounded-full shadow-xl px-2 py-1.5">
+          <div className="absolute bottom-3 left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-1 rounded-[1.35rem] border border-white/80 bg-white/70 px-2 py-2 shadow-[0_14px_42px_rgba(15,23,42,0.16),inset_0_1px_0_white] backdrop-blur-2xl backdrop-saturate-150">
+            {error && (
+              <span className="absolute bottom-[calc(100%+8px)] left-1/2 max-w-[420px] -translate-x-1/2 truncate rounded-full border border-red-100 bg-white/90 px-3 py-1.5 text-[11px] text-red-600 shadow-lg backdrop-blur-xl">
+                {error}
+              </span>
+            )}
             <button
               onClick={() => setFocusMode(false)}
-              className="p-2 text-red-600 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 transition-colors"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition-colors hover:bg-red-100"
               title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
             >
               <Minimize2 size={14} />
             </button>
+            <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-slate-200/80" />
             <button
-              onClick={loadData}
+              onClick={handleResetWorkspace}
               disabled={loading || busy || syncingGl}
-              className="p-2 text-gray-500 border border-gray-200 rounded-full hover:bg-gray-50 disabled:opacity-50"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/55 text-slate-500 transition-colors hover:bg-white disabled:opacity-50"
               title="Reset — โหลดข้อมูลใหม่"
             >
               <RotateCcw size={14} />
@@ -1498,37 +1873,67 @@ export default function ActiveWorkspace({
               disabled={loading || busy || syncingGl}
               title="ผู้ช่วยหาคู่"
               aria-label="ผู้ช่วยหาคู่"
-              className="relative overflow-hidden rounded-full p-[1.5px] disabled:opacity-50"
+              className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full p-[1.5px] disabled:opacity-50"
             >
               <span
                 aria-hidden
                 className="absolute left-1/2 top-1/2 aspect-square w-[200%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
                 style={{ background: AURA_GRADIENT }}
               />
-              <span className="relative flex rounded-full bg-white p-[7px] text-violet-700">
+              <span className="relative flex h-full w-full items-center justify-center rounded-full bg-white text-violet-700">
                 <WandSparkles size={14} />
               </span>
             </button>
             <button
+              type="button"
+              aria-pressed={linkDates}
+              onClick={() => setLinkDates((value) => !value)}
+              className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition-all ${
+                linkDates
+                  ? "border-blue-200 bg-blue-50/90 text-blue-700 shadow-[0_3px_10px_rgba(37,99,235,0.10)]"
+                  : "border-slate-200 bg-white/55 text-slate-500 hover:bg-white"
+              }`}
+              title={
+                linkDates
+                  ? "ลิงก์วันที่เปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งเป็นอิสระต่อกัน"
+                  : "ลิงก์วันที่ปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งขยายและเลื่อนพร้อมกัน"
+              }
+            >
+              <Link2 size={13} />
+              <span className="hidden sm:inline">ลิงก์วัน</span>
+              <span
+                aria-hidden
+                className={`h-1.5 w-1.5 rounded-full ${linkDates ? "bg-blue-500 shadow-[0_0_7px_rgba(59,130,246,0.65)]" : "bg-slate-300"}`}
+              />
+            </button>
+            <button
               onClick={onEditFilters}
-              className="p-2 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-50"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-white/55 text-blue-700 transition-colors hover:bg-blue-50"
               title="เปลี่ยนเงื่อนไขการ Reconcile — ธนาคาร/ช่วงวันที่"
             >
               <Pencil size={14} />
             </button>
+            <span aria-hidden className="mx-0.5 hidden h-5 w-px shrink-0 bg-slate-200/80 xl:block" />
             <span
-              className="hidden sm:inline text-xs text-gray-400 truncate max-w-[250px] pl-1"
+              className="hidden max-w-[220px] truncate whitespace-nowrap pr-1 text-[11px] font-medium text-slate-400 xl:inline"
               title={accountFullLabel}
             >
               {accountShortLabel} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
             </span>
-            {error && <span className="text-xs text-red-600 pl-1 basis-full">{error}</span>}
           </div>
         )}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:h-full">
+        {/* relative เพราะกล่องผลต่างลอยอยู่ที่มุมบนตรงกลาง คร่อมรอยต่อของสองตาราง */}
+        <div className="relative grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2 lg:gap-3">
+          <DifferenceBadge
+            bankTotal={bankPendingTotal}
+            glTotal={glPendingTotal}
+            loading={loading}
+            floating
+          />
           <Panel
             title="Bank statement"
             subtitle={accountFullLabel}
+            notchSide="right"
             totalLabel="BANK TOTAL"
             allItems={bankLines}
             groups={bankGroups}
@@ -1548,10 +1953,21 @@ export default function ActiveWorkspace({
             clusterOf={clusterOf}
             dateClusterNumbering={dateClusterNumbering}
             lumpClusterIds={lumpClusterIds}
+            scrollRef={bankScrollRef}
+            onScroll={(event) => persistScroll("bank", event.currentTarget.scrollTop)}
           />
+          {/* จอเล็กที่ตารางเรียงซ้อนกัน ไม่มีรอยต่อให้คร่อม จึงแทรกเป็นชิ้นปกติระหว่างสองตารางแทน */}
+          <DifferenceBadge
+            bankTotal={bankPendingTotal}
+            glTotal={glPendingTotal}
+            loading={loading}
+            floating={false}
+          />
+
           <Panel
             title="General Ledger (BC365)"
             subtitle={accountFullLabel}
+            notchSide="left"
             totalLabel="GL TOTAL"
             allItems={glLines}
             groups={glGroups}
@@ -1574,6 +1990,8 @@ export default function ActiveWorkspace({
             onSync={handleSyncGl}
             syncing={syncingGl}
             syncDisabled={loading || busy || syncingGl}
+            scrollRef={glScrollRef}
+            onScroll={(event) => persistScroll("gl", event.currentTarget.scrollTop)}
           />
         </div>
       </div>

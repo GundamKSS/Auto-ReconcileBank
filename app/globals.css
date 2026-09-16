@@ -67,6 +67,39 @@ body {
     from { background-position: 200% 0; }
     to { background-position: -200% 0; }
   }
+
+  /* แสงกวาดผ่านผิวแก้วของป้ายผลต่างกลางหน้า Reconcile (DifferenceBadge)
+     ช้าและนานๆ ที เพราะมันลอยค้างอยู่ตลอดเวลา ถ้ากวาดถี่จะกวนสายตาคนที่นั่งจับคู่รายการทั้งวัน */
+  --animate-glass-sheen: glass-sheen 6s ease-in-out infinite;
+  --animate-match-progress: match-progress 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  --animate-match-card-in: match-card-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-match-breathe: match-breathe 1.8s ease-in-out infinite;
+  --animate-match-stage: match-stage 260ms ease-out both;
+  --animate-match-result: match-result 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+
+  @keyframes glass-sheen {
+    0%, 65%, 100% { background-position: 150% 0; }
+    85% { background-position: -50% 0; }
+  }
+
+  @keyframes match-progress {
+    0% { transform: translateX(-120%) scaleX(0.72); opacity: 0.55; }
+    52% { transform: translateX(105%) scaleX(1); opacity: 1; }
+    100% { transform: translateX(275%) scaleX(0.76); opacity: 0.6; }
+  }
+  @keyframes match-card-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.975); }
+  }
+  @keyframes match-breathe {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.035); }
+  }
+  @keyframes match-stage {
+    from { opacity: 0; transform: translateY(3px); }
+  }
+  @keyframes match-result {
+    from { opacity: 0; transform: scale(0.55) rotate(-8deg); }
+  }
 }
 
 /* เนื้อหาหน้าใหม่ค่อยๆ ขึ้นมา — ใช้ scale จากขอบบนแทนการเลื่อนลง
@@ -104,7 +137,13 @@ html {
   .animate-aura-spin-fast,
   .animate-aura-breathe,
   .animate-aura-ping,
-  .animate-aura-shimmer {
+  .animate-aura-shimmer,
+  .animate-glass-sheen,
+  .animate-match-card-in,
+  .animate-match-breathe,
+  .animate-match-stage,
+  .animate-match-result,
+  .animate-match-progress {
     animation: none;
   }
 }

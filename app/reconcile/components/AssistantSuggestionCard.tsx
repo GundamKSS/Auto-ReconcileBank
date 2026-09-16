@@ -134,12 +134,48 @@ function SideBox({
   );
 }
 
-// การ์ด 1 ใบ = Bank 1 รายการ กับ GL ที่ยอดตรงกันแต่คนละวัน (เลือกได้ถ้ามีหลายตัว)
+function BankGroupBox({ banks }: { banks: AssistantSuggestion["banks"] }) {
+  const total = banks.reduce((sum, bank) => sum + bank.amount, 0);
+  return (
+    <div className="min-w-0 rounded-xl border border-sky-100 bg-sky-50/50 px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold tracking-wide text-sky-700">BANK STATEMENT</span>
+        <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
+          รวม {banks.length} รายการ
+        </span>
+      </div>
+      <div className="mt-1.5 divide-y divide-sky-100/80">
+        {banks.map((bank) => (
+          <div key={bank.lineId} className="flex items-start justify-between gap-3 py-1.5 first:pt-0">
+            <div className="min-w-0">
+              <p className="text-xs font-medium text-gray-800">
+                {formatDMY(bank.date)} <span className="font-normal text-gray-400">· {bank.ref}</span>
+              </p>
+              <p className="truncate text-[11px] text-gray-400" title={bank.description}>
+                {bank.description || "-"}
+              </p>
+            </div>
+            <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-800">
+              {formatAmount(bank.amount)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between border-t border-sky-200/70 pt-2">
+        <span className="text-[10px] font-semibold text-sky-700">ยอดรวม BANK</span>
+        <span className="text-lg font-semibold tabular-nums text-gray-900">{formatAmount(total)}</span>
+      </div>
+    </div>
+  );
+}
+
+// การ์ด 1 ใบ = Bank 1 รายการหรือหลายรายการ กับ GL ที่ยอดรวมตรงกันแต่คนละวัน
 export default function AssistantSuggestionCard({
   suggestion,
   index,
   selectedEntryNo,
   consumedGl,
+  consumedBank,
   status,
   matchId,
   error,
@@ -153,6 +189,7 @@ export default function AssistantSuggestionCard({
   index: number;
   selectedEntryNo: number | null;
   consumedGl: Set<number>; // GL ที่ถูกจับคู่ไปแล้วในรอบนี้ (จากการ์ดใบอื่น)
+  consumedBank: Set<number>; // Bank ที่ถูกใช้โดยการ์ด 1:1 หรือ N:1 ใบอื่นแล้ว
   status: CardStatus;
   matchId?: number;
   error?: string;
@@ -163,8 +200,10 @@ export default function AssistantSuggestionCard({
   onUndoSkip: () => void;
 }) {
   const [showAlternatives, setShowAlternatives] = useState(false);
-  const { bank } = suggestion;
+  const { banks } = suggestion;
+  const bank = banks[0];
   const matched = status === "matched";
+  const bankUnavailable = !matched && banks.some((item) => consumedBank.has(item.lineId));
 
   // GL ที่การ์ดใบอื่นจับคู่ไปแล้วต้องหายไปจากตัวเลือก — กันกด Match GL ตัวเดียวซ้ำ 2 คู่
   const available = matched
@@ -176,7 +215,7 @@ export default function AssistantSuggestionCard({
     return (
       <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-400">
         <span className="truncate">
-          ข้ามแล้ว · Bank {formatDMY(bank.date)} · {formatAmount(bank.amount)}
+          ข้ามแล้ว · Bank {banks.length > 1 ? `${banks.length} รายการ · รวม ${formatAmount(banks.reduce((s, b) => s + b.amount, 0))}` : `${formatDMY(bank.date)} · ${formatAmount(bank.amount)}`}
         </span>
         <button
           onClick={onUndoSkip}
@@ -184,6 +223,17 @@ export default function AssistantSuggestionCard({
         >
           <Undo2 size={12} /> ย้อนกลับ
         </button>
+      </div>
+    );
+  }
+
+  if (bankUnavailable) {
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-400">
+        <span className="truncate">
+          ใช้ไม่ได้แล้ว · Bank ในกลุ่มนี้ถูกจับคู่จากคำแนะนำใบอื่นแล้ว
+        </span>
+        <CheckCircle2 size={14} className="shrink-0 text-green-500" />
       </div>
     );
   }
@@ -206,6 +256,11 @@ export default function AssistantSuggestionCard({
           <span className="text-xs text-gray-400">ไม่มีตัวเลือกเหลือ</span>
         )}
         <div className="flex items-center gap-2">
+          {suggestion.kind === "N:1" && (
+            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
+              รวมยอด {banks.length}:1
+            </span>
+          )}
           <span
             className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
               bank.direction === "IN" ? "bg-purple-50 text-purple-700" : "bg-red-50 text-red-600"
@@ -228,14 +283,18 @@ export default function AssistantSuggestionCard({
       </div>
 
       <div className="mt-3 grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-stretch gap-2">
-        <SideBox
-          side="bank"
-          date={formatDMY(bank.date)}
-          refText={bank.ref}
-          detail={bank.description || "-"}
-          sub={bank.channel ? `ช่องทาง ${bank.channel}` : null}
-          amount={bank.amount}
-        />
+        {banks.length > 1 ? (
+          <BankGroupBox banks={banks} />
+        ) : (
+          <SideBox
+            side="bank"
+            date={formatDMY(bank.date)}
+            refText={bank.ref}
+            detail={bank.description || "-"}
+            sub={bank.channel ? `ช่องทาง ${bank.channel}` : null}
+            amount={bank.amount}
+          />
+        )}
         <div className="flex sm:flex-col items-center justify-center gap-1.5 py-1">
           <span
             className="flex size-8 items-center justify-center rounded-full text-white shadow-[0_0_16px_rgba(139,92,246,0.35)]"
@@ -245,7 +304,7 @@ export default function AssistantSuggestionCard({
           </span>
           {selected && (
             <span className="text-[11px] font-semibold text-violet-700 tabular-nums whitespace-nowrap">
-              {gapLabel(selected.dayGap)}
+              {banks.length > 1 ? `สูงสุด ${Math.abs(selected.dayGap)} วัน` : gapLabel(selected.dayGap)}
             </span>
           )}
         </div>

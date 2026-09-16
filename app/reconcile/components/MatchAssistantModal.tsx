@@ -118,6 +118,7 @@ export default function MatchAssistantModal({
   const [selection, setSelection] = useState<Record<number, number>>({});
   const [cards, setCards] = useState<Record<number, CardState>>({});
   const [consumedGl, setConsumedGl] = useState<Set<number>>(new Set());
+  const [consumedBank, setConsumedBank] = useState<Set<number>>(new Set());
   const [matchedPairs, setMatchedPairs] = useState(0);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -155,12 +156,13 @@ export default function MatchAssistantModal({
         setResult(next);
         setSelection(
           Object.fromEntries(
-            next.suggestions.map((s) => [s.bank.lineId, s.suggestedEntryNo ?? s.candidates[0].gl.entryNo])
+            next.suggestions.map((s) => [s.banks[0].lineId, s.suggestedEntryNo ?? s.candidates[0].gl.entryNo])
           )
         );
         // ผลใหม่มาจาก DB แล้ว — คู่ที่จับไปก่อนหน้าหายไปจากผลเอง ไม่ต้องจำ GL ที่ใช้ไปแล้วอีก
         setCards({});
         setConsumedGl(new Set());
+        setConsumedBank(new Set());
         setPhase("results");
       } catch {
         if (controller.signal.aborted) return;
@@ -212,7 +214,7 @@ export default function MatchAssistantModal({
 
   async function handleMatch(s: AssistantSuggestion, entryNo: number) {
     if (busy) return;
-    const lineId = s.bank.lineId;
+    const lineId = s.banks[0].lineId;
     setCard(lineId, { status: "matching" });
     try {
       const res = await fetch("/api/reconcile/match", {
@@ -222,7 +224,7 @@ export default function MatchAssistantModal({
           bankCode,
           bankAccountNo,
           matchType: "MATCHED",
-          groups: [{ bankLineIds: [lineId], glEntryNos: [entryNo] }],
+          groups: [{ bankLineIds: s.banks.map((bank) => bank.lineId), glEntryNos: [entryNo] }],
         }),
       });
       const data = await res.json();
@@ -233,6 +235,11 @@ export default function MatchAssistantModal({
       setSelection((prev) => ({ ...prev, [lineId]: entryNo }));
       setCard(lineId, { status: "matched", matchId: data.matchId });
       setConsumedGl((prev) => new Set(prev).add(entryNo));
+      setConsumedBank((prev) => {
+        const next = new Set(prev);
+        s.banks.forEach((bank) => next.add(bank.lineId));
+        return next;
+      });
       setMatchedPairs((n) => n + 1);
     } catch {
       setCard(lineId, { status: "open", error: "เชื่อมต่อ server ไม่ได้" });
@@ -298,7 +305,7 @@ export default function MatchAssistantModal({
                   ผู้ช่วยหาคู่
                 </h2>
                 <p className="text-xs text-gray-500">
-                  หาคู่ที่ยอดเงินตรงกันพอดี แต่ Bank กับ GL ลงคนละวัน · {bankCode} {formatDMY(periodStart)} -{" "}
+                  หาคู่ 1:1 และรวม Bank หลายรายการข้ามวันให้ยอดตรงกับ GL · {bankCode} {formatDMY(periodStart)} -{" "}
                   {formatDMY(periodEnd)}
                 </p>
               </div>
@@ -378,8 +385,8 @@ export default function MatchAssistantModal({
                   ไม่พบคู่ที่น่าจะเป็นฝั่ง {direction} ในช่วง ±{windowDays} วัน
                 </p>
                 <p className="max-w-sm text-xs text-gray-500">
-                  รายการที่เหลืออาจยอดไม่ตรงกัน (เช่น ถูกหักค่าธรรมเนียม) หรือต้องรวมหลายรายการ — ลองขยายช่วงวันที่
-                  หรือจับคู่เองในตาราง
+                  รายการที่เหลืออาจยอดไม่ตรงกัน เช่น ถูกหักค่าธรรมเนียม หรือมีจำนวนรายการในกลุ่มมากกว่า 5 รายการ —
+                  ลองขยายช่วงวันที่หรือจับคู่เองในตาราง
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
                   {widerWindow && (
@@ -398,7 +405,7 @@ export default function MatchAssistantModal({
               <div className="flex flex-col gap-3 px-4 py-4 sm:px-5">
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-500">
                   <p>
-                    <span className="font-semibold text-gray-900">พบ {visible.length} คู่ที่น่าจะเป็น</span>
+                    <span className="font-semibold text-gray-900">พบ {visible.length} กลุ่มที่น่าจะเป็น</span>
                     {" · "}
                     <span className="text-green-700">สูง {levels.high}</span>
                     {" · "}
@@ -412,22 +419,24 @@ export default function MatchAssistantModal({
                   </p>
                 </div>
                 {visible.map((s, i) => {
-                  const card = cards[s.bank.lineId] ?? { status: "open" as const };
+                  const cardKey = s.banks[0].lineId;
+                  const card = cards[cardKey] ?? { status: "open" as const };
                   return (
                     <AssistantSuggestionCard
-                      key={s.bank.lineId}
+                      key={`${s.kind}-${s.banks.map((bank) => bank.lineId).join("-")}`}
                       suggestion={s}
                       index={i}
-                      selectedEntryNo={selection[s.bank.lineId] ?? null}
+                      selectedEntryNo={selection[cardKey] ?? null}
                       consumedGl={consumedGl}
+                      consumedBank={consumedBank}
                       status={card.status}
                       matchId={card.matchId}
                       error={card.error}
                       busy={busy}
-                      onSelect={(entryNo) => setSelection((prev) => ({ ...prev, [s.bank.lineId]: entryNo }))}
+                      onSelect={(entryNo) => setSelection((prev) => ({ ...prev, [cardKey]: entryNo }))}
                       onMatch={(entryNo) => handleMatch(s, entryNo)}
-                      onSkip={() => setCard(s.bank.lineId, { status: "skipped" })}
-                      onUndoSkip={() => setCard(s.bank.lineId, { status: "open" })}
+                      onSkip={() => setCard(cardKey, { status: "skipped" })}
+                      onUndoSkip={() => setCard(cardKey, { status: "open" })}
                     />
                   );
                 })}
@@ -437,7 +446,7 @@ export default function MatchAssistantModal({
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-white px-5 py-3">
             <p className="max-w-lg text-[11px] text-gray-400">
-              แนะนำจากกติกา: ยอดตรงกันพอดี · ทิศทางเดียวกัน · วันที่ห่างไม่เกินช่วงที่เลือก — ระบบไม่บันทึกเอง
+              แนะนำจากกติกา: ยอดเดี่ยวหรือยอดรวมตรงกันพอดี · ทิศทางเดียวกัน · วันที่ห่างไม่เกินช่วงที่เลือก — ระบบไม่บันทึกเอง
               ตรวจรายละเอียดก่อนกด Match ทุกครั้ง
             </p>
             <div className="flex items-center gap-3">

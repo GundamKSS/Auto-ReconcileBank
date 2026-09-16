@@ -39,7 +39,8 @@ export type AssistantCandidate = {
 };
 
 export type AssistantSuggestion = {
-  bank: AssistantBankLine;
+  banks: AssistantBankLine[]; // 1 รายการ = 1:1, มากกว่า 1 = N:1 (รวม Bank หลายวันกับ GL เดียว)
+  kind: '1:1' | 'N:1';
   candidates: AssistantCandidate[]; // ตัวที่แนะนำ (suggestedEntryNo) อยู่ก่อน ที่เหลือเรียงคะแนนมาก → น้อย
   // GL ที่แนะนำให้เลือกไว้ก่อน — ไล่จากการ์ดคะแนนสูงสุด GL ตัวเดียวจะไม่ถูกแนะนำซ้ำ 2 การ์ด
   // null = GL ทุกตัวของการ์ดนี้ถูกแนะนำให้การ์ดที่คะแนนสูงกว่าไปแล้ว (ยังเลือกเองได้)
@@ -215,6 +216,45 @@ function scoreCandidate(args: {
   };
 }
 
+function scoreBankGroupCandidate(args: {
+  banks: AssistantBankLine[];
+  gl: AssistantGlLine;
+  glInPeriod: boolean;
+}): AssistantCandidate {
+  const { banks, gl, glInPeriod } = args;
+  const glDay = dayNumber(gl.date);
+  const gaps = banks.map((bank) => glDay - dayNumber(bank.date));
+  const maxGap = Math.max(...gaps.map(Math.abs));
+  const maxBusinessDays = Math.max(
+    ...banks.map((bank) => businessDaysBetween(dayNumber(bank.date), glDay))
+  );
+  const total = banks.reduce((sum, bank) => sum + bank.amount, 0);
+  const distinctDates = new Set(banks.map((bank) => bank.date)).size;
+  const reasons: AssistantReason[] = [
+    { tone: 'good', text: `Bank ${banks.length} รายการรวม ${total.toLocaleString('en-US', { minimumFractionDigits: 2 })} ตรงกับ GL` },
+    {
+      tone: maxBusinessDays <= 2 ? 'good' : maxBusinessDays <= 5 ? 'info' : 'warn',
+      text: `รายการ Bank ห่างจาก GL สูงสุด ${maxGap} วัน (${maxBusinessDays} วันทำการ)`,
+    },
+  ];
+  if (distinctDates > 1) reasons.push({ tone: 'info', text: `รวม Bank จาก ${distinctDates} วันที่` });
+  reasons.push({ tone: 'warn', text: 'เป็นคู่แบบรวมยอด ควรตรวจรายละเอียดก่อนยืนยัน' });
+  if (!glInPeriod) reasons.push({ tone: 'info', text: 'GL ลงวันที่นอกงวดที่เลือก' });
+
+  let score = 84 - Math.min(35, maxBusinessDays * 4) - Math.min(12, (banks.length - 2) * 3);
+  if (Math.round(total * 100) % 100 === 0 && total < 100) score -= 10;
+
+  return {
+    gl,
+    outsidePeriod: !glInPeriod,
+    score: Math.max(20, Math.round(score)),
+    // การ์ดแบบกลุ่มใช้ระยะของ Bank ที่อยู่ไกล GL ที่สุด เพื่อไม่ทำให้ความเสี่ยงดูต่ำกว่าความจริง
+    dayGap: gaps.reduce((worst, gap) => (Math.abs(gap) > Math.abs(worst) ? gap : worst), gaps[0]),
+    businessDays: maxBusinessDays,
+    reasons,
+  };
+}
+
 /**
  * bankLines / glLines = รายการที่ยังไม่จับคู่ ช่วง [งวดเริ่ม - windowDays, งวดสิ้นสุด + windowDays]
  * ต้องเรียงแบบเดียวกับ /api/reconcile/data (วันที่ใหม่ → เก่า, id มาก → น้อย) เพื่อให้การจับกลุ่มวันเดียวกัน
@@ -295,13 +335,62 @@ export function findNearDateMatches(input: {
     candidates.sort(
       (a, b) => b.score - a.score || Math.abs(a.dayGap) - Math.abs(b.dayGap) || a.gl.entryNo - b.gl.entryNo
     );
-    suggestions.push({ bank, candidates, suggestedEntryNo: null });
+    suggestions.push({ banks: [bank], kind: '1:1', candidates, suggestedEntryNo: null });
+  }
+
+  // 4) N:1 ข้ามวัน — Bank หลายรายการรวมกันเท่ากับ GL 1 รายการ
+  // ให้สิทธิ์คู่ 1:1 ก่อนเสมอ เพราะอธิบายได้ชัดกว่าและเสี่ยงจับผิดน้อยกว่า จากนั้นจึงใช้เฉพาะ
+  // และกันแต่ละรายการไม่ให้ถูกเสนอซ้ำในหลายกลุ่ม N:1 ส่วนกรณี Bank เดียวกันมีทางเลือก 1:1 ด้วย
+  // จะแสดงให้ผู้ใช้ตัดสินใจ แต่ UI จะปิดการ์ดทางเลือกอื่นทันทีหลัง Bank ถูกใช้ไปแล้ว
+  const groupedBankTaken = new Set<number>();
+  const groupedGlTaken = new Set<number>();
+  for (const gl of glLines) {
+    if (
+      reservedGl.has(gl.entryNo) ||
+      banksPerGl.has(gl.entryNo) ||
+      groupedGlTaken.has(gl.entryNo) ||
+      gl.amount <= 0
+    ) {
+      continue;
+    }
+    const glDay = dayNumber(gl.date);
+    const eligibleBanks = bankLines
+      .filter(
+        (bank) =>
+          inPeriod(bank.date) &&
+          bank.direction === gl.direction &&
+          bank.amount > 0 &&
+          !reservedBank.has(bank.lineId) &&
+          !groupedBankTaken.has(bank.lineId) &&
+          Math.abs(glDay - dayNumber(bank.date)) <= windowDays
+      )
+      .map((bank) => ({ id: bank.lineId, amount: bank.amount }));
+
+    const subset = findSubsetSum(eligibleBanks, gl.amount);
+    if (!subset || subset.length < 2) continue;
+    const ids = new Set(subset.map((item) => item.id));
+    const banks = bankLines.filter((bank) => ids.has(bank.lineId));
+    if (banks.length !== subset.length) continue;
+
+    const candidate = scoreBankGroupCandidate({
+      banks,
+      gl,
+      glInPeriod: inPeriod(gl.date),
+    });
+    suggestions.push({
+      banks,
+      kind: 'N:1',
+      candidates: [candidate],
+      suggestedEntryNo: gl.entryNo,
+    });
+    banks.forEach((bank) => groupedBankTaken.add(bank.lineId));
+    groupedGlTaken.add(gl.entryNo);
   }
 
   const byTopScore = (a: AssistantSuggestion, b: AssistantSuggestion) =>
     b.candidates[0].score - a.candidates[0].score ||
-    a.bank.date.localeCompare(b.bank.date) ||
-    a.bank.lineId - b.bank.lineId;
+    a.banks[0].date.localeCompare(b.banks[0].date) ||
+    a.banks[0].lineId - b.banks[0].lineId;
   suggestions.sort(byTopScore);
 
   const taken = new Set<number>();
