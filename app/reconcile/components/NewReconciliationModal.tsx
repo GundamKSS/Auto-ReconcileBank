@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { ReconcileSession, BankStatementImportSummary } from "./types";
+import { BankAccountOption, fullAccountLabel } from "../../../lib/bankAccounts";
 
 const BANKS = [
   { code: "BBL", label: "ธนาคารกรุงเทพ (BBL)" },
   { code: "KBANK", label: "ธนาคารกสิกรไทย (KBank)" },
   { code: "SCB", label: "ธนาคารไทยพาณิชย์ (SCB)" },
 ];
+
+const BANK_LABEL = new Map(BANKS.map((b) => [b.code, b.label]));
 
 const CUSTOM_RANGE = "__custom__";
 const ANIM_MS = 180;
@@ -26,7 +29,17 @@ export default function NewReconciliationModal({
   onCancel: () => void;
   onConfirm: (session: ReconcileSession) => void;
 }) {
-  const [bankCode, setBankCode] = useState(initialSession?.bankCode ?? "BBL");
+  // ใช้เมื่อโหลดรายชื่อบัญชีไม่ได้ หรือธนาคารนั้นยังไม่มีบัญชีใน BankAccountMapping
+  const [fallbackBankCode, setFallbackBankCode] = useState(initialSession?.bankCode ?? "BBL");
+
+  // เลือก "บัญชี" ไม่ใช่ "ธนาคาร" — ธนาคารหนึ่งมีได้หลายบัญชี (SCB 6 บัญชี) ถ้าล็อกแค่ธนาคาร
+  // หน้า workspace จะเอา statement ของบัญชีเดียวไปเทียบกับ GL ของทุกบัญชีในธนาคารนั้นรวมกัน
+  // ธนาคารจึงเป็นค่าที่อนุมานจากบัญชีที่เลือก ไม่ใช่ค่าที่ผู้ใช้เลือกเองอีกต่อไป
+  const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [accountDimensionReady, setAccountDimensionReady] = useState(true);
+  const [bankAccountNo, setBankAccountNo] = useState(initialSession?.bankAccountNo ?? "");
+
   const [imports, setImports] = useState<BankStatementImportSummary[]>([]);
   const [loadingImports, setLoadingImports] = useState(false);
   const [selectedImportId, setSelectedImportId] = useState<string>(
@@ -55,10 +68,57 @@ export default function NewReconciliationModal({
 
   useEffect(() => {
     let cancelled = false;
+    async function loadAccounts() {
+      try {
+        const res = await fetch("/api/master/bank-accounts");
+        const data = await res.json();
+        if (cancelled || !res.ok) return;
+        // เฉพาะธนาคารที่ระบบอ่านไฟล์ statement ได้ — บัญชี KTB มีใน mapping แต่ยังไม่มี parser
+        const usable: BankAccountOption[] = (data.accounts ?? []).filter((a: BankAccountOption) =>
+          BANK_LABEL.has(a.bankCode ?? "")
+        );
+        setAccounts(usable);
+        setAccountDimensionReady(Boolean(data.accountDimensionReady));
+      } catch {
+        // โหลดไม่ได้ก็ถอยไปใช้ dropdown ธนาคารแบบเดิม (ดู accounts.length === 0 ข้างล่าง)
+      } finally {
+        if (!cancelled) setLoadingAccounts(false);
+      }
+    }
+    loadAccounts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // จัดกลุ่มบัญชีตามธนาคารไว้ทำ <optgroup> เรียงตามลำดับใน BANKS ไม่ใช่ตามตัวอักษร
+  const accountsByBank = useMemo(() => {
+    return BANKS.map((b) => ({
+      ...b,
+      accounts: accounts.filter((a) => a.bankCode === b.code),
+    })).filter((g) => g.accounts.length > 0);
+  }, [accounts]);
+
+  const selectedAccount = accounts.find((a) => a.bankAccountNo === bankAccountNo) ?? null;
+  // ธนาคารที่ใช้จริง = ของบัญชีที่เลือก ถ้ายังไม่มีบัญชี (โหลดไม่ได้) ค่อยใช้ค่าที่ผู้ใช้เลือกเอง
+  const bankCode = selectedAccount?.bankCode ?? fallbackBankCode;
+
+  // เลือกบัญชีตั้งต้นให้เมื่อโหลดรายชื่อเสร็จและยังไม่มีค่า (เช่นกด "New reconciliation" ครั้งแรก)
+  useEffect(() => {
+    if (bankAccountNo || accounts.length === 0) return;
+    const firstOfBank = accounts.find((a) => a.bankCode === fallbackBankCode) ?? accounts[0];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBankAccountNo(firstOfBank.bankAccountNo);
+  }, [accounts, bankAccountNo, fallbackBankCode]);
+
+  useEffect(() => {
+    let cancelled = false;
     async function loadImports() {
       setLoadingImports(true);
       try {
-        const res = await fetch(`/api/master/bank-statement/imports?bankCode=${bankCode}`);
+        const query = new URLSearchParams({ bankCode });
+        if (bankAccountNo) query.set("bankAccountNo", bankAccountNo);
+        const res = await fetch(`/api/master/bank-statement/imports?${query}`);
         const data = await res.json();
         if (!cancelled && res.ok) setImports(data.imports);
       } finally {
@@ -69,7 +129,7 @@ export default function NewReconciliationModal({
     return () => {
       cancelled = true;
     };
-  }, [bankCode]);
+  }, [bankCode, bankAccountNo]);
 
   function handleImportChange(value: string) {
     setSelectedImportId(value);
@@ -82,7 +142,14 @@ export default function NewReconciliationModal({
   }
 
   function handleBankChange(value: string) {
-    setBankCode(value);
+    setFallbackBankCode(value);
+    setBankAccountNo("");
+    setSelectedImportId(CUSTOM_RANGE);
+  }
+
+  function handleAccountChange(value: string) {
+    setBankAccountNo(value);
+    // ไฟล์ที่เลือกไว้เป็นของบัญชีเดิม ต้องปล่อยแล้วให้ผู้ใช้เลือกใหม่จากรายการของบัญชีใหม่
     setSelectedImportId(CUSTOM_RANGE);
   }
 
@@ -93,13 +160,17 @@ export default function NewReconciliationModal({
     periodStart && periodEnd && periodStart > periodEnd
       ? 'ช่วงวันที่ไม่ถูกต้อง — "ถึงวันที่" ต้องไม่มาก่อน "จากวันที่"'
       : null;
-  const canStart = Boolean(bankCode && periodStart && periodEnd && !rangeError);
+  const canStart = Boolean(
+    bankCode && periodStart && periodEnd && !rangeError && (accounts.length === 0 || bankAccountNo)
+  );
 
   function handleStart() {
     if (!canStart) return;
     const imp = imports.find((i) => String(i.ImportId) === selectedImportId);
     const session: ReconcileSession = {
       bankCode,
+      bankAccountNo: bankAccountNo || null,
+      accountName: selectedAccount ? fullAccountLabel(selectedAccount) : null,
       importId: imp ? imp.ImportId : null,
       fileName: imp ? imp.FileName : null,
       periodStart,
@@ -135,18 +206,55 @@ export default function NewReconciliationModal({
 
         <div className="px-5 py-5 flex flex-col gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">ธนาคาร</label>
-            <select
-              value={bankCode}
-              onChange={(e) => handleBankChange(e.target.value)}
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm transition-colors focus:border-blue-400 focus:outline-none"
-            >
-              {BANKS.map((b) => (
-                <option key={b.code} value={b.code}>
-                  {b.label}
-                </option>
-              ))}
-            </select>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">บัญชีธนาคาร</label>
+            {accounts.length > 0 ? (
+              <select
+                value={bankAccountNo}
+                onChange={(e) => handleAccountChange(e.target.value)}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm transition-colors focus:border-blue-400 focus:outline-none"
+              >
+                {accountsByBank.map((group) => (
+                  <optgroup key={group.code} label={group.label}>
+                    {group.accounts.map((a) => (
+                      <option key={a.bankAccountNo} value={a.bankAccountNo}>
+                        {fullAccountLabel(a)}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            ) : (
+              // โหลดรายชื่อบัญชีไม่สำเร็จ — ถอยไปเลือกทั้งธนาคารแบบเดิมดีกว่าเปิดหน้าไม่ได้เลย
+              <select
+                value={bankCode}
+                onChange={(e) => handleBankChange(e.target.value)}
+                disabled={loadingAccounts}
+                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm disabled:opacity-50 transition-colors focus:border-blue-400 focus:outline-none"
+              >
+                {BANKS.map((b) => (
+                  <option key={b.code} value={b.code}>
+                    {b.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {loadingAccounts && (
+              <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+                <Loader2 size={12} className="animate-spin" /> กำลังโหลดรายชื่อบัญชี...
+              </p>
+            )}
+            {!loadingAccounts && accounts.length === 0 && (
+              <p className="text-xs text-amber-700 mt-1">
+                โหลดรายชื่อบัญชีไม่สำเร็จ — จะกระทบยอดรวมทุกบัญชีของธนาคารที่เลือก
+              </p>
+            )}
+            {!loadingAccounts && accounts.length > 0 && !accountDimensionReady && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                ระบบยังไม่ได้แยกข้อมูลตามเลขบัญชี — ต้องรัน{" "}
+                <span className="font-mono">sql/006_bank_statement_bank_account.sql</span> ก่อน
+                ระหว่างนี้หน้ากระทบยอดจะยังรวมทุกบัญชีของธนาคารเดียวกันไว้ด้วยกัน
+              </p>
+            )}
           </div>
 
           <div>

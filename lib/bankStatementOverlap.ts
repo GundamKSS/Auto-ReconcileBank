@@ -43,6 +43,7 @@ function lineKey(
  * บัญชีนำเข้า statement ทับช่วงกันได้ตามปกติ (เช่นทำ 1–15 แล้วรอบหน้าอัปไฟล์ทั้งเดือน)
  * จึงไม่บล็อกทั้งไฟล์ แต่ให้ผู้เรียกนำเข้าเฉพาะ newLines
  *
+ * เทียบเฉพาะภายใน "บัญชีเดียวกัน" เมื่อรู้บัญชีแล้ว (ดู accountScope ข้างล่าง)
  * นับแบบ multiset: ถ้าไฟล์มีรายการหน้าตาเหมือนกัน 2 แถว แต่ในระบบมีอยู่ 1 แถว จะนับซ้ำ 1 ไม่ใช่ 2
  * ส่ง Transaction มาได้ เพื่อให้การเช็คอยู่ใน transaction เดียวกับการบันทึก (ดู import/route.ts)
  */
@@ -51,20 +52,34 @@ export async function findOverlapWithImportedLines(
   bankCode: string,
   lines: NormalizedStatementLine[],
   periodStart: string | null,
-  periodEnd: string | null
+  periodEnd: string | null,
+  // บัญชีที่กำลังนำเข้า — null เมื่อยังไม่ได้รัน sql/006 (ตอนนั้นเทียบได้แค่ระดับธนาคารแบบเดิม)
+  bankAccountNo: string | null = null
 ): Promise<StatementOverlap> {
   if (!periodStart || !periodEnd || lines.length === 0) return { overlapCount: 0, imports: [], newLines: lines };
 
   const request = scope instanceof sql.Transaction ? new sql.Request(scope) : new sql.Request(scope);
-  const existing = await request
+  request
     .input('bankCode', sql.NVarChar, bankCode)
     .input('periodStart', sql.Date, periodStart)
-    .input('periodEnd', sql.Date, periodEnd)
-    .query(`
+    .input('periodEnd', sql.Date, periodEnd);
+  if (bankAccountNo) request.input('bankAccountNo', sql.NVarChar, bankAccountNo);
+
+  // ขอบเขตการเทียบซ้ำต้องเป็น "บัญชีเดียวกัน" ไม่ใช่ "ธนาคารเดียวกัน" — สองบัญชีของธนาคารเดียวกัน
+  // มีรายการวันเดียวกันยอดเท่ากันได้ตามปกติ (เช่นโอนระหว่างบัญชีตัวเอง) ถ้าเทียบระดับธนาคาร
+  // ไฟล์ของบัญชีที่สองจะถูกมองว่าซ้ำแล้วไม่ถูกนำเข้าโดยไม่มีใครรู้
+  //
+  // แต่ยังต้องเทียบกับแถวเก่าที่ BankAccountNo เป็น NULL (นำเข้าไว้ก่อนรัน sql/006 และยังไม่ได้ระบุบัญชี)
+  // ด้วย เพราะแถวพวกนั้นอาจเป็นบัญชีเดียวกันจริงๆ — เผลอนับซ้ำเกินไปยังดีกว่านำเข้าซ้ำจนยอดเบิ้ล
+  const accountScope = bankAccountNo
+    ? '(l.BankAccountNo = @bankAccountNo OR (l.BankAccountNo IS NULL AND l.BankCode = @bankCode))'
+    : 'l.BankCode = @bankCode';
+
+  const existing = await request.query(`
       SELECT l.ImportId, l.TranDate, l.Description, l.Debit, l.Credit, l.Balance, i.FileName, i.ImportedAt
       FROM BankStatementLine l
       JOIN BankStatementImport i ON i.ImportId = l.ImportId
-      WHERE l.BankCode = @bankCode
+      WHERE ${accountScope}
         AND l.TranDate BETWEEN @periodStart AND @periodEnd
         AND i.Status = 'SUCCESS'
     `);

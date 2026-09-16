@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Trash2, X, Loader2, Lock, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, Trash2, X, Loader2, Lock, SlidersHorizontal } from "lucide-react";
 import { ImportBatch, formatDate } from "./ImportBatchList";
 
 type Line = {
@@ -41,6 +41,9 @@ function StatusBadge({ status }: { status: Line["MatchStatus"] }) {
 
 // รายการในไฟล์เป็นแบบอ่านอย่างเดียว — Bank Statement เป็นเอกสารต้นฉบับจากธนาคาร แก้ไข/เพิ่ม/ลบทีละรายการไม่ได้
 // ถ้าไฟล์ผิดต้องลบทั้งไฟล์ (เก็บประวัติผู้ลบ/เหตุผล/เวลา) แล้วนำเข้าไฟล์ที่ถูกต้องใหม่
+//
+// โหลดทีละ 50 รายการแบบ infinite scroll (เหมือนหน้า Match History/Reports) แทนการดึงทั้งไฟล์มาไว้
+// ในเครื่องแล้วค่อยแบ่งหน้าเอง — ไฟล์ statement บางไฟล์มีเป็นพันแถว ดึงทั้งหมดมาทุกครั้งที่เปิดดูจะช้าโดยไม่จำเป็น
 export default function LineItemsView({
   batch,
   onBack,
@@ -51,74 +54,133 @@ export default function LineItemsView({
   onDelete: (batch: ImportBatch) => void;
 }) {
   const [lines, setLines] = useState<Line[]>([]);
+  const [total, setTotal] = useState(0);
+  const [channelOptions, setChannelOptions] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
   const [filterChannel, setFilterChannel] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
-  const [page, setPage] = useState(1);
 
-  function updateFilter(setter: (v: string) => void, value: string) {
-    setter(value);
-    setPage(1);
-  }
+  const requestIdRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
+  const inFlightRef = useRef(false);
+
+  const hasActiveFilters = Boolean(filterFrom || filterTo || filterChannel || filterStatus);
   function clearFilters() {
     setFilterFrom("");
     setFilterTo("");
     setFilterChannel("");
     setFilterStatus("");
-    setPage(1);
   }
-  const hasActiveFilters = Boolean(filterFrom || filterTo || filterChannel || filterStatus);
 
-  const channelOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const l of lines) if (l.Channel) set.add(l.Channel);
-    return [...set].sort();
-  }, [lines]);
+  const params = useMemo(() => {
+    const p = new URLSearchParams({ importId: String(batch.ImportId) });
+    if (filterFrom) p.set("from", filterFrom);
+    if (filterTo) p.set("to", filterTo);
+    if (filterChannel) p.set("channel", filterChannel);
+    if (filterStatus) p.set("status", filterStatus);
+    return p.toString();
+  }, [batch.ImportId, filterFrom, filterTo, filterChannel, filterStatus]);
 
-  const filteredLines = useMemo(() => {
-    return lines.filter((l) => {
-      const d = toDateInput(l.TranDate);
-      if (filterFrom && d < filterFrom) return false;
-      if (filterTo && d > filterTo) return false;
-      if (filterChannel && l.Channel !== filterChannel) return false;
-      if (filterStatus && l.MatchStatus !== filterStatus) return false;
-      return true;
-    });
-  }, [lines, filterFrom, filterTo, filterChannel, filterStatus]);
+  // โหลดหน้าแรกใหม่ทุกครั้งที่เปลี่ยนไฟล์ที่เลือกดูหรือเปลี่ยนตัวกรอง
+  useEffect(() => {
+    const reqId = ++requestIdRef.current;
+    let cancelled = false;
 
-  const PAGE_SIZE = 25;
-  const totalPages = Math.max(1, Math.ceil(filteredLines.length / PAGE_SIZE));
-  const clampedPage = Math.min(page, totalPages);
-  const pageLines = filteredLines.slice((clampedPage - 1) * PAGE_SIZE, clampedPage * PAGE_SIZE);
+    async function loadFirstPage() {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`/api/master/bank-statement/lines?${params}&offset=0`);
+        const data = await res.json();
+        if (cancelled || reqId !== requestIdRef.current) return;
+        if (!res.ok) {
+          setError(data.error || "โหลดรายการไม่สำเร็จ");
+          setLines([]);
+          setTotal(0);
+          return;
+        }
+        setLines(data.lines);
+        setTotal(data.total ?? data.lines.length);
+        if (Array.isArray(data.channels)) setChannelOptions(data.channels);
+      } catch {
+        if (!cancelled && reqId === requestIdRef.current) {
+          setError("เชื่อมต่อ server ไม่ได้");
+          setLines([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled && reqId === requestIdRef.current) setLoading(false);
+      }
+    }
 
-  async function loadLines() {
-    setLoading(true);
-    setError("");
+    loadFirstPage();
+    return () => {
+      cancelled = true;
+    };
+  }, [params]);
+
+  const hasMore = lines.length < total;
+
+  const loadMore = useCallback(async () => {
+    if (loading || inFlightRef.current || !hasMore) return;
+    const reqId = requestIdRef.current;
+    inFlightRef.current = true;
+    setLoadingMore(true);
     try {
-      const res = await fetch(`/api/master/bank-statement/lines?importId=${batch.ImportId}`);
+      const res = await fetch(`/api/master/bank-statement/lines?${params}&offset=${lines.length}`);
       const data = await res.json();
+      // filter เปลี่ยนระหว่างรอ response — ทิ้งผลลัพธ์ชุดนี้ไป ไม่งั้นแถวจะปนกันคนละ filter
+      if (reqId !== requestIdRef.current) return;
       if (!res.ok) {
-        setError(data.error || "โหลดรายการไม่สำเร็จ");
+        setError(data.error || "โหลดเพิ่มไม่สำเร็จ");
         return;
       }
-      setLines(data.lines);
+      setLines((prev) => [...prev, ...data.lines]);
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
     } finally {
-      setLoading(false);
+      inFlightRef.current = false;
+      if (reqId === requestIdRef.current) setLoadingMore(false);
     }
-  }
+  }, [loading, hasMore, params, lines.length]);
 
+  // infinite scroll: โหลดชุดถัดไปเมื่อท้ายรายการใกล้เข้ามาในจอ (เหมือนหน้า Match History/Reports)
   useEffect(() => {
-    // โหลดรายการใหม่ทุกครั้งที่เปลี่ยนไฟล์ที่เลือกดู — fetch-on-mount ปกติ
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadLines();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [batch.ImportId]);
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+
+    const nearViewport = () => el.getBoundingClientRect().top < window.innerHeight + 300;
+    // อ่าน layout แค่เฟรมละครั้ง — scroll event ยิงถี่กว่าเฟรม ถ้าเรียก getBoundingClientRect ทุกครั้งจะบังคับ reflow ซ้ำจนเลื่อนกระตุก
+    let frame = 0;
+    const check = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (nearViewport()) loadMore();
+      });
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
+    });
+    io.observe(el);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    check();
+
+    return () => {
+      io.disconnect();
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+      cancelAnimationFrame(frame);
+    };
+  }, [loadMore, hasMore]);
 
   const locked = batch.LockedCount > 0;
 
@@ -134,11 +196,9 @@ export default function LineItemsView({
           <p className="text-xs text-gray-400 mt-0.5">
             {formatDate(batch.PeriodStart)} – {formatDate(batch.PeriodEnd)} ·{" "}
             {hasActiveFilters ? (
-              <span className="text-gray-500 font-medium">
-                {filteredLines.length.toLocaleString()} จาก {lines.length.toLocaleString()} รายการ
-              </span>
+              <span className="text-gray-500 font-medium">{total.toLocaleString()} รายการที่ตรงกับตัวกรอง</span>
             ) : (
-              <span className="text-gray-500 font-medium">{lines.length.toLocaleString()} รายการ</span>
+              <span className="text-gray-500 font-medium">{total.toLocaleString()} รายการ</span>
             )}
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
@@ -171,7 +231,7 @@ export default function LineItemsView({
           <input
             type="date"
             value={filterFrom}
-            onChange={(e) => updateFilter(setFilterFrom, e.target.value)}
+            onChange={(e) => setFilterFrom(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
           />
         </div>
@@ -180,7 +240,7 @@ export default function LineItemsView({
           <input
             type="date"
             value={filterTo}
-            onChange={(e) => updateFilter(setFilterTo, e.target.value)}
+            onChange={(e) => setFilterTo(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
           />
         </div>
@@ -188,7 +248,7 @@ export default function LineItemsView({
           <label className="text-[11px] font-medium text-gray-500">ช่องทาง</label>
           <select
             value={filterChannel}
-            onChange={(e) => updateFilter(setFilterChannel, e.target.value)}
+            onChange={(e) => setFilterChannel(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 min-w-[120px]"
           >
             <option value="">ทั้งหมด</option>
@@ -203,7 +263,7 @@ export default function LineItemsView({
           <label className="text-[11px] font-medium text-gray-500">สถานะ</label>
           <select
             value={filterStatus}
-            onChange={(e) => updateFilter(setFilterStatus, e.target.value)}
+            onChange={(e) => setFilterStatus(e.target.value)}
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 min-w-[120px]"
           >
             <option value="">ทั้งหมด</option>
@@ -250,7 +310,7 @@ export default function LineItemsView({
             )}
 
             {!loading &&
-              pageLines.map((l) => (
+              lines.map((l) => (
                 <tr
                   key={l.LineId}
                   className="relative bg-white transition-all duration-200 ease-out hover:z-10 hover:-translate-y-[3px] hover:bg-white hover:shadow-[0_16px_30px_-10px_rgba(15,23,42,0.3)] hover:ring-1 hover:ring-blue-200"
@@ -271,18 +331,16 @@ export default function LineItemsView({
             {!loading && lines.length === 0 && (
               <tr>
                 <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
-                  ไม่มีรายการในไฟล์นี้
-                </td>
-              </tr>
-            )}
-
-            {!loading && lines.length > 0 && filteredLines.length === 0 && (
-              <tr>
-                <td colSpan={8} className="px-3 py-10 text-center text-gray-400">
-                  ไม่พบรายการที่ตรงกับตัวกรอง —{" "}
-                  <button onClick={clearFilters} className="text-blue-600 hover:underline font-medium">
-                    ล้างตัวกรอง
-                  </button>
+                  {hasActiveFilters ? (
+                    <>
+                      ไม่พบรายการที่ตรงกับตัวกรอง —{" "}
+                      <button onClick={clearFilters} className="text-blue-600 hover:underline font-medium">
+                        ล้างตัวกรอง
+                      </button>
+                    </>
+                  ) : (
+                    "ไม่มีรายการในไฟล์นี้"
+                  )}
                 </td>
               </tr>
             )}
@@ -290,31 +348,22 @@ export default function LineItemsView({
         </table>
       </div>
 
-      {!loading && filteredLines.length > 0 && (
-        <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-xs text-gray-400">
-            แสดง {(clampedPage - 1) * PAGE_SIZE + 1}–{Math.min(clampedPage * PAGE_SIZE, filteredLines.length)} จาก{" "}
-            {filteredLines.length.toLocaleString()} รายการ
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(clampedPage - 1)}
-              disabled={clampedPage <= 1}
-              className="flex items-center gap-1 text-sm text-gray-600 border border-gray-200 px-3 py-1.5 rounded-full hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <ChevronLeft size={14} /> ก่อนหน้า
-            </button>
-            <span className="text-xs text-gray-400 px-1">
-              หน้า {clampedPage} / {totalPages}
+      {!loading && lines.length > 0 && (
+        <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
+          {loadingMore ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
             </span>
-            <button
-              onClick={() => setPage(clampedPage + 1)}
-              disabled={clampedPage >= totalPages}
-              className="flex items-center gap-1 text-sm text-gray-600 border border-gray-200 px-3 py-1.5 rounded-full hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              ถัดไป <ChevronRight size={14} />
-            </button>
-          </div>
+          ) : hasMore ? (
+            <span className="inline-flex items-center gap-2">
+              แสดง {lines.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
+              <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+                โหลดเพิ่ม
+              </button>
+            </span>
+          ) : (
+            `ครบทั้งหมด ${total.toLocaleString()} รายการ`
+          )}
         </div>
       )}
 

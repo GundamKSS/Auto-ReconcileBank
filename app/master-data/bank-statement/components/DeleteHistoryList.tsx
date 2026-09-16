@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { History, Loader2 } from "lucide-react";
 import { formatDate, formatDateTime } from "./ImportBatchList";
 
@@ -18,35 +18,108 @@ type DeletedImport = {
 };
 
 // ประวัติการลบไฟล์ของธนาคารที่เลือก — ใครลบ ลบเมื่อไร เหตุผลอะไร (อ่านอย่างเดียว ล่าสุดก่อน)
+// โหลดทีละ 50 แบบ infinite scroll — จำนวนไฟล์ที่ถูกลบยังน้อยตอนนี้ แต่สะสมไปเรื่อยๆ ไม่มีวันหาย (soft delete)
 export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
   const [deletions, setDeletions] = useState<DeletedImport[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
 
-  async function loadDeletions() {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch(`/api/master/bank-statement/delete-history?bankCode=${bankCode}`);
-      const data = await res.json();
-      if (!res.ok) {
-        setError(data.error || "โหลดประวัติการลบไม่สำเร็จ");
-        return;
-      }
-      setDeletions(data.deletions);
-    } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const requestIdRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
+    const reqId = ++requestIdRef.current;
+    let cancelled = false;
+
+    async function loadFirstPage() {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`/api/master/bank-statement/delete-history?bankCode=${bankCode}&offset=0`);
+        const data = await res.json();
+        if (cancelled || reqId !== requestIdRef.current) return;
+        if (!res.ok) {
+          setError(data.error || "โหลดประวัติการลบไม่สำเร็จ");
+          setDeletions([]);
+          setTotal(0);
+          return;
+        }
+        setDeletions(data.deletions);
+        setTotal(data.total ?? data.deletions.length);
+      } catch {
+        if (!cancelled && reqId === requestIdRef.current) {
+          setError("เชื่อมต่อ server ไม่ได้");
+          setDeletions([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled && reqId === requestIdRef.current) setLoading(false);
+      }
+    }
+
     // โหลดใหม่ทุกครั้งที่เปลี่ยนธนาคาร — fetch-on-param-change ปกติ
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    loadDeletions();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadFirstPage();
+    return () => {
+      cancelled = true;
+    };
   }, [bankCode]);
+
+  const hasMore = deletions.length < total;
+
+  const loadMore = useCallback(async () => {
+    if (loading || inFlightRef.current || !hasMore) return;
+    const reqId = requestIdRef.current;
+    inFlightRef.current = true;
+    setLoadingMore(true);
+    try {
+      const res = await fetch(`/api/master/bank-statement/delete-history?bankCode=${bankCode}&offset=${deletions.length}`);
+      const data = await res.json();
+      if (reqId !== requestIdRef.current) return;
+      if (!res.ok) {
+        setError(data.error || "โหลดเพิ่มไม่สำเร็จ");
+        return;
+      }
+      setDeletions((prev) => [...prev, ...data.deletions]);
+    } catch {
+      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+    } finally {
+      inFlightRef.current = false;
+      if (reqId === requestIdRef.current) setLoadingMore(false);
+    }
+  }, [loading, hasMore, bankCode, deletions.length]);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
+
+    const nearViewport = () => el.getBoundingClientRect().top < window.innerHeight + 300;
+    let frame = 0;
+    const check = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (nearViewport()) loadMore();
+      });
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
+    });
+    io.observe(el);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    check();
+
+    return () => {
+      io.disconnect();
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+      cancelAnimationFrame(frame);
+    };
+  }, [loadMore, hasMore]);
 
   if (loading) {
     return (
@@ -73,9 +146,7 @@ export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
 
   return (
     <div>
-      <p className="mb-3 text-xs text-gray-400">
-        ไฟล์ที่ถูกลบ {deletions.length.toLocaleString()} ไฟล์ — บันทึกผู้ลบ วันเวลา และเหตุผลไว้ทุกครั้ง
-      </p>
+      <p className="mb-3 text-xs text-gray-400">ไฟล์ที่ถูกลบทั้งหมด {total.toLocaleString()} ไฟล์ — บันทึกผู้ลบ วันเวลา และเหตุผลไว้ทุกครั้ง</p>
       <div className="overflow-x-auto border border-gray-200 rounded-2xl">
         <table className="w-full text-sm min-w-[860px]">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide">
@@ -103,6 +174,23 @@ export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
+        {loadingMore ? (
+          <span className="inline-flex items-center gap-2">
+            <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
+          </span>
+        ) : hasMore ? (
+          <span className="inline-flex items-center gap-2">
+            แสดง {deletions.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
+            <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+              โหลดเพิ่ม
+            </button>
+          </span>
+        ) : (
+          `ครบทั้งหมด ${total.toLocaleString()} รายการ`
+        )}
       </div>
     </div>
   );

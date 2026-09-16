@@ -91,6 +91,7 @@ function SearchingView({ step, windowDays, amount }: { step: number; windowDays:
 // ไม่บันทึกอะไรเองเด็ดขาด (requirements ข้อ 27) — กติกาการให้คะแนนอยู่ใน lib/matchAssistant.ts
 export default function MatchAssistantModal({
   bankCode,
+  bankAccountNo,
   periodStart,
   periodEnd,
   direction,
@@ -98,6 +99,9 @@ export default function MatchAssistantModal({
   onClose,
 }: {
   bankCode: string;
+  // ต้องเป็นบัญชีเดียวกับที่ตารางหลังจอกำลังแสดงอยู่ ไม่งั้นผู้ช่วยจะเสนอคู่ข้ามบัญชี
+  // ที่ผู้ใช้มองไม่เห็นในตาราง แล้ว /api/reconcile/match ก็จะปฏิเสธตอนกดจับคู่อยู่ดี
+  bankAccountNo: string | null;
   periodStart: string;
   periodEnd: string;
   // ค้นหาเฉพาะฝั่งที่แท็บในตารางกำลังเปิดอยู่ — IN/OUT มักเป็นคนละคนดูแล ไม่ให้สลับข้ามฝั่งใน popup
@@ -136,6 +140,7 @@ export default function MatchAssistantModal({
           windowDays: String(win),
           direction,
         });
+        if (bankAccountNo) qs.set("bankAccountNo", bankAccountNo);
         const res = await fetch(`/api/reconcile/assistant?${qs.toString()}`, { signal: controller.signal });
         const data = await res.json();
         const wait = minDurationMs - (Date.now() - startedAt);
@@ -163,7 +168,7 @@ export default function MatchAssistantModal({
         setPhase("error");
       }
     },
-    [bankCode, periodStart, periodEnd, direction]
+    [bankCode, bankAccountNo, periodStart, periodEnd, direction]
   );
 
   useEffect(() => {
@@ -215,6 +220,7 @@ export default function MatchAssistantModal({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           bankCode,
+          bankAccountNo,
           matchType: "MATCHED",
           groups: [{ bankLineIds: [lineId], glEntryNos: [entryNo] }],
         }),

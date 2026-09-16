@@ -5,6 +5,7 @@ import { getPool } from '../../../lib/db';
 import { requireRole } from '../../../lib/session';
 import { RECONCILE_ROLES } from '../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../lib/apiInput';
+import { glAmount, glDirection } from '../../../lib/glAmount';
 const PAGE_SIZE = 50;
 
 /**
@@ -14,6 +15,7 @@ const PAGE_SIZE = 50;
  *   bankCode  - รหัสธนาคาร หรือไม่ใส่ = ทุกธนาคาร
  *   matchType - 'MATCHED' | 'SUSPENSE' หรือไม่ใส่ = ทั้งคู่
  *   from, to  - ช่วงวันที่ YYYY-MM-DD กรองที่ CreatedAt (ไม่ใส่ = ไม่กรองวันที่)
+ *   q         - ค้นหาข้อความอิสระ — ตรงกับ MatchId, รายละเอียดฝั่ง Bank, หรือเลขที่/ชื่อบัญชีฝั่ง GL
  *   offset    - เริ่มที่ Match ลำดับที่เท่าไร (infinite scroll ทีละ 50 Match)
  *
  * ตอบกลับ total + bankCodes เฉพาะตอนโหลดหน้าแรก (offset = 0) เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll
@@ -28,6 +30,8 @@ export async function GET(req: NextRequest) {
     const matchType = params.get('matchType');
     const from = params.get('from');
     const to = params.get('to');
+    const rawQ = params.get('q');
+    const q = rawQ && rawQ.trim() ? rawQ.trim() : null;
     const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
 
     // ตรวจรูปแบบและลำดับวันที่ก่อนส่งเข้า query — ค่าผิดต้องได้ 400 พร้อมข้อความที่อ่านรู้เรื่อง
@@ -44,12 +48,34 @@ export async function GET(req: NextRequest) {
       toDateExclusive.setUTCDate(toDateExclusive.getUTCDate() + 1);
     }
 
+    // ค้นหาต้องเห็นได้ทุก Match ในระบบ ไม่ใช่แค่หน้าที่โหลดมาแล้ว จึงกรองที่ SQL ไม่ใช่ฝั่ง client
+    // (ต่างจาก MatchId ที่ cast ตรงๆ ได้ — คำค้นอาจตรงกับรายละเอียดฝั่ง Bank หรือ GL เท่านั้น เลยต้อง EXISTS
+    // เข้าไปเช็คที่บรรทัดย่อยของ Match นั้น ตาม SourceType)
     const whereClause = `
       WHERE 1=1
-        ${bankCode ? 'AND BankCode = @bankCode' : ''}
-        ${matchType ? 'AND MatchType = @matchType' : ''}
-        ${fromDate ? 'AND CreatedAt >= @from' : ''}
-        ${toDateExclusive ? 'AND CreatedAt < @to' : ''}
+        ${bankCode ? 'AND rm.BankCode = @bankCode' : ''}
+        ${matchType ? 'AND rm.MatchType = @matchType' : ''}
+        ${fromDate ? 'AND rm.CreatedAt >= @from' : ''}
+        ${toDateExclusive ? 'AND rm.CreatedAt < @to' : ''}
+        ${
+          q
+            ? `AND (
+                CAST(rm.MatchId AS NVARCHAR(20)) LIKE @q
+                OR EXISTS (
+                  SELECT 1 FROM ReconciliationMatchLine q_rml
+                  JOIN BankStatementLine q_bsl ON q_bsl.LineId = q_rml.BankLineId
+                  WHERE q_rml.MatchId = rm.MatchId AND q_rml.SourceType = 'BANK' AND q_bsl.Description LIKE @q
+                )
+                OR EXISTS (
+                  SELECT 1 FROM ReconciliationMatchLine q_rml
+                  JOIN BankAccountLedgerEntries q_e ON q_e.Entry_No = q_rml.GLEntryNo
+                  LEFT JOIN BankAccountMapping q_m ON q_m.BankAccountNo = q_e.Bank_Account_No
+                  WHERE q_rml.MatchId = rm.MatchId AND q_rml.SourceType = 'GL'
+                    AND (q_e.Document_No LIKE @q OR q_m.BankAccountName LIKE @q)
+                )
+              )`
+            : ''
+        }
     `;
 
     const pool = await getPool();
@@ -61,13 +87,14 @@ export async function GET(req: NextRequest) {
     if (matchType) idRequest.input('matchType', sql.NVarChar, matchType);
     if (fromDate) idRequest.input('from', sql.DateTime2, fromDate);
     if (toDateExclusive) idRequest.input('to', sql.DateTime2, toDateExclusive);
+    if (q) idRequest.input('q', sql.NVarChar, `%${q}%`);
     idRequest.input('offset', sql.Int, offset);
     idRequest.input('limit', sql.Int, PAGE_SIZE);
     const idResult = await idRequest.query(`
-      SELECT MatchId
-      FROM ReconciliationMatch
+      SELECT rm.MatchId
+      FROM ReconciliationMatch rm
       ${whereClause}
-      ORDER BY CreatedAt DESC, MatchId DESC
+      ORDER BY rm.CreatedAt DESC, rm.MatchId DESC
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
     const pageMatchIds: number[] = idResult.recordset.map((r) => Number(r.MatchId));
@@ -135,8 +162,8 @@ export async function GET(req: NextRequest) {
         date: r.Posting_Date,
         ref: r.Document_No,
         accountName: r.BankAccountName,
-        direction: Number(r.Debit_Amount_LCY) > 0 ? 'IN' : 'OUT',
-        amount: Number(r.Debit_Amount_LCY) > 0 ? Number(r.Debit_Amount_LCY) : Number(r.Credit_Amount_LCY),
+        direction: glDirection(r),
+        amount: glAmount(r),
         status: r.Status ?? 'ACTIVE',
         reversedAt: r.ReversedAt ?? null,
         reversedBy: r.ReversedBy ?? null,
@@ -175,7 +202,8 @@ export async function GET(req: NextRequest) {
     if (matchType) countRequest.input('matchType', sql.NVarChar, matchType);
     if (fromDate) countRequest.input('from', sql.DateTime2, fromDate);
     if (toDateExclusive) countRequest.input('to', sql.DateTime2, toDateExclusive);
-    const countResult = await countRequest.query(`SELECT COUNT(*) AS Total FROM ReconciliationMatch ${whereClause}`);
+    if (q) countRequest.input('q', sql.NVarChar, `%${q}%`);
+    const countResult = await countRequest.query(`SELECT COUNT(*) AS Total FROM ReconciliationMatch rm ${whereClause}`);
     const total = Number(countResult.recordset[0]?.Total ?? 0);
 
     // รายชื่อธนาคารสำหรับปุ่มกรอง — ดึงจากข้อมูลจริงทั้งหมด ไม่ผูกกับ filter ธนาคาร/วันที่ที่เลือกอยู่

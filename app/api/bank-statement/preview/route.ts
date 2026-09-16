@@ -5,6 +5,7 @@ import { readStatementRows, MAX_FILE_BYTES, MAX_IMPORT_ROWS } from '../../../../
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { findOverlapWithImportedLines } from '../../../../lib/bankStatementOverlap';
+import { bankAccountColumnsReady, resolveBankAccount } from '../../../../lib/bankAccountDb';
 
 const VALID_BANKS: BankCode[] = ['BBL', 'KBANK', 'SCB'];
 
@@ -42,19 +43,65 @@ export async function POST(req: NextRequest) {
   let periodEnd: string | null;
   let file: File;
   let bankCode: string;
+  // บัญชีที่ผู้ใช้เลือกไว้ใน dropdown — null เมื่อยังไม่ได้รัน sql/006
+  let bankAccountNo: string | null = null;
+  let accountName: string | null = null;
+
+  let formData: FormData;
+  try {
+    formData = await req.formData();
+  } catch {
+    return NextResponse.json({ error: 'อ่านข้อมูลที่ส่งมาไม่สำเร็จ' }, { status: 400 });
+  }
+
+  // ขั้นระบุบัญชี — ตรวจให้ตรงกันแบบเดียวกับตอนนำเข้าจริง (ดู import/route.ts) เพื่อให้หน้า preview
+  // ไม่แสดงผลที่คำนวณจากบัญชีหนึ่งแล้วตอนกดนำเข้าจริงกลับถูกปฏิเสธด้วยเหตุผลคนละอย่าง
+  try {
+    const accountReady = await bankAccountColumnsReady();
+    const rawAccount = ((formData.get('bankAccountNo') as string | null) ?? '').trim();
+    const rawBankInput = ((formData.get('bankCode') as string | null) ?? '').trim();
+
+    if (accountReady) {
+      if (!rawAccount) {
+        return NextResponse.json({ error: 'กรุณาเลือกบัญชีธนาคารของไฟล์นี้' }, { status: 400 });
+      }
+      const account = await resolveBankAccount(rawAccount);
+      if (!account?.bankCode) {
+        return NextResponse.json({ error: 'ไม่รู้จักบัญชีที่เลือก กรุณาเลือกใหม่' }, { status: 400 });
+      }
+      if (!VALID_BANKS.includes(account.bankCode as BankCode)) {
+        return NextResponse.json(
+          { error: `ยังไม่รองรับการอ่านไฟล์ statement ของ ${account.bankCode}` },
+          { status: 400 }
+        );
+      }
+      if (rawBankInput && rawBankInput !== account.bankCode) {
+        return NextResponse.json(
+          { error: `บัญชีที่เลือกเป็นของ ${account.bankCode} ไม่ใช่ ${rawBankInput}` },
+          { status: 400 }
+        );
+      }
+      bankAccountNo = account.bankAccountNo;
+      accountName = account.accountName;
+      bankCode = account.bankCode;
+    } else {
+      if (!rawBankInput || !VALID_BANKS.includes(rawBankInput as BankCode)) {
+        return NextResponse.json({ error: 'ยังไม่รองรับธนาคารนี้' }, { status: 400 });
+      }
+      bankCode = rawBankInput;
+    }
+  } catch (err) {
+    console.error('Resolve bank account error:', err);
+    return NextResponse.json({ error: 'ตรวจสอบบัญชีธนาคารไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
+  }
 
   // แยกขั้น "อ่าน/แกะไฟล์" ออกจากขั้น "คุยกับฐานข้อมูล" เพราะสองอย่างนี้ผิดพลาดคนละสาเหตุกัน
   // ไฟล์ผิดรูปแบบคือความผิดของ input (400) ส่วน DB ล่มคือความผิดของระบบ (500)
   try {
-    const formData = await req.formData();
     const rawFile = formData.get('file') as File | null;
-    const rawBank = formData.get('bankCode') as string | null;
 
     if (!rawFile) {
       return NextResponse.json({ error: 'กรุณาแนบไฟล์' }, { status: 400 });
-    }
-    if (!rawBank || !VALID_BANKS.includes(rawBank as BankCode)) {
-      return NextResponse.json({ error: 'ยังไม่รองรับธนาคารนี้' }, { status: 400 });
     }
     if (rawFile.size > MAX_FILE_BYTES) {
       return NextResponse.json(
@@ -67,7 +114,6 @@ export async function POST(req: NextRequest) {
       );
     }
     file = rawFile;
-    bankCode = rawBank;
 
     const fileBuffer = Buffer.from(await file.arrayBuffer());
 
@@ -101,13 +147,22 @@ export async function POST(req: NextRequest) {
 
   try {
     const pool = await getPool();
-    const overlap = await findOverlapWithImportedLines(pool, bankCode, lines, periodStart, periodEnd);
+    const overlap = await findOverlapWithImportedLines(
+      pool,
+      bankCode,
+      lines,
+      periodStart,
+      periodEnd,
+      bankAccountNo
+    );
     const newDates = overlap.newLines.map((l) => l.tranDate).sort();
 
     const periodDays = daysBetween(periodStart, periodEnd);
 
     return NextResponse.json({
       bankCode,
+      bankAccountNo,
+      accountName,
       fileName: file.name,
       fileSizeKb: Math.round(file.size / 1024),
       totalRows: lines.length,

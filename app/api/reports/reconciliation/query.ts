@@ -197,9 +197,9 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
       g.Entry_No AS GLEntryNo, g.Posting_Date AS GLPostingDate, g.Document_No AS GLDocumentNo,
       g.Bank_Account_No AS GLBankAccountNo, g.BankAccountName AS GLBankAccountName,
       CASE WHEN g.Entry_No IS NULL THEN NULL
-           WHEN g.Debit_Amount_LCY > 0 THEN 'IN' ELSE 'OUT' END AS GLDirection,
+           WHEN (COALESCE(g.Debit_Amount_LCY, 0) - COALESCE(g.Credit_Amount_LCY, 0)) > 0 THEN 'IN' ELSE 'OUT' END AS GLDirection,
       CASE WHEN g.Entry_No IS NULL THEN NULL
-           WHEN g.Debit_Amount_LCY > 0 THEN g.Debit_Amount_LCY ELSE g.Credit_Amount_LCY END AS GLAmount,
+           ELSE ABS((COALESCE(g.Debit_Amount_LCY, 0) - COALESCE(g.Credit_Amount_LCY, 0))) END AS GLAmount,
       CASE WHEN g.Entry_No IS NULL THEN NULL
            ELSE COALESCE(g.Debit_Amount_LCY, 0) - COALESCE(g.Credit_Amount_LCY, 0) END AS GLSigned,
       ${effDate} AS EffDate
@@ -301,7 +301,7 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
       CAST(CONCAT('G', e.Entry_No) AS NVARCHAR(60)) AS RowKey,
       CAST(CONCAT('G', e.Entry_No) AS NVARCHAR(60)) AS GroupKey,
       CAST('UNMATCHED' AS VARCHAR(10)) AS Status,
-      CAST(CASE WHEN e.Debit_Amount_LCY > 0 THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS Direction,
+      CAST(CASE WHEN (COALESCE(e.Debit_Amount_LCY, 0) - COALESCE(e.Credit_Amount_LCY, 0)) > 0 THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS Direction,
       CAST(NULL AS INT) AS MatchId,
       CAST(NULL AS INT) AS GroupNum,
       CAST(NULL AS INT) AS PairRn,
@@ -323,8 +323,8 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
       CAST(e.Document_No AS NVARCHAR(100)) AS GLDocumentNo,
       CAST(e.Bank_Account_No AS NVARCHAR(50)) AS GLBankAccountNo,
       CAST(m.BankAccountName AS NVARCHAR(200)) AS GLBankAccountName,
-      CAST(CASE WHEN e.Debit_Amount_LCY > 0 THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS GLDirection,
-      CAST(CASE WHEN e.Debit_Amount_LCY > 0 THEN e.Debit_Amount_LCY ELSE e.Credit_Amount_LCY END AS DECIMAL(18,2)) AS GLAmount,
+      CAST(CASE WHEN (COALESCE(e.Debit_Amount_LCY, 0) - COALESCE(e.Credit_Amount_LCY, 0)) > 0 THEN 'IN' ELSE 'OUT' END AS VARCHAR(3)) AS GLDirection,
+      CAST(ABS(COALESCE(e.Debit_Amount_LCY, 0) - COALESCE(e.Credit_Amount_LCY, 0)) AS DECIMAL(18,2)) AS GLAmount,
       CAST(COALESCE(e.Debit_Amount_LCY, 0) - COALESCE(e.Credit_Amount_LCY, 0) AS DECIMAL(18,2)) AS GLSigned,
       CAST(e.Posting_Date AS DATE) AS EffDate,
       CAST(e.Posting_Date AS DATE) AS GroupEffDate

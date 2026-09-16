@@ -3,6 +3,8 @@ import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
+import { bankSignedSql, glSignedSql } from '../../../../lib/glAmount';
+import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
 
 type MatchGroup = {
   bankLineIds: number[];
@@ -11,6 +13,8 @@ type MatchGroup = {
 
 type MatchRequestBody = {
   bankCode: string;
+  // บัญชีของ session ที่กำลังทำอยู่ — ใช้ยืนยันว่าทุกรายการที่ส่งมาเป็นบัญชีเดียวกันจริง
+  bankAccountNo?: string | null;
   matchType: 'MATCHED' | 'SUSPENSE';
   groups: MatchGroup[]; // แต่ละ group = 1 กลุ่มย่อย (Num) ภายใน MatchId เดียวกัน
 };
@@ -28,7 +32,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body: MatchRequestBody = await req.json();
-    const { bankCode, matchType, groups } = body;
+    const { bankCode, bankAccountNo, matchType, groups } = body;
     // ผู้ทำรายการอ่านจาก session cookie ที่เซ็นไว้เท่านั้น ไม่รับค่าจาก body อีกต่อไป
     // ไม่งั้นใครก็ตั้งชื่อคนอื่นเป็นผู้จับคู่ได้ ทำให้ audit trail เชื่อถือไม่ได้
     const createdBy = auth.session.displayName;
@@ -96,6 +100,7 @@ export async function POST(req: NextRequest) {
     }
 
     const pool = await getPool();
+    const accountReady = await bankAccountColumnsReady();
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -142,6 +147,55 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // 1c) ทุกรายการในการจับคู่ครั้งนี้ต้องอยู่ "บัญชีเดียวกัน"
+      //     ธนาคารหนึ่งมีได้หลายบัญชี (SCB 6 บัญชี) แต่ statement 1 ใบเป็นของบัญชีเดียว การจับคู่
+      //     ข้ามบัญชีจึงผิดเสมอ แม้ยอดจะดุลกันพอดีก็ตาม — เคยหลุดไปแล้วจริง (MatchId 242 และ 261
+      //     จับ TW_BBL_C1 ปนกับ PV_BBL_S1) ตอนที่ระบบยังกรองแค่ระดับธนาคาร
+      //     ด่านนี้อยู่ฝั่ง server เพราะ client ที่เปิดค้างไว้ก่อนอัปเดตยังส่งของเดิมมาได้
+      let matchAccountNo: string | null = null;
+      if (accountReady) {
+        if (seenGl.size > 0) {
+          const glCsv = [...seenGl].join(',');
+          const glAccounts = await new sql.Request(transaction).query(
+            `SELECT DISTINCT Bank_Account_No FROM BankAccountLedgerEntries WHERE Entry_No IN (${glCsv})`
+          );
+          const list = glAccounts.recordset.map((r) => r.Bank_Account_No);
+          if (list.length > 1) {
+            throw new Error(
+              `จับคู่ข้ามบัญชีไม่ได้ — รายการฝั่ง GL ที่เลือกมาจาก ${list.length} บัญชี (${list.join(', ')})`
+            );
+          }
+          matchAccountNo = list[0] ?? null;
+        }
+
+        if (bankAccountNo) {
+          if (matchAccountNo && matchAccountNo !== bankAccountNo) {
+            throw new Error(
+              `รายการฝั่ง GL เป็นของบัญชี ${matchAccountNo} แต่กำลังกระทบยอดบัญชี ${bankAccountNo} — กรุณารีเฟรชหน้าใหม่`
+            );
+          }
+          matchAccountNo = matchAccountNo ?? bankAccountNo;
+        }
+
+        // ฝั่ง bank ยอมให้ BankAccountNo เป็น NULL ได้ (ไฟล์ที่นำเข้าก่อนระบบแยกตามบัญชี)
+        // แต่ถ้าระบุไว้แล้วต้องตรงกัน
+        if (seenBank.size > 0 && matchAccountNo) {
+          const idsCsv = [...seenBank].join(',');
+          const wrong = await new sql.Request(transaction)
+            .input('accountNo', sql.NVarChar, matchAccountNo)
+            .query(`
+              SELECT DISTINCT BankAccountNo FROM BankStatementLine
+              WHERE LineId IN (${idsCsv}) AND BankAccountNo IS NOT NULL AND BankAccountNo <> @accountNo
+            `);
+          if (wrong.recordset.length > 0) {
+            throw new Error(
+              `จับคู่ข้ามบัญชีไม่ได้ — รายการฝั่ง Bank เป็นของบัญชี ` +
+                `${wrong.recordset.map((r) => r.BankAccountNo).join(', ')} ไม่ใช่ ${matchAccountNo}`
+            );
+          }
+        }
+      }
+
       // 2) แต่ละกลุ่มของ MATCHED ต้องมียอดสองฝั่งดุลกัน — ตรวจจากยอดจริงใน DB ไม่ใช่ตัวเลขที่ client ส่งมา
       //    ด่านนี้จำเป็นเพราะฝั่ง UI เคยส่งกลุ่มที่ยอดไม่ดุลมาได้ (ตอนผู้ใช้เลือกข้ามวันแล้วบางรายการถูกตัดทิ้ง)
       if (matchType === 'MATCHED') {
@@ -149,12 +203,12 @@ export async function POST(req: NextRequest) {
           const g = groups[i];
           const bankReq = new sql.Request(transaction);
           const bankSum = await bankReq.query(
-            `SELECT SUM(CASE WHEN Credit IS NOT NULL THEN Credit ELSE Debit END) AS Total
+            `SELECT SUM(${bankSignedSql()}) AS Total
              FROM BankStatementLine WHERE LineId IN (${g.bankLineIds.join(',')})`
           );
           const glReq = new sql.Request(transaction);
           const glSum = await glReq.query(
-            `SELECT SUM(CASE WHEN Debit_Amount_LCY > 0 THEN Debit_Amount_LCY ELSE Credit_Amount_LCY END) AS Total
+            `SELECT SUM(${glSignedSql()}) AS Total
              FROM BankAccountLedgerEntries WHERE Entry_No IN (${g.glEntryNos.join(',')})`
           );
           const bankTotal = Number(bankSum.recordset[0]?.Total ?? 0);
@@ -173,14 +227,17 @@ export async function POST(req: NextRequest) {
       // ── บันทึก ──────────────────────────────────────────────────────────────
       // 1 MatchId ต่อ 1 การกด Match ครั้งนี้ (ไม่ว่าจะมีกี่กลุ่มย่อยข้างในก็ตาม)
       const matchRequest = new sql.Request(transaction);
-      const matchResult = await matchRequest
+      matchRequest
         .input('bankCode', sql.NVarChar, bankCode)
         .input('matchType', sql.NVarChar, matchType)
-        .input('createdBy', sql.NVarChar, createdBy)
-        .query(`
-          INSERT INTO ReconciliationMatch (BankCode, MatchType, CreatedBy)
+        .input('createdBy', sql.NVarChar, createdBy);
+      const storeAccount = accountReady && Boolean(matchAccountNo);
+      if (storeAccount) matchRequest.input('bankAccountNo', sql.NVarChar, matchAccountNo);
+
+      const matchResult = await matchRequest.query(`
+          INSERT INTO ReconciliationMatch (BankCode, ${storeAccount ? 'BankAccountNo, ' : ''}MatchType, CreatedBy)
           OUTPUT INSERTED.MatchId
-          VALUES (@bankCode, @matchType, @createdBy)
+          VALUES (@bankCode, ${storeAccount ? '@bankAccountNo, ' : ''}@matchType, @createdBy)
         `);
       const matchId = matchResult.recordset[0].MatchId;
 
@@ -224,7 +281,13 @@ export async function POST(req: NextRequest) {
 
       await transaction.commit();
 
-      return NextResponse.json({ matchId, matchType, groupCount: groups.length, bankLineCount: allBankIds.length });
+      return NextResponse.json({
+        matchId,
+        matchType,
+        bankAccountNo: matchAccountNo,
+        groupCount: groups.length,
+        bankLineCount: allBankIds.length,
+      });
     } catch (err) {
       await transaction.rollback();
       // ข้อผิดพลาดที่เราตั้งใจโยนเองข้างบนเป็นเรื่องของข้อมูลที่ผู้ใช้เลือกมา ไม่ใช่ระบบพัง

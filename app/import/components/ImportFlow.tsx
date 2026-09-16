@@ -1,10 +1,16 @@
 "use client";
-import React, { useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, UploadCloud, CheckCircle2,
-  AlertTriangle, ArrowRight, ArrowLeft, Loader2, Menu, RefreshCw
+  AlertTriangle, ArrowRight, ArrowLeft, Loader2, Menu, RefreshCw, WandSparkles
 } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
+import {
+  BankAccountOption,
+  fullAccountLabel,
+  guessAccountFromFileName,
+  shortAccountLabel,
+} from "../../../lib/bankAccounts";
 
 type PreviewLine = {
   tranDate: string;
@@ -16,6 +22,8 @@ type PreviewLine = {
 
 type PreviewResponse = {
   bankCode: string;
+  bankAccountNo: string | null;
+  accountName: string | null;
   fileName: string;
   fileSizeKb: number;
   totalRows: number;
@@ -47,9 +55,19 @@ const BANKS = [
 
 export default function ImportFlow() {
   const { toggleMobileOpen } = useSidebar();
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  // ฝั่ง bank มี 4 ขั้น: Source -> เลือกบัญชี -> Upload & preview -> Validate & import
+  // "เลือกบัญชี" แยกเป็นขั้นของตัวเองเพราะเลือกผิด = กระทบยอดผิดทั้งงวด ต้องบังคับให้คนตัดสินใจ
+  // ไม่ใช่ dropdown ที่กดผ่านไปโดยไม่อ่าน
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedSource, setSelectedSource] = useState<"gl" | "bank">("bank");
   const [selectedBank, setSelectedBank] = useState<string>("BBL");
+
+  // บัญชีธนาคาร: ไฟล์ statement 1 ใบ = 1 บัญชี ไม่ใช่ 1 ธนาคาร (ธนาคารเดียวมีได้หลายบัญชี)
+  // accountDimensionReady = false แปลว่ายังไม่ได้รัน sql/006 ระบบจึงถอยไปทำงานระดับธนาคารแบบเดิม
+  const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
+  const [loadingAccounts, setLoadingAccounts] = useState(true);
+  const [accountDimensionReady, setAccountDimensionReady] = useState(false);
+  const [selectedAccountNo, setSelectedAccountNo] = useState<string>("");
 
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
@@ -65,30 +83,114 @@ export default function ImportFlow() {
   const [glSyncSuccess, setGlSyncSuccess] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // ลำดับของคำขอ preview — กดสลับบัญชีรัวๆ ใน step 2 จะยิง preview หลายรอบซ้อนกัน
+  // ถ้าไม่กันไว้ คำตอบของบัญชีที่กดก่อนอาจมาถึงทีหลังแล้วทับผลของบัญชีที่กดล่าสุด
+  const previewSeqRef = useRef(0);
 
   // ขั้นตอนของฝั่ง GL มีแค่ 2 ขั้น (เลือก source แล้วกดซิงค์) ไม่มี upload/validate เหมือนฝั่ง bank
   const steps =
     selectedSource === "gl"
       ? ["Source", "Sync from BC365"]
-      : ["Source", "Upload & preview", "Validate & import"];
+      : ["Source", "บัญชี", "Upload & preview", "Validate & import"];
   const activeStep = selectedSource === "gl" ? (glSyncSuccess ? 2 : 1) : step;
 
-  async function handleFileSelected(selected: File) {
+  useEffect(() => {
+    let cancelled = false;
+    async function loadAccounts() {
+      try {
+        const res = await fetch("/api/master/bank-accounts");
+        const data = await res.json();
+        if (cancelled || !res.ok) return;
+        setAccounts(data.accounts ?? []);
+        setAccountDimensionReady(Boolean(data.accountDimensionReady));
+      } catch {
+        // โหลดรายชื่อบัญชีไม่ได้ก็ยังนำเข้าแบบเดิมได้ ไม่ต้องขัดจังหวะผู้ใช้ด้วย error
+      } finally {
+        if (!cancelled) setLoadingAccounts(false);
+      }
+    }
+    loadAccounts();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // เฉพาะบัญชีของธนาคารที่ parser รองรับ และของธนาคารที่เลือกอยู่
+  const accountsOfBank = accounts.filter((a) => a.bankCode === selectedBank);
+
+  // บัญชีที่เลือกอยู่ — ไม่มีค่า default ให้กดผ่าน ต้องกดเลือกเองใน step 2
+  // (เดิม default เป็นบัญชีแรกของธนาคาร ซึ่งเสี่ยงให้คนกด Continue ผ่านไปโดยไม่ได้ดูว่าบัญชีไหน)
+  const effectiveAccountNo =
+    selectedAccountNo && accountsOfBank.some((a) => a.bankAccountNo === selectedAccountNo)
+      ? selectedAccountNo
+      : "";
+  const selectedAccount = accountsOfBank.find((a) => a.bankAccountNo === effectiveAccountNo) ?? null;
+
+  // ตรวจสอบไขว้: เลข 4 ตัวท้ายในชื่อไฟล์บอกบัญชีอะไร แล้วตรงกับที่ผู้ใช้เลือกไว้ไหม
+  // ไม่เอาไปเปลี่ยนค่าให้เอง เพราะผู้ใช้ตัดสินใจไปแล้วใน step 2 — ทั้งสองทางยืนยันกันเองดีกว่า
+  const fileNameGuess = useMemo(
+    () => (file ? guessAccountFromFileName(file.name, accounts) : null),
+    [file, accounts]
+  );
+  const fileNameMismatch =
+    fileNameGuess && effectiveAccountNo && fileNameGuess.bankAccountNo !== effectiveAccountNo
+      ? fileNameGuess
+      : null;
+  const fileNameConfirms = Boolean(
+    fileNameGuess && effectiveAccountNo && fileNameGuess.bankAccountNo === effectiveAccountNo
+  );
+
+  // ข้ามขั้นเลือกบัญชีได้เฉพาะตอนที่ระบบไม่มีรายชื่อบัญชีให้เลือกจริงๆ (API ล่ม)
+  // ถ้ามีรายชื่อแล้วต้องกดเลือก — ห้ามปล่อยผ่านด้วยค่า default
+  const canLeaveAccountStep = accounts.length === 0 ? !loadingAccounts : Boolean(effectiveAccountNo);
+
+  function handleBankChange(code: string) {
+    setSelectedBank(code);
+    setSelectedAccountNo("");
+  }
+
+  function handleAccountChange(accountNo: string) {
+    setSelectedAccountNo(accountNo);
+    // เปลี่ยนบัญชีหลังอ่านไฟล์ไปแล้ว = ผลตรวจซ้ำที่แสดงอยู่คำนวณจากบัญชีเดิม ต้องอ่านใหม่
+    if (file) handleFileSelected(file, { accountNo, bankCode: selectedBank });
+  }
+
+  // ยอมรับข้อเสนอจากชื่อไฟล์ — บัญชีที่เดาได้อาจอยู่คนละธนาคารกับที่เลือกไว้ จึงสลับธนาคารให้ด้วย
+  function applyFileNameGuess() {
+    if (!fileNameMismatch) return;
+    const bankCode = fileNameMismatch.bankCode ?? selectedBank;
+    setSelectedBank(bankCode);
+    setSelectedAccountNo(fileNameMismatch.bankAccountNo);
+    if (file) handleFileSelected(file, { accountNo: fileNameMismatch.bankAccountNo, bankCode });
+  }
+
+  async function handleFileSelected(
+    selected: File,
+    override?: { accountNo: string; bankCode: string }
+  ) {
     setFile(selected);
     setPreview(null);
     setPreviewError("");
     setLoadingPreview(true);
 
+    // บัญชีมาจากที่ผู้ใช้กดเลือกไว้ใน step 2 เท่านั้น ไม่เดาทับให้เอง —
+    // การเดาจากชื่อไฟล์ย้ายไปเป็น "ตัวตรวจสอบไขว้" หลัง preview แทน (ดู fileNameMismatch ข้างล่าง)
+    const accountNo = override?.accountNo ?? effectiveAccountNo;
+    const bankCode = override?.bankCode ?? selectedBank;
+    const seq = ++previewSeqRef.current;
+
     try {
       const formData = new FormData();
       formData.append("file", selected);
-      formData.append("bankCode", selectedBank);
+      formData.append("bankCode", bankCode);
+      if (accountNo) formData.append("bankAccountNo", accountNo);
 
       const res = await fetch("/api/bank-statement/preview", {
         method: "POST",
         body: formData,
       });
       const data = await res.json();
+      if (seq !== previewSeqRef.current) return; // มีคำขอใหม่กว่าแซงไปแล้ว ผลนี้ตกรุ่น
 
       if (!res.ok) {
         setPreviewError(data.error || "อ่านไฟล์ไม่สำเร็จ");
@@ -96,9 +198,9 @@ export default function ImportFlow() {
       }
       setPreview(data);
     } catch {
-      setPreviewError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
+      if (seq === previewSeqRef.current) setPreviewError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
     } finally {
-      setLoadingPreview(false);
+      if (seq === previewSeqRef.current) setLoadingPreview(false);
     }
   }
 
@@ -111,6 +213,7 @@ export default function ImportFlow() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("bankCode", selectedBank);
+      if (effectiveAccountNo) formData.append("bankAccountNo", effectiveAccountNo);
 
       const res = await fetch("/api/bank-statement/import", {
         method: "POST",
@@ -245,7 +348,7 @@ export default function ImportFlow() {
                   {BANKS.map((bank) => (
                     <button
                       key={bank.code}
-                      onClick={() => bank.enabled && setSelectedBank(bank.code)}
+                      onClick={() => bank.enabled && handleBankChange(bank.code)}
                       disabled={!bank.enabled}
                       title={!bank.enabled ? "ยังไม่รองรับ เร็วๆ นี้" : undefined}
                       className={`px-5 py-2 rounded-full text-sm font-medium transition-colors ${
@@ -260,6 +363,14 @@ export default function ImportFlow() {
                     </button>
                   ))}
                 </div>
+
+                {!accountDimensionReady && (
+                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4 max-w-lg">
+                    ระบบยังไม่ได้แยกข้อมูลตามเลขบัญชี — ต้องรัน{" "}
+                    <span className="font-mono">sql/006_bank_statement_bank_account.sql</span>{" "}
+                    กับฐานข้อมูลก่อน ระหว่างนี้ไฟล์ที่นำเข้าจะยังผูกกับธนาคารเท่านั้น
+                  </p>
+                )}
               </div>
             )}
 
@@ -318,8 +429,86 @@ export default function ImportFlow() {
           </div>
         )}
 
-        {/* ================= STEP 2: UPLOAD & PREVIEW ================= */}
+        {/* ================= STEP 2: เลือกบัญชี ================= */}
         {step === 2 && (
+          <div className="flex-1 flex flex-col">
+            <div>
+              <h2 className="font-semibold text-lg text-slate-800">เลือกบัญชีที่จะนำเข้า</h2>
+              <p className="text-sm text-slate-500 mt-1">
+                statement 1 ไฟล์ = 1 บัญชี — เลือกผิดจะทำให้กระทบยอดผิดทั้งงวด
+              </p>
+            </div>
+
+            {accounts.length === 0 ? (
+              // โหลดรายชื่อบัญชีไม่ได้เลย (API ล่ม) — ต้องยอมให้ข้ามขั้นนี้ ไม่งั้นนำเข้าไฟล์ไม่ได้ทั้งระบบ
+              <p className="mt-6 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                {loadingAccounts
+                  ? "กำลังโหลดรายชื่อบัญชี..."
+                  : "โหลดรายชื่อบัญชีไม่สำเร็จ — ข้ามขั้นนี้ไปได้ ไฟล์จะผูกกับธนาคารเท่านั้น แล้วค่อยระบุบัญชีย้อนหลังทีหลัง"}
+              </p>
+            ) : accountsOfBank.length === 0 ? (
+              <p className="mt-6 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                ยังไม่มีบัญชีของ {selectedBank} ใน BankAccountMapping — กรุณาเพิ่มบัญชีก่อน
+                หรือย้อนกลับไปเลือกธนาคารอื่น
+              </p>
+            ) : (
+              <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-3">
+                {accountsOfBank.map((a) => {
+                  const active = a.bankAccountNo === effectiveAccountNo;
+                  return (
+                    <button
+                      key={a.bankAccountNo}
+                      onClick={() => handleAccountChange(a.bankAccountNo)}
+                      className={`text-left p-4 rounded-xl border-2 transition-all ${
+                        active
+                          ? "border-blue-400 bg-blue-50/60 shadow-sm"
+                          : "border-slate-200 bg-white hover:border-blue-200"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-800 leading-snug">
+                            {a.accountName ?? a.bankAccountNo}
+                          </p>
+                          <p className="text-xs text-slate-500 mt-1 font-mono">
+                            {a.displayNo ?? a.bankAccountNo}
+                          </p>
+                        </div>
+                        {active ? (
+                          <CheckCircle2 size={18} className="text-blue-600 shrink-0" />
+                        ) : (
+                          <span className="w-[18px] h-[18px] rounded-full border-2 border-slate-300 shrink-0" />
+                        )}
+                      </div>
+                      {/* บอกว่าบัญชีนี้เคยนำเข้าไฟล์มาแล้วกี่ไฟล์ — ช่วยจับกรณีเลือกบัญชีที่ไม่เคยใช้ */}
+                      <p className="text-[11px] text-slate-400 mt-2">
+                        {a.importCount ? `นำเข้าแล้ว ${a.importCount} ไฟล์` : "ยังไม่เคยนำเข้าไฟล์"}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-auto pt-6 flex justify-between">
+              <button
+                onClick={() => setStep(1)}
+                className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-full font-medium transition-colors"
+              >
+                Back
+              </button>
+              <button
+                onClick={() => canLeaveAccountStep && setStep(3)}
+                disabled={!canLeaveAccountStep}
+                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Continue <ArrowRight size={16} />
+              </button>
+            </div>
+          </div>
+        )}
+        {/* ================= STEP 3: UPLOAD & PREVIEW ================= */}
+        {step === 3 && (
           <div className="flex-1 flex flex-col">
             <div className="grid grid-cols-12 gap-8 h-full flex-1">
               <div className="col-span-4 flex flex-col gap-4">
@@ -362,16 +551,57 @@ export default function ImportFlow() {
 
                 {preview && (
                   <div className="p-4 bg-white border border-slate-200 rounded-xl flex items-center justify-between shadow-sm">
-                    <div className="flex items-center gap-3">
-                      <FileText size={20} className="text-green-500" />
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">{preview.fileName}</p>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <FileText size={20} className="text-green-500 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">{preview.fileName}</p>
                         <p className="text-xs text-slate-500">
                           {preview.fileSizeKb} KB · {preview.totalRows.toLocaleString()} rows
                         </p>
                       </div>
                     </div>
-                    <CheckCircle2 size={20} className="text-green-500" />
+                    <CheckCircle2 size={20} className="text-green-500 shrink-0" />
+                  </div>
+                )}
+
+                {/* บัญชีปลายทาง — ตรงนี้อ่านอย่างเดียว การเลือกอยู่ที่ step ก่อนหน้า
+                    ส่วนชื่อไฟล์เอามาตรวจไขว้ว่าตรงกับบัญชีที่เลือกไหม */}
+                {preview && selectedAccount && (
+                  <div className="p-4 bg-white border border-slate-200 rounded-xl shadow-sm">
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                      นำเข้าสู่บัญชี
+                    </p>
+                    <p className="text-sm font-medium text-slate-800">
+                      {fullAccountLabel(selectedAccount)}
+                    </p>
+                    {fileNameConfirms && (
+                      <p className="text-xs text-green-700 mt-2 flex items-center gap-1.5">
+                        <CheckCircle2 size={12} /> เลขบัญชีในชื่อไฟล์ตรงกับบัญชีที่เลือก
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {preview && fileNameMismatch && (
+                  <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                    <p className="text-sm font-semibold text-amber-900 flex items-center gap-2">
+                      <AlertTriangle size={15} className="shrink-0" /> ชื่อไฟล์ไม่ตรงกับบัญชีที่เลือก
+                    </p>
+                    <p className="text-xs text-amber-800 mt-1.5 leading-relaxed">
+                      เลขบัญชีในชื่อไฟล์ <span className="font-mono">{preview.fileName}</span> ชี้ไปที่{" "}
+                      <strong>{fullAccountLabel(fileNameMismatch)}</strong> แต่คุณเลือกนำเข้าสู่{" "}
+                      <strong>{selectedAccount ? fullAccountLabel(selectedAccount) : "-"}</strong>
+                    </p>
+                    <button
+                      onClick={applyFileNameGuess}
+                      disabled={loadingPreview}
+                      className="mt-3 w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-medium transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      <WandSparkles size={12} /> เปลี่ยนเป็น {shortAccountLabel(fileNameMismatch)}
+                    </button>
+                    <p className="text-[11px] text-amber-700 mt-2">
+                      ถ้าตั้งชื่อไฟล์ไว้แบบนี้เองและบัญชีที่เลือกถูกแล้ว นำเข้าต่อได้เลย
+                    </p>
                   </div>
                 )}
               </div>
@@ -426,13 +656,13 @@ export default function ImportFlow() {
 
                 <div className="mt-6 flex justify-end gap-3">
                   <button
-                    onClick={() => setStep(1)}
+                    onClick={() => setStep(2)}
                     className="px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-full font-medium transition-colors"
                   >
                     Back
                   </button>
                   <button
-                    onClick={() => preview && setStep(3)}
+                    onClick={() => preview && setStep(4)}
                     disabled={!preview}
                     className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
@@ -444,8 +674,8 @@ export default function ImportFlow() {
           </div>
         )}
 
-        {/* ================= STEP 3: VALIDATE & IMPORT ================= */}
-        {step === 3 && preview && (
+        {/* ================= STEP 4: VALIDATE & IMPORT ================= */}
+        {step === 4 && preview && (
           <div className="flex-1 flex flex-col">
             <div className="grid grid-cols-12 gap-8 h-full">
               <div className="col-span-8 flex flex-col">
@@ -549,7 +779,7 @@ export default function ImportFlow() {
                         : `Import ${(preview.warnings.overlap?.newCount ?? preview.totalRows).toLocaleString()} rows`}
                     </button>
                     <button
-                      onClick={() => setStep(2)}
+                      onClick={() => setStep(3)}
                       className="w-full py-2.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-xl font-medium transition-colors"
                     >
                       Back

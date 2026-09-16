@@ -11,6 +11,8 @@ import {
   type AssistantBankLine,
   type AssistantGlLine,
 } from '../../../../lib/matchAssistant';
+import { glAmount, glDirection } from '../../../../lib/glAmount';
+import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
 
 // ข้อมูลต้องสดทุกครั้ง — รายการที่เพิ่งจับคู่ไปต้องไม่โผล่เป็นคำแนะนำอีก
 export const dynamic = 'force-dynamic';
@@ -23,8 +25,10 @@ function toIsoDate(value: Date | string) {
 // อ่านอย่างเดียว ไม่บันทึกอะไร — การจับคู่จริงยิงไป /api/reconcile/match ตอนผู้ใช้กด Match เอง
 //
 // Query params:
-//   bankCode    - required
-//   from, to    - required, งวดของ Reconciliation workspace (YYYY-MM-DD)
+//   bankCode      - required
+//   bankAccountNo - optional, บัญชีที่กำลังกระทบยอด — ต้องส่งให้ตรงกับที่หน้า workspace ใช้
+//                   ไม่งั้นผู้ช่วยจะเสนอคู่ข้ามบัญชีที่ตารางบนหน้าจอไม่มีให้เห็นด้วยซ้ำ
+//   from, to      - required, งวดของ Reconciliation workspace (YYYY-MM-DD)
 //   windowDays  - optional, ระยะห่างวันที่ที่ยอมรับ (1-31, ค่าเริ่มต้น 7)
 //   direction   - optional, 'IN' | 'OUT' ค้นหาเฉพาะฝั่งที่หน้า workspace กำลังดู (ไม่ส่ง = ทั้ง 2 ฝั่ง)
 export async function GET(req: NextRequest) {
@@ -35,6 +39,7 @@ export async function GET(req: NextRequest) {
     const params = req.nextUrl.searchParams;
     const bankCode = params.get('bankCode');
     if (!bankCode) return badRequest('ต้องระบุ bankCode');
+    const bankAccountNo = params.get('bankAccountNo');
 
     const range = parseDateRange(params.get('from'), params.get('to'));
     if ('error' in range) return badRequest(range.error);
@@ -58,33 +63,40 @@ export async function GET(req: NextRequest) {
     scanTo.setUTCDate(scanTo.getUTCDate() + windowDays);
 
     const pool = await getPool();
+    // ขอบเขตต้องตรงกับ /api/reconcile/data เป๊ะ ทั้งเรื่องบัญชีและ ORDER BY
+    const byAccount = (await bankAccountColumnsReady()) && Boolean(bankAccountNo);
 
     // ORDER BY ต้องเหมือน /api/reconcile/data — การจับกลุ่มวันเดียวกันขึ้นกับลำดับรายการ
-    const bankQuery = pool
+    const bankRequest = pool
       .request()
       .input('bankCode', sql.NVarChar, bankCode)
       .input('from', sql.Date, scanFrom)
-      .input('to', sql.Date, scanTo)
-      .query(`
+      .input('to', sql.Date, scanTo);
+    if (byAccount) bankRequest.input('bankAccountNo', sql.NVarChar, bankAccountNo);
+    const bankQuery = bankRequest.query(`
         SELECT LineId, TranDate, Description, Debit, Credit, ChequeNo, Channel
         FROM BankStatementLine
         WHERE MatchStatus = 'UNMATCHED'
-          AND BankCode = @bankCode
+          ${byAccount
+            ? 'AND (BankAccountNo = @bankAccountNo OR (BankAccountNo IS NULL AND BankCode = @bankCode))'
+            : 'AND BankCode = @bankCode'}
           AND TranDate >= @from AND TranDate <= @to
         ORDER BY TranDate DESC, LineId DESC
       `);
 
-    const glQuery = pool
+    const glRequest = pool
       .request()
       .input('bankCode', sql.NVarChar, bankCode)
       .input('from', sql.Date, scanFrom)
-      .input('to', sql.Date, scanTo)
-      .query(`
+      .input('to', sql.Date, scanTo);
+    if (byAccount) glRequest.input('bankAccountNo', sql.NVarChar, bankAccountNo);
+    const glQuery = glRequest.query(`
         SELECT e.Entry_No, e.Bank_Account_No, COALESCE(m.BankAccountName, e.Bank_Account_Name) AS AccountName,
                e.Posting_Date, e.Document_No, e.Debit_Amount_LCY, e.Credit_Amount_LCY
         FROM BankAccountLedgerEntries e
         JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
         WHERE m.BankCode = @bankCode
+          ${byAccount ? 'AND e.Bank_Account_No = @bankAccountNo' : ''}
           AND NOT EXISTS (
                 SELECT 1 FROM ReconciliationMatchLine rml
                 JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
@@ -112,8 +124,8 @@ export async function GET(req: NextRequest) {
       (r): AssistantGlLine => ({
         entryNo: Number(r.Entry_No),
         date: toIsoDate(r.Posting_Date),
-        direction: Number(r.Debit_Amount_LCY) > 0 ? 'IN' : 'OUT',
-        amount: Number(r.Debit_Amount_LCY) > 0 ? Number(r.Debit_Amount_LCY) : Number(r.Credit_Amount_LCY),
+        direction: glDirection(r),
+        amount: glAmount(r),
         documentNo: r.Document_No ?? '',
         accountNo: r.Bank_Account_No ?? '',
         accountName: r.AccountName?.trim() ? r.AccountName : null,

@@ -9,7 +9,16 @@ const RECONCILE_SESSION_KEY = 'reconcileSession';
 export function loadReconcileSession(): ReconcileSession | null {
   try {
     const raw = localStorage.getItem(RECONCILE_SESSION_KEY);
-    return raw ? (JSON.parse(raw) as ReconcileSession) : null;
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<ReconcileSession>;
+    if (!parsed.bankCode) return null;
+    // session ที่บันทึกไว้ก่อนระบบแยกตามบัญชีไม่มี 2 ฟิลด์นี้ — เติมเป็น null ให้ชัดเจน
+    // ไม่ปล่อยเป็น undefined เพราะโค้ดที่อ่านต่อจะแยกไม่ออกว่า "ไม่มีบัญชี" กับ "ฟิลด์หาย"
+    return {
+      ...(parsed as ReconcileSession),
+      bankAccountNo: parsed.bankAccountNo ?? null,
+      accountName: parsed.accountName ?? null,
+    };
   } catch {
     return null;
   }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronRight,
@@ -363,69 +363,149 @@ function MatchCard({
 export default function SuspenseWorkspace() {
   const { collapsed } = useSidebar();
   const [matches, setMatches] = useState<MatchRecord[]>([]);
+  const [total, setTotal] = useState(0);
+  const [bankCodes, setBankCodes] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [bankFilter, setBankFilter] = useState("ALL");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [searchText, setSearchText] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmLines, setConfirmLines] = useState<ConfirmLine[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
 
-  async function load() {
-    setLoading(true);
-    setError("");
+  const requestIdRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
+  const inFlightRef = useRef(false);
+
+  // หน่วงคำค้นก่อนยิง API ไม่ให้โหลดใหม่ทุกตัวอักษร (เหมือนหน้า Reports)
+  useEffect(() => {
+    const t = setTimeout(() => setQ(searchInput.trim()), 350);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // matchType=SUSPENSE เสมอ — หน้านี้เป็นรายการพักโอนอย่างเดียว รายการจับคู่แล้วมีหน้า Match History ของตัวเอง
+  const params = useMemo(() => {
+    const p = new URLSearchParams({ matchType: "SUSPENSE" });
+    if (bankFilter !== "ALL") p.set("bankCode", bankFilter);
+    if (dateFrom) p.set("from", dateFrom);
+    if (dateTo) p.set("to", dateTo);
+    if (q) p.set("q", q);
+    return p.toString();
+  }, [bankFilter, dateFrom, dateTo, q]);
+
+  // โหลดหน้าแรกใหม่ทุกครั้งที่ filter เปลี่ยน หรือหลังดึงกลับสำเร็จ (reloadToken) — เดิม fetch ครั้งเดียวตอน mount
+  // แล้วกรอง/ค้นหาฝั่ง client ล้วนๆ ทำให้เห็นรายการพักไว้แค่ 50 รายการแรกสุดเสมอ (ขีดจำกัดของ /api/history)
+  // รายการที่พักไว้นานแล้ว (อายุเยอะ ควรรีบตาม) จึงอาจไม่โผล่มาให้เห็นเลยถ้าเดือนนั้นมีมากกว่า 50 รายการ
+  useEffect(() => {
+    const reqId = ++requestIdRef.current;
+    let cancelled = false;
+
+    async function loadFirstPage() {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch(`/api/history?${params}&offset=0`);
+        const data = await res.json();
+        if (cancelled || reqId !== requestIdRef.current) return;
+        if (!res.ok) {
+          setError(data.error || "โหลดข้อมูลไม่สำเร็จ");
+          setMatches([]);
+          setTotal(0);
+          return;
+        }
+        setMatches(data.matches);
+        setTotal(data.total ?? data.matches.length);
+        if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
+      } catch {
+        if (!cancelled && reqId === requestIdRef.current) {
+          setError("เชื่อมต่อ server ไม่ได้");
+          setMatches([]);
+          setTotal(0);
+        }
+      } finally {
+        if (!cancelled && reqId === requestIdRef.current) setLoading(false);
+      }
+    }
+
+    loadFirstPage();
+    return () => {
+      cancelled = true;
+    };
+  }, [params, reloadToken]);
+
+  const hasMore = matches.length < total;
+
+  const loadMore = useCallback(async () => {
+    if (loading || inFlightRef.current || !hasMore) return;
+    const reqId = requestIdRef.current;
+    inFlightRef.current = true;
+    setLoadingMore(true);
     try {
-      const res = await fetch("/api/history?matchType=SUSPENSE");
+      const res = await fetch(`/api/history?${params}&offset=${matches.length}`);
       const data = await res.json();
+      // filter เปลี่ยนระหว่างรอ response — ทิ้งผลลัพธ์ชุดนี้ไป ไม่งั้นแถวจะปนกันคนละ filter
+      if (reqId !== requestIdRef.current) return;
       if (!res.ok) {
-        setError(data.error || "โหลดข้อมูลไม่สำเร็จ");
+        setError(data.error || "โหลดเพิ่มไม่สำเร็จ");
         return;
       }
-      setMatches(data.matches);
+      setMatches((prev) => [...prev, ...data.matches]);
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
     } finally {
-      setLoading(false);
+      inFlightRef.current = false;
+      if (reqId === requestIdRef.current) setLoadingMore(false);
     }
-  }
+  }, [loading, hasMore, params, matches.length]);
 
+  // infinite scroll: โหลดชุดถัดไปเมื่อท้ายรายการใกล้เข้ามาในจอ (เหมือนหน้า Match History/Reports)
+  // ใช้ IntersectionObserver เป็นหลัก + ผูก scroll/resize ไว้ด้วย เผื่อ observer ไม่ส่ง callback
   useEffect(() => {
-    // fetch-on-mount ปกติ
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    load();
-  }, []);
+    const el = sentinelRef.current;
+    if (!el || !hasMore) return;
 
-  const banks = ["ALL", ...Array.from(new Set(matches.map((m) => m.bankCode)))];
-  const hasActiveFilters = Boolean(dateFrom || dateTo || searchText);
+    const nearViewport = () => el.getBoundingClientRect().top < window.innerHeight + 300;
+    // อ่าน layout แค่เฟรมละครั้ง — scroll event ยิงถี่กว่าเฟรม ถ้าเรียก getBoundingClientRect ทุกครั้งจะบังคับ reflow ซ้ำจนเลื่อนกระตุก
+    let frame = 0;
+    const check = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        if (nearViewport()) loadMore();
+      });
+    };
 
-  const filtered = useMemo(() => {
-    const q = searchText.trim().toLowerCase();
-    return matches.filter((m) => {
-      if (bankFilter !== "ALL" && m.bankCode !== bankFilter) return false;
-      const d = formatDate(m.createdAt);
-      if (dateFrom && d < dateFrom) return false;
-      if (dateTo && d > dateTo) return false;
-      if (q) {
-        const hay = [
-          String(m.matchId),
-          ...m.bankLines.map((l) => l.description ?? ""),
-          ...m.glLines.map((l) => `${l.ref ?? ""} ${l.accountName ?? ""}`),
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+    const io = new IntersectionObserver((entries) => {
+      if (entries[0]?.isIntersecting) loadMore();
     });
-  }, [matches, bankFilter, dateFrom, dateTo, searchText]);
+    io.observe(el);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    check();
+
+    return () => {
+      io.disconnect();
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+      cancelAnimationFrame(frame);
+    };
+  }, [loadMore, hasMore]);
+
+  // รายชื่อธนาคารสำหรับปุ่มกรอง มาจาก server (ทุกธนาคารที่มีรายการพักไว้จริง) ไม่ใช่แค่ธนาคารในหน้าที่โหลดมาแล้ว
+  const banks = ["ALL", ...bankCodes];
+  const hasActiveFilters = Boolean(dateFrom || dateTo || searchInput);
 
   function clearFilters() {
     setDateFrom("");
     setDateTo("");
-    setSearchText("");
+    setSearchInput("");
   }
 
   function toggleLine(key: string) {
@@ -458,18 +538,6 @@ export default function SuspenseWorkspace() {
     if (lines.length > 0) setConfirmLines(lines);
   }
 
-  function applyRevertLocally(revertedKeys: Set<string>) {
-    setMatches((prev) =>
-      prev
-        .map((m) => ({
-          ...m,
-          bankLines: m.bankLines.filter((l) => !revertedKeys.has(`${m.matchId}:BANK:${l.lineId}`)),
-          glLines: m.glLines.filter((l) => !revertedKeys.has(`${m.matchId}:GL:${l.entryNo}`)),
-        }))
-        .filter((m) => m.bankLines.length > 0 || m.glLines.length > 0)
-    );
-  }
-
   async function handleConfirmRevert() {
     if (!confirmLines || confirmLines.length === 0) return;
     setBusy(true);
@@ -487,7 +555,6 @@ export default function SuspenseWorkspace() {
         return;
       }
       const revertedKeys = new Set(confirmLines.map((l) => l.key));
-      applyRevertLocally(revertedKeys);
       setSelected((prev) => {
         const next = new Set(prev);
         revertedKeys.forEach((k) => next.delete(k));
@@ -495,6 +562,9 @@ export default function SuspenseWorkspace() {
       });
       setToast(`ดึงกลับไป Reconcile สำเร็จ ${confirmLines.length} รายการ`);
       setConfirmLines(null);
+      // โหลดหน้าแรกใหม่จาก server แทนการแก้ matches ในเครื่องเอง — กัน offset เพี้ยนกับ total ที่เซิร์ฟเวอร์นับไว้
+      // (รายการที่ดึงกลับไปแล้วอาจอยู่ในหน้าที่ยังไม่โหลดมาก็ได้ ไม่ใช่แค่ในชุดที่แสดงอยู่)
+      setReloadToken((t) => t + 1);
     } catch {
       setError("เชื่อมต่อ server ไม่ได้");
     } finally {
@@ -567,8 +637,8 @@ export default function SuspenseWorkspace() {
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
               placeholder="รายละเอียด, เลขอ้างอิง, Match #..."
               className="text-sm border border-gray-200 rounded-lg pl-7 pr-2.5 py-1.5 bg-white text-gray-700 w-full"
             />
@@ -590,14 +660,14 @@ export default function SuspenseWorkspace() {
         </div>
       )}
 
-      {!loading && filtered.length === 0 && (
+      {!loading && matches.length === 0 && (
         <div className="text-center text-sm text-gray-400 py-10">
-          {matches.length === 0 ? "ไม่มีรายการที่พักไว้" : "ไม่พบรายการที่ตรงกับตัวกรอง"}
+          {total === 0 && !hasActiveFilters ? "ไม่มีรายการที่พักไว้" : "ไม่พบรายการที่ตรงกับตัวกรอง"}
         </div>
       )}
 
       <div className="flex flex-col gap-3">
-        {filtered.map((m) => (
+        {matches.map((m) => (
           <MatchCard
             key={m.matchId}
             match={m}
@@ -608,6 +678,25 @@ export default function SuspenseWorkspace() {
           />
         ))}
       </div>
+
+      {!loading && matches.length > 0 && (
+        <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
+          {loadingMore ? (
+            <span className="inline-flex items-center gap-2">
+              <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
+            </span>
+          ) : hasMore ? (
+            <span className="inline-flex items-center gap-2">
+              แสดง {matches.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
+              <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+                โหลดเพิ่ม
+              </button>
+            </span>
+          ) : (
+            `ครบทั้งหมด ${total.toLocaleString()} รายการ`
+          )}
+        </div>
+      )}
 
       {/* กล่องเต็มความกว้างจอ เว้น padding-left เท่ากับความกว้าง sidebar ปัจจุบัน (คู่กับ MainContent)
           แล้วค่อย flex-center อยู่ข้างใน ปุ่มเลยไปจัดกึ่งกลาง "พื้นที่เนื้อหา/ตาราง" แทนกึ่งกลางทั้งจอ */}

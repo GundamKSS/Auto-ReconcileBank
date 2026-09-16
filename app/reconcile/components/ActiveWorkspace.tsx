@@ -18,9 +18,11 @@ import {
   Maximize2,
   Minimize2,
   WandSparkles,
+  AlertTriangle,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { ReconcileSession } from "./types";
+import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
 import { AURA_GRADIENT } from "./AuraOrb";
@@ -35,6 +37,8 @@ type BankApiLine = {
   id: string;
   lineId: number;
   bankCode: string;
+  // null = บรรทัดจากไฟล์ที่นำเข้าก่อนระบบแยกตามบัญชี และยังไม่ได้ระบุบัญชีย้อนหลัง
+  accountNo: string | null;
   date: string;
   ref: string;
   direction: Direction;
@@ -485,6 +489,7 @@ function DateGroupRow({
 
 function Panel({
   title,
+  subtitle,
   totalLabel,
   allItems,
   groups,
@@ -509,6 +514,8 @@ function Panel({
   syncDisabled,
 }: {
   title: string;
+  // บัญชีที่ตารางนี้กำลังแสดง — ต้องเห็นตลอดเวลา เพราะยอดรวมด้านล่างหมายถึงบัญชีนี้บัญชีเดียว
+  subtitle?: string;
   totalLabel: string;
   allItems: LineItem[];
   groups: { key: string; label: string; count: number }[];
@@ -558,6 +565,11 @@ function Panel({
               {selectedInDirection} selected · {filtered.length} pending
             </span>
           </div>
+          {subtitle && (
+            <p className="text-[11px] text-gray-500 truncate mt-0.5" title={subtitle}>
+              {subtitle}
+            </p>
+          )}
           <p className="text-[11px] font-medium text-gray-400 tracking-wide mt-0.5 whitespace-nowrap">
             {totalLabel}{" "}
             <span className="text-sm font-semibold text-gray-900 tabular-nums tracking-normal">
@@ -736,6 +748,22 @@ export default function ActiveWorkspace({
 
   const [bankLinesRaw, setBankLinesRaw] = useState<BankApiLine[]>([]);
   const [glLinesRaw, setGlLinesRaw] = useState<GlApiLine[]>([]);
+  // รัน sql/006 แล้วหรือยัง — ถ้ายัง หน้านี้ยังรวมทุกบัญชีของธนาคารเดียวกันอยู่ ต้องบอกผู้ใช้ให้รู้ตัว
+  const [accountDimensionReady, setAccountDimensionReady] = useState(true);
+  // จำนวนรายการฝั่ง bank ที่ยังไม่รู้ว่าเป็นบัญชีไหน (ไฟล์เก่า) — แสดงปนอยู่ในตารางแต่ต้องมีป้ายกำกับ
+  const [unassignedBankLines, setUnassignedBankLines] = useState(0);
+
+  // ป้ายบัญชีที่ใช้ทั่วหน้าจอ — ถอยเป็นขั้นๆ: ชื่อเต็ม -> รหัสบัญชี -> ธนาคาร
+  // (session เก่าที่บันทึกไว้ก่อนระบบแยกตามบัญชี จะไม่มีทั้งชื่อและรหัส เหลือแค่ธนาคาร)
+  const accountFullLabel = session.accountName ?? session.bankAccountNo ?? session.bankCode;
+  const accountShortLabel = session.bankAccountNo
+    ? shortAccountLabel({
+        bankAccountNo: session.bankAccountNo,
+        bankCode: session.bankCode,
+        accountName: session.accountName,
+        displayNo: extractDisplayNo(session.accountName),
+      })
+    : session.bankCode;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -834,6 +862,7 @@ export default function ActiveWorkspace({
         to: session.periodEnd,
         glExtendDays: session.includeSuspenseBuffer ? "7" : "0",
       });
+      if (session.bankAccountNo) qs.set("bankAccountNo", session.bankAccountNo);
       const res = await fetch(`/api/reconcile/data?${qs.toString()}`);
       const data = await res.json();
       if (!res.ok) {
@@ -842,6 +871,8 @@ export default function ActiveWorkspace({
       }
       setBankLinesRaw(data.bankLines);
       setGlLinesRaw(data.glLines);
+      setAccountDimensionReady(data.accountDimensionReady !== false);
+      setUnassignedBankLines(Number(data.unassignedBankLines ?? 0));
 
       // auto-tick ทุกวันที่ยอด Bank กับ GL เท่ากันพอดีให้เลย ผู้ใช้แค่ตรวจแล้วกด Match ได้ทันที
       const { readyBankIds, readyGlIds, clusterOf: newClusterOf } = computeReadyIds(data.bankLines, data.glLines);
@@ -853,7 +884,13 @@ export default function ActiveWorkspace({
     } finally {
       setLoading(false);
     }
-  }, [session.bankCode, session.periodStart, session.periodEnd, session.includeSuspenseBuffer]);
+  }, [
+    session.bankCode,
+    session.bankAccountNo,
+    session.periodStart,
+    session.periodEnd,
+    session.includeSuspenseBuffer,
+  ]);
 
   useEffect(() => {
     // โหลดข้อมูลใหม่จาก server ทุกครั้งที่เปลี่ยนช่วงวันที่/บัญชีธนาคาร — fetch-on-mount ปกติ ไม่มีทางเลี่ยง setState ในนี้ได้
@@ -1168,7 +1205,12 @@ export default function ActiveWorkspace({
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode: session.bankCode, matchType: "MATCHED", groups }),
+        body: JSON.stringify({
+          bankCode: session.bankCode,
+          bankAccountNo: session.bankAccountNo,
+          matchType: "MATCHED",
+          groups,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1203,7 +1245,12 @@ export default function ActiveWorkspace({
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankCode: session.bankCode, matchType: "SUSPENSE", groups }),
+        body: JSON.stringify({
+          bankCode: session.bankCode,
+          bankAccountNo: session.bankAccountNo,
+          matchType: "SUSPENSE",
+          groups,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -1273,6 +1320,7 @@ export default function ActiveWorkspace({
           <MatchAssistantModal
             key="match-assistant"
             bankCode={session.bankCode}
+            bankAccountNo={session.bankAccountNo}
             periodStart={session.periodStart}
             periodEnd={session.periodEnd}
             direction={directionFilter}
@@ -1347,7 +1395,9 @@ export default function ActiveWorkspace({
           <div className="mx-4 sm:mx-6 mb-4 flex items-center justify-between gap-3 flex-wrap bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-2.5 shrink-0">
             <div className="flex items-center gap-2 text-sm text-blue-900 flex-wrap">
               <CalendarRange size={15} className="text-blue-500" />
-              <span className="font-medium">Bank: {session.bankCode}</span>
+              <span className="font-medium" title={accountFullLabel}>
+                {accountFullLabel}
+              </span>
               <span className="text-blue-300">|</span>
               <span>
                 Period: {formatDMY(session.periodStart)} - {formatDMY(session.periodEnd)}
@@ -1386,6 +1436,39 @@ export default function ActiveWorkspace({
               </button>
             </div>
           </div>
+
+          {/* ป้ายเตือนเรื่องบัญชี — ขึ้นเฉพาะตอนที่หน้านี้ยังไม่ได้แยกตามบัญชีจริงๆ
+              ถ้าไม่บอก ผู้ใช้จะเห็นชื่อบัญชีบนหัวตารางแล้วเข้าใจว่าตัวเลขข้างล่างเป็นของบัญชีนั้นล้วน */}
+          {!accountDimensionReady && (
+            <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 shrink-0">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                ตัวเลขในหน้านี้ยัง<strong>รวมทุกบัญชีของ {session.bankCode}</strong> เข้าด้วยกัน — ต้องรัน{" "}
+                <span className="font-mono">sql/006_bank_statement_bank_account.sql</span>{" "}
+                กับฐานข้อมูลก่อน ระบบจึงจะแยกตามเลขบัญชีได้
+              </span>
+            </div>
+          )}
+          {accountDimensionReady && !session.bankAccountNo && (
+            <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 shrink-0">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                งานนี้ตั้งไว้ตั้งแต่ก่อนระบบแยกตามเลขบัญชี จึงยัง<strong>รวมทุกบัญชีของ {session.bankCode}</strong>{" "}
+                เข้าด้วยกัน — กด <strong>แก้ไข</strong> แล้วเลือกบัญชีที่ต้องการกระทบยอดเพื่อให้ยอดตรงกับ
+                statement ใบที่ถืออยู่
+              </span>
+            </div>
+          )}
+          {accountDimensionReady && session.bankAccountNo && unassignedBankLines > 0 && (
+            <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 shrink-0">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+              <span>
+                มี <strong>{unassignedBankLines} รายการ</strong> ฝั่ง Bank statement
+                ที่มาจากไฟล์ซึ่งยังไม่ได้ระบุว่าเป็นบัญชีไหน — แสดงรวมไว้ในตารางนี้ก่อน
+                กรุณาระบุบัญชีให้ไฟล์นั้นที่หน้า Master Data เพื่อให้ยอดถูกต้องแน่นอน
+              </span>
+            </div>
+          )}
         </>
       )}
 
@@ -1433,8 +1516,11 @@ export default function ActiveWorkspace({
             >
               <Pencil size={14} />
             </button>
-            <span className="hidden sm:inline text-xs text-gray-400 truncate max-w-[250px] pl-1">
-              {session.bankCode} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
+            <span
+              className="hidden sm:inline text-xs text-gray-400 truncate max-w-[250px] pl-1"
+              title={accountFullLabel}
+            >
+              {accountShortLabel} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
             </span>
             {error && <span className="text-xs text-red-600 pl-1 basis-full">{error}</span>}
           </div>
@@ -1442,6 +1528,7 @@ export default function ActiveWorkspace({
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:h-full">
           <Panel
             title="Bank statement"
+            subtitle={accountFullLabel}
             totalLabel="BANK TOTAL"
             allItems={bankLines}
             groups={bankGroups}
@@ -1464,6 +1551,7 @@ export default function ActiveWorkspace({
           />
           <Panel
             title="General Ledger (BC365)"
+            subtitle={accountFullLabel}
             totalLabel="GL TOTAL"
             allItems={glLines}
             groups={glGroups}
