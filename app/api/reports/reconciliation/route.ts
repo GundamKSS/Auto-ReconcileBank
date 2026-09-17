@@ -24,7 +24,7 @@ export const dynamic = 'force-dynamic';
  *   side        - 'AR' (ค่าเริ่มต้น, เงินเข้า) | 'AP' (เงินออก)
  *   from, to    - ช่วงวันที่ YYYY-MM-DD (ไม่ใส่ = วันที่ 1 ถึงสิ้นเดือนปัจจุบัน)
  *   basis       - 'BANK' (ค่าเริ่มต้น, ใช้ TranDate ของ statement) | 'GL' (ใช้ Posting_Date ฝั่ง BC)
- *   status      - 'MATCHED' (ค่าเริ่มต้น) | 'SUSPENSE' | 'UNMATCHED' | 'ALL'
+ *   status      - 'MATCHED' (ค่าเริ่มต้น) | 'SUSPENSE' | 'OFFSET' (หักล้างกันเอง) | 'UNMATCHED' | 'ALL'
  *   bankCode    - รหัสธนาคาร หรือ 'ALL'
  *   q           - ค้นหาข้อความ (คำอธิบาย bank / ref / document no / ชื่อบัญชี / MatchId) เจอแล้วติดมาทั้งกลุ่ม
  *   offset      - เริ่มที่แถวที่เท่าไร (infinite scroll ทีละ 50)

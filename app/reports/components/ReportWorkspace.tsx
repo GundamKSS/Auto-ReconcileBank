@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 type Direction = "IN" | "OUT";
-type StatusValue = "MATCHED" | "SUSPENSE" | "UNMATCHED";
+type StatusValue = "MATCHED" | "SUSPENSE" | "OFFSET" | "UNMATCHED";
 type StatusFilter = StatusValue | "ALL";
 type DateBasis = "BANK" | "GL";
 type Side = "AR" | "AP";
@@ -92,6 +92,7 @@ const SIDES: { value: Side; label: string; hint: string }[] = [
 const STATUSES: { value: StatusFilter; label: string }[] = [
   { value: "MATCHED", label: "จับคู่แล้ว" },
   { value: "SUSPENSE", label: "พักไว้" },
+  { value: "OFFSET", label: "หักล้างกันเอง" },
   { value: "UNMATCHED", label: "ยังไม่จับคู่" },
   { value: "ALL", label: "ทั้งหมด" },
 ];
@@ -99,12 +100,14 @@ const STATUSES: { value: StatusFilter; label: string }[] = [
 const STATUS_BADGE: Record<StatusValue, string> = {
   MATCHED: "bg-green-100 text-green-700",
   SUSPENSE: "bg-amber-100 text-amber-700",
+  OFFSET: "bg-teal-100 text-teal-700",
   UNMATCHED: "bg-slate-200 text-slate-600",
 };
 
 const STATUS_LABEL: Record<StatusValue, string> = {
   MATCHED: "จับคู่แล้ว",
   SUSPENSE: "พักไว้",
+  OFFSET: "หักล้างกันเอง",
   UNMATCHED: "ยังไม่จับคู่",
 };
 
@@ -185,6 +188,8 @@ function MissingSide({ inGroup, first }: { inGroup: boolean; first?: boolean }) 
 function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStart: boolean; shaded: boolean }) {
   const inGroup = row.groupRows > 1;
   const hasDiff = row.diff !== null && Math.abs(row.diff) >= 0.005;
+  // กลุ่มหักล้างกันเองไม่มีฝั่ง Bank โดยธรรมชาติ — บอกเหตุผลแทนคำว่า "รวมในกลุ่มเดียวกัน" ซึ่งทำให้เข้าใจผิดว่ามีคู่อยู่แถวอื่น
+  const noBankSide = row.status === "OFFSET";
 
   return (
     <tr
@@ -213,10 +218,18 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
 
       {/* ฝั่ง Bank Statement */}
       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">
-        {row.bank ? formatDay(row.bank.date) : <MissingSide inGroup={inGroup} first />}
+        {row.bank ? formatDay(row.bank.date) : noBankSide ? <EmptyCell /> : <MissingSide inGroup={inGroup} first />}
       </td>
       <td className="px-3 py-2 align-top max-w-[280px]">
-        {row.bank ? <span className="text-gray-700 line-clamp-2">{row.bank.description || "-"}</span> : <MissingSide inGroup={inGroup} />}
+        {row.bank ? (
+          <span className="text-gray-700 line-clamp-2">{row.bank.description || "-"}</span>
+        ) : noBankSide ? (
+          groupStart && (
+            <span className="text-[11px] text-teal-700 whitespace-nowrap">ไม่มีเงินผ่านธนาคาร — BC ยกเลิกกันเอง</span>
+          )
+        ) : (
+          <MissingSide inGroup={inGroup} />
+        )}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">
         {row.bank ? row.bank.ref || "-" : <MissingSide inGroup={inGroup} />}
@@ -635,6 +648,7 @@ export default function ReportWorkspace() {
         ถ้ากลุ่มไหนไม่มีบรรทัดฝั่งที่เลือกเลย (เช่นรายการพักไว้ที่มีแต่ฝั่ง BC) จะใช้วันที่ของอีกฝั่งแทน
         ส่วนรายการที่ยังไม่จับคู่ไม่มีคู่ให้ยึด จึงกรองด้วยวันที่ของตัวเองเสมอ
         กลุ่มที่เป็น 1:N หรือ N:1 จะแสดงหลายแถวติดกัน (แถบสีม่วงด้านซ้าย) และผลต่างคิดรวมทั้งกลุ่ม แสดงที่แถวสุดท้ายของกลุ่ม
+        รายการหักล้างกันเอง (BC กลับรายการ/แก้ด้วย JV จนสุทธิเป็น 0) มีทั้งขาเข้าและขาออกในกลุ่มเดียว จึงแสดงทั้งกลุ่มในฝั่งของใบเดิม
       </p>
 
       {/* ---------- การ์ดสรุป ---------- */}

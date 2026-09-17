@@ -11,7 +11,8 @@ import { RECONCILE_ROLES } from '../../../../lib/roles';
 //   { targets: [{ matchId, nums?: number[] }] }  - ไม่ใส่ nums = ยกเลิกทุกกลุ่มย่อยที่ยังใช้งานอยู่ของ Match นั้น
 //   { matchIds: number[] }                        - ยกเลิกทั้ง Match (เทียบเท่า targets ที่ไม่ใส่ nums)
 //   { matchId: number }                           - เผื่อ caller เก่าที่ยังส่งแบบเดี่ยว
-// เฉพาะ MatchType = 'MATCHED' เท่านั้น (รายการ SUSPENSE ใช้ /api/reconcile/unsuspend แยกต่างหากตามเดิม)
+// เฉพาะ MatchType = 'MATCHED' และ 'OFFSET' (หักล้างกันเอง — มีแต่ฝั่ง GL จึงไม่มีบรรทัด Bank ให้คืนสถานะ)
+// รายการ SUSPENSE ใช้ /api/reconcile/unsuspend แยกต่างหากตามเดิม
 //
 // ทั้งชุดอยู่ใน transaction เดียว — ถ้ามีรายการไหนในชุด invalid (ไม่พบ/ยกเลิกไปแล้ว/ไม่ใช่ MATCHED/
 // ระบุ Num ที่ไม่มีอยู่) จะ rollback ทั้งหมด ไม่ยกเลิกแบบครึ่งๆกลางๆ เพื่อให้ผู้ใช้เห็น error ชัดเจน
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
           throw new Error(`ไม่พบ MatchId ${matchId}`);
         }
         const { MatchType, Status } = matchResult.recordset[0];
-        if (MatchType !== 'MATCHED') {
+        if (MatchType !== 'MATCHED' && MatchType !== 'OFFSET') {
           throw new Error(`MatchId ${matchId} ไม่ใช่รายการที่จับคู่แล้ว (ใช้หน้า Suspense สำหรับรายการพักไว้)`);
         }
         if (Status === 'REVERSED') {

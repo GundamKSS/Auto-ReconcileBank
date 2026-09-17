@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search, Bell, Plus, PanelLeft } from "lucide-react";
+import { Plus, PanelLeft } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
 import { loadReconcileSession, saveReconcileSession } from "../../../lib/reconcileSession";
 import { ReconcileSession } from "./types";
@@ -16,8 +16,6 @@ export default function ReconcileWorkspace() {
   // ตอนเปิด modal จากปุ่ม "New reconciliation" ให้เริ่มฟอร์มเปล่าๆ (ไม่ prefill ของเดิม)
   // ตอนเปิดจากปุ่ม "Edit" ในตัวงานที่ทำอยู่ ให้ prefill ค่าปัจจุบันไว้แก้ไขต่อ
   const [modalSeed, setModalSeed] = useState<ReconcileSession | null>(null);
-  // ตอน ActiveWorkspace เข้าโหมด "โฟกัสตาราง" ให้ซ่อน chrome bar บนสุด (sidebar toggle + New reconciliation) ไปด้วย
-  const [focusMode, setFocusMode] = useState(false);
 
   useEffect(() => {
     // กู้คืน session ที่ค้างไว้จาก localStorage ตอน mount ผู้ใช้จะได้ทำงานต่อจากจุดเดิมได้
@@ -45,8 +43,8 @@ export default function ReconcileWorkspace() {
 
   return (
     <div className="flex-1 min-w-0 flex flex-col bg-gray-50 lg:h-full lg:overflow-hidden">
-      {/* App chrome bar — คงที่ทุกสเต็ป (Empty / Modal / Active) ยกเว้นตอน ActiveWorkspace เข้าโหมดโฟกัสตาราง */}
-      {!focusMode && (
+      {/* ขั้นตั้งค่ายังมีปุ่มสร้างงานใหม่ แต่เมื่อเข้าสู่ workspace แล้วให้ตารางใช้พื้นที่เต็มทันที */}
+      {!session && (
         <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-white border-b border-gray-100 flex-wrap shrink-0">
           <button
             onClick={toggleMobileOpen}
@@ -74,7 +72,7 @@ export default function ReconcileWorkspace() {
 
       {/* Step 3: Active workspace */}
       {session && (
-        <ActiveWorkspace session={session} onEditFilters={openEditFilters} onFocusModeChange={setFocusMode} />
+        <ActiveWorkspace session={session} onEditFilters={openEditFilters} />
       )}
 
       {/* Step 2: Setup modal — ลอยทับได้ทุกสเต็ป (เปิดจากปุ่มบน chrome bar, empty state, หรือปุ่ม Edit ใน filter bar) */}

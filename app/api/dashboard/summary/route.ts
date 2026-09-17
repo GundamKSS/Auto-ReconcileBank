@@ -109,6 +109,8 @@ export async function GET(req: NextRequest) {
       side: side === 'ALL' ? undefined : side,
       bankCode,
       q: null,
+      // หักล้างกันเอง (OFFSET) ไม่ใช่ทั้งงานที่จับคู่แล้วและงานค้าง — ถ้าปล่อยไว้การ์ด KPI จะนับเป็นงานค้าง
+      excludeOffset: true,
     };
     const trendFilters: ReportFilters = {
       ...monthFilters,

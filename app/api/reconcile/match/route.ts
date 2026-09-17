@@ -15,7 +15,8 @@ type MatchRequestBody = {
   bankCode: string;
   // บัญชีของ session ที่กำลังทำอยู่ — ใช้ยืนยันว่าทุกรายการที่ส่งมาเป็นบัญชีเดียวกันจริง
   bankAccountNo?: string | null;
-  matchType: 'MATCHED' | 'SUSPENSE';
+  // OFFSET = หักล้างกันเอง: รายการ GL ล้วนที่ยกเลิกกันเองจนสุทธิเป็น 0 ไม่มีเงินผ่านธนาคาร (ดู lib/glOffset.ts)
+  matchType: 'MATCHED' | 'SUSPENSE' | 'OFFSET';
   groups: MatchGroup[]; // แต่ละ group = 1 กลุ่มย่อย (Num) ภายใน MatchId เดียวกัน
 };
 
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     }
     // matchType ถูกนำไปใช้ทั้ง bind param และประกอบ SQL ต่อ (UPDATE MatchStatus) — ต้องจำกัดไว้เฉพาะ
     // ค่าที่รู้จักเท่านั้น กันค่าแปลกปลอมจาก client หลุดเข้า query (SQL injection) และกันสถานะขยะลง DB
-    if (matchType !== 'MATCHED' && matchType !== 'SUSPENSE') {
+    if (matchType !== 'MATCHED' && matchType !== 'SUSPENSE' && matchType !== 'OFFSET') {
       return NextResponse.json({ error: 'matchType ไม่ถูกต้อง' }, { status: 400 });
     }
     if (!Array.isArray(groups) || groups.length === 0) {
@@ -71,6 +72,21 @@ export async function POST(req: NextRequest) {
         if (g.bankLineIds.length > 0) {
           return NextResponse.json(
             { error: 'พักเข้าบัญชีพักได้เฉพาะฝั่ง GL (BC365) เท่านั้น ฝั่ง Bank Statement พักไม่ได้' },
+            { status: 400 }
+          );
+        }
+      }
+      // หักล้างกันเองต้องมีอย่างน้อยขาเข้า 1 + ขาออก 1 และห้ามมีฝั่ง Bank — ถ้ามีเงินผ่านธนาคารจริงต้องใช้ MATCHED
+      if (matchType === 'OFFSET') {
+        if (g.bankLineIds.length > 0) {
+          return NextResponse.json(
+            { error: 'หักล้างกันเองใช้ได้เฉพาะรายการฝั่ง GL (BC365) — รายการที่มีเงินผ่านธนาคารต้องจับคู่ด้วยปุ่ม Match' },
+            { status: 400 }
+          );
+        }
+        if (g.glEntryNos.length < 2) {
+          return NextResponse.json(
+            { error: 'การหักล้างกันเองแต่ละกลุ่มต้องมีรายการ GL อย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
             { status: 400 }
           );
         }
@@ -219,6 +235,38 @@ export async function POST(req: NextRequest) {
               `กลุ่มย่อยที่ ${i + 1} ยอดสองฝั่งไม่ตรงกัน ` +
                 `(Bank ${formatAmount(bankTotal)} / GL ${formatAmount(glTotal)} ` +
                 `ต่างกัน ${formatAmount(Math.abs(bankTotal - glTotal))}) — จับคู่ไม่ได้`
+            );
+          }
+        }
+      }
+
+      // 2b) กลุ่มหักล้างกันเองต้องมีทั้งขาเข้าและขาออก และยอดสุทธิเป็น 0 จริง — ตรวจจากยอดใน DB เช่นกัน
+      if (matchType === 'OFFSET') {
+        const signed = glSignedSql();
+        for (let i = 0; i < groups.length; i++) {
+          const result = await new sql.Request(transaction).query(`
+            SELECT SUM(${signed}) AS Net,
+                   SUM(CASE WHEN ${signed} > 0 THEN 1 ELSE 0 END) AS InCount,
+                   SUM(CASE WHEN ${signed} < 0 THEN 1 ELSE 0 END) AS OutCount,
+                   SUM(CASE WHEN ${signed} = 0 THEN 1 ELSE 0 END) AS ZeroCount,
+                   COUNT(DISTINCT Bank_Account_No) AS AccountCount
+            FROM BankAccountLedgerEntries WHERE Entry_No IN (${groups[i].glEntryNos.join(',')})
+          `);
+          const row = result.recordset[0] ?? {};
+          const net = Number(row.Net ?? 0);
+          // ด่าน 1c ข้ามไปถ้ายังไม่ได้รัน sql/006 แต่การหักล้างข้ามบัญชีผิดเสมอ ฝั่ง GL มีเลขบัญชีทุกแถวอยู่แล้วจึงเช็คได้เลย
+          if (Number(row.AccountCount ?? 0) !== 1) {
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการจากหลายบัญชี — หักล้างข้ามบัญชีไม่ได้`);
+          }
+          if (Number(row.ZeroCount ?? 0) > 0) {
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการยอด 0 บาท — หักล้างไม่ได้`);
+          }
+          if (Number(row.InCount ?? 0) === 0 || Number(row.OutCount ?? 0) === 0) {
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} ต้องมีทั้งรายการขาเข้า (IN) และขาออก (OUT) — หักล้างไม่ได้`);
+          }
+          if (Math.abs(net) >= AMOUNT_TOLERANCE) {
+            throw new Error(
+              `กลุ่มย่อยที่ ${i + 1} ขาเข้ากับขาออกต่างกัน ${formatAmount(Math.abs(net))} — หักล้างกันเองไม่ได้`
             );
           }
         }

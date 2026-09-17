@@ -378,8 +378,13 @@ export default function SuspenseWorkspace() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
+  const [selectingAll, setSelectingAll] = useState(false);
 
   const requestIdRef = useRef(0);
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+  // จำ filter ของชุดที่โหลดล่าสุด — เปลี่ยน filter แล้วต้องล้างที่เลือกไว้ (รายการเดิมอาจไม่อยู่ในผลลัพธ์ใหม่
+  // แต่ยังถูกนับในแถบด้านล่าง) ส่วนการโหลดใหม่หลังดึงกลับสำเร็จ (reloadToken) ให้คงที่เลือกที่เหลือไว้ตามเดิม
+  const loadedParamsRef = useRef<string | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
   const inFlightRef = useRef(false);
@@ -420,6 +425,8 @@ export default function SuspenseWorkspace() {
           setTotal(0);
           return;
         }
+        if (loadedParamsRef.current !== null && loadedParamsRef.current !== params) setSelected(new Set());
+        loadedParamsRef.current = params;
         setMatches(data.matches);
         setTotal(data.total ?? data.matches.length);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
@@ -526,6 +533,53 @@ export default function SuspenseWorkspace() {
       else keys.forEach((k) => next.add(k));
       return next;
     });
+  }
+
+  const loadedKeys = useMemo(() => matches.flatMap(toUnifiedLines).map((l) => l.key), [matches]);
+  // "เลือกทั้งหมด" = ทุกรายการที่ตรงกับตัวกรอง ไม่ใช่แค่ 50 match ที่โหลดมาแล้ว — ยังโหลดไม่ครบถือว่ายังไม่ได้เลือกทั้งหมด
+  const allSelected = !hasMore && loadedKeys.length > 0 && loadedKeys.every((k) => selected.has(k));
+  const someSelected = loadedKeys.some((k) => selected.has(k));
+
+  useEffect(() => {
+    if (selectAllRef.current) selectAllRef.current.indeterminate = someSelected && !allSelected;
+  }, [someSelected, allSelected]);
+
+  async function toggleSelectAll() {
+    if (selectingAll) return;
+    if (allSelected) {
+      setSelected(new Set());
+      return;
+    }
+
+    // ดึง match ที่เหลือทั้งหมดมาก่อน ไม่งั้นรายการที่ยังไม่ได้เลื่อนลงไปจะไม่ถูกดึงกลับด้วย
+    const reqId = requestIdRef.current;
+    inFlightRef.current = true; // กัน infinite scroll ยิงซ้อนระหว่างโหลดรวด
+    setSelectingAll(true);
+    setError("");
+    try {
+      let all = matches;
+      while (all.length < total) {
+        const res = await fetch(`/api/history?${params}&offset=${all.length}`);
+        const data = await res.json();
+        if (reqId !== requestIdRef.current) return;
+        if (!res.ok) {
+          setError(data.error || "โหลดรายการทั้งหมดไม่สำเร็จ");
+          return;
+        }
+        if (!Array.isArray(data.matches) || data.matches.length === 0) break;
+        // มีคนพักรายการใหม่ระหว่างโหลด ลำดับ offset จะเลื่อน ทำให้ match เดิมโผล่ซ้ำ — ตัดตัวซ้ำทิ้ง
+        const seen = new Set(all.map((m) => m.matchId));
+        all = [...all, ...(data.matches as MatchRecord[]).filter((m) => !seen.has(m.matchId))];
+      }
+      if (reqId !== requestIdRef.current) return;
+      setMatches(all);
+      setSelected(new Set(all.flatMap(toUnifiedLines).map((l) => l.key)));
+    } catch {
+      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+    } finally {
+      inFlightRef.current = false;
+      setSelectingAll(false);
+    }
   }
 
   function openConfirmForMatch(match: MatchRecord) {
@@ -663,6 +717,31 @@ export default function SuspenseWorkspace() {
       {!loading && matches.length === 0 && (
         <div className="text-center text-sm text-gray-400 py-10">
           {total === 0 && !hasActiveFilters ? "ไม่มีรายการที่พักไว้" : "ไม่พบรายการที่ตรงกับตัวกรอง"}
+        </div>
+      )}
+
+      {!loading && matches.length > 0 && (
+        <div className="flex items-center gap-3 mb-3 px-4">
+          <label className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer select-none">
+            <input
+              ref={selectAllRef}
+              type="checkbox"
+              checked={allSelected}
+              disabled={selectingAll || busy}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-gray-300"
+            />
+            <span className="font-medium">เลือกทั้งหมด</span>
+          </label>
+          <span className="text-xs text-gray-400">
+            {selectingAll ? (
+              <span className="inline-flex items-center gap-1.5">
+                <Loader2 size={12} className="animate-spin" /> กำลังโหลดรายการทั้งหมด...
+              </span>
+            ) : (
+              `${total.toLocaleString()} match${hasActiveFilters || bankFilter !== "ALL" ? " ตามตัวกรอง" : ""}`
+            )}
+          </span>
         </div>
       )}
 

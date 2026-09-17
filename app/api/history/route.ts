@@ -14,11 +14,16 @@ const PAGE_SIZE = 50;
  * Query params:
  *   bankCode  - รหัสธนาคาร หรือไม่ใส่ = ทุกธนาคาร
  *   matchType - 'MATCHED' | 'SUSPENSE' หรือไม่ใส่ = ทั้งคู่
- *   from, to  - ช่วงวันที่ YYYY-MM-DD กรองที่ CreatedAt (ไม่ใส่ = ไม่กรองวันที่)
+ *   side      - 'AR' (เงินเข้า) | 'AP' (เงินออก) หรือไม่ใส่/ALL = ทั้งคู่ — ความหมายเดียวกับหน้า Dashboard/Reports
+ *               ดูจากทิศทางของบรรทัดฝั่ง Bank ใน Match (Credit มีค่า = เงินเข้า) Match ที่มีทั้งสองทิศปนกัน
+ *               จะโผล่ทั้งสองแท็บ เพราะมีรายการของทั้งสองฝั่งอยู่จริง
+ *   dateBasis - 'BANK' = from/to กรองที่วันที่ของ Bank Statement (TranDate)
+ *               'CREATED' หรือไม่ใส่ = กรองที่เวลาที่กดจับคู่ (CreatedAt) แบบเดิม — หน้า Suspense ยังใช้แบบนี้
+ *   from, to  - ช่วงวันที่ YYYY-MM-DD (ไม่ใส่ = ไม่กรองวันที่)
  *   q         - ค้นหาข้อความอิสระ — ตรงกับ MatchId, รายละเอียดฝั่ง Bank, หรือเลขที่/ชื่อบัญชีฝั่ง GL
  *   offset    - เริ่มที่ Match ลำดับที่เท่าไร (infinite scroll ทีละ 50 Match)
  *
- * ตอบกลับ total + bankCodes เฉพาะตอนโหลดหน้าแรก (offset = 0) เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll
+ * ตอบกลับ total + bankCodes + sideCounts เฉพาะตอนโหลดหน้าแรก (offset = 0) เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll
  */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(RECONCILE_ROLES);
@@ -34,29 +39,58 @@ export async function GET(req: NextRequest) {
     const q = rawQ && rawQ.trim() ? rawQ.trim() : null;
     const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
 
+    const rawSide = params.get('side')?.toUpperCase() ?? 'ALL';
+    if (rawSide !== 'AR' && rawSide !== 'AP' && rawSide !== 'ALL') return badRequest('side ต้องเป็น AR, AP หรือ ALL');
+    const side = rawSide as 'AR' | 'AP' | 'ALL';
+
+    const rawBasis = params.get('dateBasis')?.toUpperCase() ?? 'CREATED';
+    if (rawBasis !== 'BANK' && rawBasis !== 'CREATED') return badRequest('dateBasis ต้องเป็น BANK หรือ CREATED');
+    const dateBasis = rawBasis as 'BANK' | 'CREATED';
+
     // ตรวจรูปแบบและลำดับวันที่ก่อนส่งเข้า query — ค่าผิดต้องได้ 400 พร้อมข้อความที่อ่านรู้เรื่อง
     // ไม่ใช่ปล่อยให้ mssql โยน "Validation failed for parameter 'from'" ออกมาเป็น 500
     const range = parseDateRange(from, to);
     if ('error' in range) return badRequest(range.error);
 
-    // ช่วงวันที่กรองที่ CreatedAt (datetime มีเวลาแฝงอยู่) — from ใช้เที่ยงคืนของวันนั้น
+    // ช่วงวันที่ตาม CreatedAt (datetime มีเวลาแฝงอยู่) — from ใช้เที่ยงคืนของวันนั้น
     // to ต้องรวมทั้งวันสุดท้ายด้วย เลยขยับไปเที่ยงคืนของ "วันถัดไป" แล้วเทียบด้วย < แทน <=
+    // ส่วน TranDate ของ Bank เป็นชนิด date ล้วน เทียบ BETWEEN ตรงๆ ได้เลย
     const fromDate = range.from;
+    const toDate = range.to;
     let toDateExclusive: Date | null = null;
-    if (range.to) {
-      toDateExclusive = new Date(range.to);
+    if (toDate) {
+      toDateExclusive = new Date(toDate);
       toDateExclusive.setUTCDate(toDateExclusive.getUTCDate() + 1);
+    }
+    const byBankDate = dateBasis === 'BANK' && Boolean(fromDate || toDate);
+
+    // เงื่อนไขของ "บรรทัดฝั่ง Bank" — ทิศทาง (AR/AP) กับวันที่ Bank ต้องเป็นของบรรทัดเดียวกัน จึงรวมไว้ใน EXISTS ก้อนเดียว
+    // ไม่งั้นแท็บ AR + เดือน ส.ค. จะได้ Match ที่มีเงินเข้าเดือน ก.ค. กับเงินออกเดือน ส.ค. ติดมาด้วย
+    function bankLineExists(sideOfLine: 'AR' | 'AP' | 'ALL') {
+      const conds = [
+        sideOfLine === 'AR' ? 'x_bsl.Credit IS NOT NULL' : '',
+        sideOfLine === 'AP' ? 'x_bsl.Credit IS NULL' : '',
+        byBankDate && fromDate ? 'x_bsl.TranDate >= @bankFrom' : '',
+        byBankDate && toDate ? 'x_bsl.TranDate <= @bankTo' : '',
+      ].filter(Boolean);
+      if (conds.length === 0) return '';
+      return `AND EXISTS (
+        SELECT 1 FROM ReconciliationMatchLine x_rml
+        JOIN BankStatementLine x_bsl ON x_bsl.LineId = x_rml.BankLineId
+        WHERE x_rml.MatchId = rm.MatchId AND x_rml.SourceType = 'BANK' AND ${conds.join(' AND ')}
+      )`;
     }
 
     // ค้นหาต้องเห็นได้ทุก Match ในระบบ ไม่ใช่แค่หน้าที่โหลดมาแล้ว จึงกรองที่ SQL ไม่ใช่ฝั่ง client
     // (ต่างจาก MatchId ที่ cast ตรงๆ ได้ — คำค้นอาจตรงกับรายละเอียดฝั่ง Bank หรือ GL เท่านั้น เลยต้อง EXISTS
     // เข้าไปเช็คที่บรรทัดย่อยของ Match นั้น ตาม SourceType)
-    const whereClause = `
+    // ไม่รวมเงื่อนไข AR/AP ไว้ที่นี่ — ส่วนนับจำนวนต่อแท็บต้องใช้เงื่อนไขอื่นทั้งหมดเหมือนเดิมแต่ไม่กรองฝั่ง
+    const baseWhere = `
       WHERE 1=1
         ${bankCode ? 'AND rm.BankCode = @bankCode' : ''}
         ${matchType ? 'AND rm.MatchType = @matchType' : ''}
-        ${fromDate ? 'AND rm.CreatedAt >= @from' : ''}
-        ${toDateExclusive ? 'AND rm.CreatedAt < @to' : ''}
+        ${dateBasis === 'CREATED' && fromDate ? 'AND rm.CreatedAt >= @from' : ''}
+        ${dateBasis === 'CREATED' && toDateExclusive ? 'AND rm.CreatedAt < @to' : ''}
         ${
           q
             ? `AND (
@@ -77,17 +111,25 @@ export async function GET(req: NextRequest) {
             : ''
         }
     `;
+    const whereClause = `${baseWhere} ${bankLineExists(side)}`;
+
+    // ทุก query ที่ใช้ baseWhere ต้อง bind พารามิเตอร์ชุดเดียวกัน — รวมไว้ที่เดียวกันลืม
+    function bindFilters(request: sql.Request) {
+      if (bankCode) request.input('bankCode', sql.NVarChar, bankCode);
+      if (matchType) request.input('matchType', sql.NVarChar, matchType);
+      if (dateBasis === 'CREATED' && fromDate) request.input('from', sql.DateTime2, fromDate);
+      if (dateBasis === 'CREATED' && toDateExclusive) request.input('to', sql.DateTime2, toDateExclusive);
+      if (byBankDate && fromDate) request.input('bankFrom', sql.Date, fromDate);
+      if (byBankDate && toDate) request.input('bankTo', sql.Date, toDate);
+      if (q) request.input('q', sql.NVarChar, `%${q}%`);
+      return request;
+    }
 
     const pool = await getPool();
 
     // 1) หา MatchId ของหน้านี้ก่อน (ล่าสุดก่อน, ทีละ 50) แล้วค่อยไป join รายละเอียดเฉพาะชุดนี้
     //    — กันไม่ให้ต้อง join รายละเอียดของ Match ทั้งหมดในระบบทุกครั้งที่โหลด เหมือนโค้ดเดิม
-    const idRequest = pool.request();
-    if (bankCode) idRequest.input('bankCode', sql.NVarChar, bankCode);
-    if (matchType) idRequest.input('matchType', sql.NVarChar, matchType);
-    if (fromDate) idRequest.input('from', sql.DateTime2, fromDate);
-    if (toDateExclusive) idRequest.input('to', sql.DateTime2, toDateExclusive);
-    if (q) idRequest.input('q', sql.NVarChar, `%${q}%`);
+    const idRequest = bindFilters(pool.request());
     idRequest.input('offset', sql.Int, offset);
     idRequest.input('limit', sql.Int, PAGE_SIZE);
     const idResult = await idRequest.query(`
@@ -99,11 +141,12 @@ export async function GET(req: NextRequest) {
     `);
     const pageMatchIds: number[] = idResult.recordset.map((r) => Number(r.MatchId));
 
-    if (pageMatchIds.length === 0) {
-      return NextResponse.json(offset > 0 ? { matches: [] } : { matches: [], total: 0, bankCodes: [] });
+    // หน้าแรกว่างก็ยังต้องนับจำนวนต่อแท็บ — แท็บ AP อาจว่างแต่ AR มีรายการ ผู้ใช้ต้องเห็นเลขนั้นเพื่อกดสลับไป
+    if (pageMatchIds.length === 0 && offset > 0) {
+      return NextResponse.json({ matches: [] });
     }
     // MatchId มาจาก query ของเราเอง (Number() แล้วทุกตัว) ไม่ใช่ input ดิบจาก client — ปลอดภัยจาก SQL injection
-    const idsCsv = pageMatchIds.join(',');
+    const idsCsv = pageMatchIds.length > 0 ? pageMatchIds.join(',') : 'NULL';
 
     // 2) หัวบันทึกของ MatchId หน้านี้เท่านั้น
     const headerResult = await pool.request().query(`
@@ -197,14 +240,26 @@ export async function GET(req: NextRequest) {
     }
 
     // นับ total + รายชื่อธนาคาร เฉพาะตอนโหลดหน้าแรก ไม่ต้องนับซ้ำทุกครั้งที่เลื่อนโหลดเพิ่ม
-    const countRequest = pool.request();
-    if (bankCode) countRequest.input('bankCode', sql.NVarChar, bankCode);
-    if (matchType) countRequest.input('matchType', sql.NVarChar, matchType);
-    if (fromDate) countRequest.input('from', sql.DateTime2, fromDate);
-    if (toDateExclusive) countRequest.input('to', sql.DateTime2, toDateExclusive);
-    if (q) countRequest.input('q', sql.NVarChar, `%${q}%`);
-    const countResult = await countRequest.query(`SELECT COUNT(*) AS Total FROM ReconciliationMatch rm ${whereClause}`);
-    const total = Number(countResult.recordset[0]?.Total ?? 0);
+    // นับทั้งแท็บปัจจุบัน (total) และจำนวนของทุกแท็บ (sideCounts) ใน query เดียว
+    // sideCounts ใช้ baseWhere ที่ไม่กรองฝั่ง ไม่งั้นพออยู่แท็บ AR แล้วเลขของแท็บ AP จะกลายเป็น 0
+    // SQL Server ไม่ยอมให้ SUM ครอบนิพจน์ที่มี subquery (EXISTS) ตรงๆ จึงคำนวณ flag ต่อแถวใน derived table ก่อน
+    const countResult = await bindFilters(pool.request()).query(`
+      SELECT COUNT(*) AS AllCount, SUM(t.IsAr) AS ArCount, SUM(t.IsAp) AS ApCount
+      FROM (
+        SELECT
+          CASE WHEN 1=1 ${bankLineExists('AR')} THEN 1 ELSE 0 END AS IsAr,
+          CASE WHEN 1=1 ${bankLineExists('AP')} THEN 1 ELSE 0 END AS IsAp
+        FROM ReconciliationMatch rm
+        ${baseWhere} ${bankLineExists('ALL')}
+      ) t
+    `);
+    const counts = countResult.recordset[0] ?? {};
+    const sideCounts = {
+      ALL: Number(counts.AllCount ?? 0),
+      AR: Number(counts.ArCount ?? 0),
+      AP: Number(counts.ApCount ?? 0),
+    };
+    const total = sideCounts[side];
 
     // รายชื่อธนาคารสำหรับปุ่มกรอง — ดึงจากข้อมูลจริงทั้งหมด ไม่ผูกกับ filter ธนาคาร/วันที่ที่เลือกอยู่
     // ไม่งั้นพอเลือกธนาคารเดียวแล้วปุ่มธนาคารอื่นจะหายไปหมด
@@ -220,6 +275,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       matches,
       total,
+      sideCounts,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
     });
   } catch (err) {

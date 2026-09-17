@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
   Loader2,
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
   Undo2,
   CheckCircle2,
@@ -50,16 +51,6 @@ type MatchRecord = {
   glLines: LineItem[];
 };
 
-// แถวในตารางรวมของกลุ่มย่อย — เอา Bank กับ GL มาเรียงในตารางเดียวกันแบบเดียวกับหน้า Suspense
-type UnifiedLine = {
-  key: string;
-  sourceType: "BANK" | "GL";
-  date: string;
-  detail: string;
-  direction: "IN" | "OUT";
-  amount: number;
-};
-
 // กลุ่มย่อย (Num) = 1 cluster ที่บาลานซ์กันเอง ไม่ว่าจะ 1:1, 1:N, N:1 — เป็นหน่วยที่ติ๊กเลือก/ยกเลิกได้
 type SubGroup = {
   key: string;
@@ -67,7 +58,6 @@ type SubGroup = {
   num: number;
   bankLines: LineItem[];
   glLines: LineItem[];
-  lines: UnifiedLine[];
   bankTotal: number;
   glTotal: number;
   status: LineStatus;
@@ -118,6 +108,15 @@ function monthRange(anchor: Date) {
   return { from: toIsoDate(first), to: toIsoDate(last) };
 }
 
+// AP = เงินออก, AR = เงินเข้า — ความหมายเดียวกับหน้า Dashboard/Reports (app/dashboard/components/shared.ts)
+// เรียงตามที่ผู้ใช้ขอ: AP / AR / All
+type Side = "AP" | "AR" | "ALL";
+const SIDE_TABS: { value: Side; label: string; hint: string }[] = [
+  { value: "AP", label: "AP", hint: "เงินออก" },
+  { value: "AR", label: "AR", hint: "เงินเข้า" },
+  { value: "ALL", label: "All", hint: "ทั้งสองฝั่ง" },
+];
+
 function subGroupKey(matchId: number, num: number) {
   return `${matchId}:${num}`;
 }
@@ -133,24 +132,6 @@ function toSubGroups(match: MatchRecord): SubGroup[] {
     const glLines = match.glLines.filter((l) => l.num === num);
     const lines = [...bankLines, ...glLines];
     const reversedLine = lines.find((l) => l.status === "REVERSED");
-    const unifiedLines: UnifiedLine[] = [
-      ...bankLines.map((l, i) => ({
-        key: `${match.matchId}:${num}:BANK:${l.lineId ?? i}`,
-        sourceType: "BANK" as const,
-        date: l.date,
-        detail: l.description || "-",
-        direction: l.direction,
-        amount: l.amount,
-      })),
-      ...glLines.map((l, i) => ({
-        key: `${match.matchId}:${num}:GL:${l.entryNo ?? i}`,
-        sourceType: "GL" as const,
-        date: l.date,
-        detail: [l.ref, l.accountName].filter(Boolean).join(" · ") || "-",
-        direction: l.direction,
-        amount: l.amount,
-      })),
-    ];
     // ถือว่ากลุ่มถูกยกเลิกเมื่อทุกบรรทัดในกลุ่มถูกยกเลิก — เผื่อกรณีข้อมูลเก่าที่ยกเลิกไว้ที่หัว Match เท่านั้น
     // ให้ดูสถานะหัว Match ประกอบด้วย
     const reversed = match.status === "REVERSED" || (lines.length > 0 && lines.every((l) => l.status === "REVERSED"));
@@ -160,7 +141,6 @@ function toSubGroups(match: MatchRecord): SubGroup[] {
       num,
       bankLines,
       glLines,
-      lines: unifiedLines,
       bankTotal: bankLines.reduce((s, l) => s + l.amount, 0),
       glTotal: glLines.reduce((s, l) => s + l.amount, 0),
       status: reversed ? "REVERSED" : "ACTIVE",
@@ -198,15 +178,78 @@ function DirectionBadge({ direction }: { direction: "IN" | "OUT" }) {
   );
 }
 
-function SourceTag({ sourceType }: { sourceType: "BANK" | "GL" }) {
+function HistorySidePanel({
+  side,
+  lines,
+  total,
+}: {
+  side: "BANK" | "GL";
+  lines: LineItem[];
+  total: number;
+}) {
+  const isBank = side === "BANK";
   return (
-    <span
-      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${
-        sourceType === "BANK" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"
+    <div
+      className={`min-w-0 overflow-hidden rounded-xl border ${
+        isBank ? "border-sky-200/80 bg-white" : "border-violet-200/80 bg-white"
       }`}
     >
-      {sourceType}
-    </span>
+      <div
+        className={`flex items-center justify-between gap-3 border-b px-3 py-2 ${
+          isBank ? "border-sky-100 bg-sky-50/80" : "border-violet-100 bg-violet-50/80"
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`size-2 rounded-full ${isBank ? "bg-sky-500" : "bg-violet-500"}`} />
+          <span className={`text-xs font-semibold ${isBank ? "text-sky-800" : "text-violet-800"}`}>
+            {isBank ? "Bank statement" : "BC365 · General Ledger"}
+          </span>
+        </div>
+        <span className={`text-[10px] font-medium ${isBank ? "text-sky-600" : "text-violet-600"}`}>
+          {lines.length} รายการ
+        </span>
+      </div>
+
+      <div className="divide-y divide-gray-100">
+        {lines.length === 0 ? (
+          <div className="flex min-h-20 items-center justify-center px-3 py-4 text-xs text-gray-400">
+            ไม่มีรายการฝั่งนี้
+          </div>
+        ) : (
+          lines.map((line, index) => {
+            const detail = isBank
+              ? [line.ref, line.description].filter(Boolean).join(" · ") || "-"
+              : [line.ref, line.accountName].filter(Boolean).join(" · ") || "-";
+            return (
+              <div
+                key={isBank ? line.lineId ?? index : line.entryNo ?? index}
+                className="grid grid-cols-[auto_auto_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5"
+              >
+                <span className="whitespace-nowrap text-[11px] font-medium text-gray-400">{formatDate(line.date)}</span>
+                <DirectionBadge direction={line.direction} />
+                <p className="min-w-0 truncate text-xs text-gray-500" title={detail}>
+                  {detail}
+                </p>
+                <span className="whitespace-nowrap text-xs font-medium tabular-nums text-gray-700">
+                  {formatAmount(line.amount)}
+                </span>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <div
+        className={`flex items-center justify-between border-t px-3 py-2 ${
+          isBank ? "border-sky-100 bg-sky-50/45" : "border-violet-100 bg-violet-50/45"
+        }`}
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400">Total</span>
+        <span className={`text-sm font-bold tabular-nums ${isBank ? "text-sky-800" : "text-violet-800"}`}>
+          {formatAmount(total)}
+        </span>
+      </div>
+    </div>
   );
 }
 
@@ -255,7 +298,7 @@ function SubGroupBlock({
           กลุ่ม {group.num}
         </span>
         <span className="text-xs text-gray-500">
-          {group.lines.length} รายการ ({group.bankLines.length} bank : {group.glLines.length} GL)
+          {group.bankLines.length + group.glLines.length} รายการ ({group.bankLines.length} Bank : {group.glLines.length} BC)
         </span>
         {!balanced && <span className="text-[11px] text-red-500 font-medium">ยอดไม่ตรง!</span>}
         {reversed && (
@@ -282,44 +325,27 @@ function SubGroupBlock({
         </p>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[520px]">
-          <tbody className="divide-y divide-black/5">
-            {group.lines.map((l) => (
-              <tr
-                key={l.key}
-                onClick={() => !reversed && onToggleSelect()}
-                className={`transition-colors ${reversed ? "" : "cursor-pointer hover:bg-white/60"}`}
-              >
-                <td className="py-1.5 pr-2 w-8">
-                  {!reversed && (
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={onToggleSelect}
-                      onClick={(e) => e.stopPropagation()}
-                      className="w-4 h-4 rounded border-gray-300 cursor-pointer"
-                      aria-label={`เลือกกลุ่มย่อยที่ ${group.num} ของ Match #${group.matchId}`}
-                    />
-                  )}
-                </td>
-                <td className="py-1.5 pr-3 text-xs text-gray-400 whitespace-nowrap">{formatDate(l.date)}</td>
-                <td className="py-1.5 pr-3">
-                  <SourceTag sourceType={l.sourceType} />
-                </td>
-                <td className="py-1.5 pr-3">
-                  <DirectionBadge direction={l.direction} />
-                </td>
-                <td className="py-1.5 pr-3 text-gray-700 truncate max-w-[280px]" title={l.detail}>
-                  {l.detail}
-                </td>
-                <td className="py-1.5 text-right tabular-nums text-gray-900 whitespace-nowrap">
-                  {formatAmount(l.amount)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <div className="grid grid-cols-1 items-stretch gap-2 md:grid-cols-[minmax(0,1fr)_32px_minmax(0,1fr)]">
+        <HistorySidePanel
+          side="BANK"
+          lines={group.bankLines}
+          total={group.bankTotal}
+        />
+        <div className="flex items-center justify-center">
+          <span
+            className={`flex size-7 items-center justify-center rounded-full border bg-white shadow-sm ${
+              balanced ? "border-emerald-200 text-emerald-600" : "border-red-200 text-red-500"
+            }`}
+            title={balanced ? "ยอดสองฝั่งตรงกัน" : "ยอดสองฝั่งไม่ตรงกัน"}
+          >
+            <ArrowLeftRight size={13} />
+          </span>
+        </div>
+        <HistorySidePanel
+          side="GL"
+          lines={group.glLines}
+          total={group.glTotal}
+        />
       </div>
     </div>
   );
@@ -341,6 +367,7 @@ function MatchCard({
   onRequestUnmatch: (groups: SubGroup[]) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
 
   const activeGroups = useMemo(() => groups.filter((g) => g.status === "ACTIVE"), [groups]);
@@ -360,6 +387,29 @@ function MatchCard({
   const activeBankLineCount = activeGroups.reduce((s, g) => s + g.bankLines.length, 0);
   const activeGlLineCount = activeGroups.reduce((s, g) => s + g.glLines.length, 0);
   const fullyReversed = activeGroups.length === 0;
+
+  // จัดกลุ่มย่อยใต้วันที่ Bank ล่าสุดของกลุ่มนั้น เพื่อไม่ให้กลุ่ม N:1 ที่มีหลายวันถูกแสดงซ้ำหลายครั้ง
+  // ถ้าเป็นข้อมูล SUSPENSE เก่าที่ไม่มี Bank จึงค่อยถอยไปใช้วันที่ GL ล่าสุดแทน
+  const groupsByDate = useMemo(() => {
+    const map = new Map<string, SubGroup[]>();
+    for (const group of groups) {
+      const dates = (group.bankLines.length > 0 ? group.bankLines : group.glLines).map((line) => formatDate(line.date));
+      const anchorDate = dates.sort((a, b) => b.localeCompare(a))[0] ?? "ไม่ทราบวันที่";
+      const list = map.get(anchorDate) ?? [];
+      list.push(group);
+      map.set(anchorDate, list);
+    }
+    return [...map.entries()].sort(([a], [b]) => b.localeCompare(a));
+  }, [groups]);
+
+  function toggleExpandedDate(date: string) {
+    setExpandedDates((prev) => {
+      const next = new Set(prev);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  }
 
   // opacity ของการ์ดที่ยกเลิกหมดแล้วต้องใส่ผ่าน animate — framer ตั้ง opacity เป็น inline style ซึ่งจะทับ class opacity-70
   return (
@@ -467,17 +517,63 @@ function MatchCard({
             transition={{ duration: 0.2, ease: "easeInOut" }}
             style={{ overflow: "hidden" }}
           >
-            <div className="border-t border-gray-100 p-3 flex flex-col gap-2 bg-gray-50/50">
-              {groups.map((g, idx) => (
-                <SubGroupBlock
-                  key={g.key}
-                  group={g}
-                  colorIdx={idx}
-                  selected={selectedKeys.has(g.key)}
-                  onToggleSelect={() => onToggleGroup(g.key)}
-                  onRequestUnmatch={() => onRequestUnmatch([g])}
-                />
-              ))}
+            <div className="flex flex-col gap-2 border-t border-gray-100 bg-gray-50/50 p-3">
+              {groupsByDate.map(([date, dateGroups]) => {
+                const dateExpanded = expandedDates.has(date);
+                const bankCount = dateGroups.reduce((sum, group) => sum + group.bankLines.length, 0);
+                const glCount = dateGroups.reduce((sum, group) => sum + group.glLines.length, 0);
+                const bankTotal = dateGroups.reduce((sum, group) => sum + group.bankTotal, 0);
+                return (
+                  <div key={date} className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpandedDate(date)}
+                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left transition-colors hover:bg-gray-50"
+                      aria-expanded={dateExpanded}
+                    >
+                      <ChevronRight
+                        size={14}
+                        className={`shrink-0 text-gray-400 transition-transform ${dateExpanded ? "rotate-90" : ""}`}
+                      />
+                      <span className="text-sm font-semibold text-gray-800">{date}</span>
+                      <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
+                        {dateGroups.length} กลุ่มย่อย
+                      </span>
+                      <span className="hidden text-[11px] text-gray-400 sm:inline">
+                        Bank {bankCount} · BC {glCount}
+                      </span>
+                      <span className="flex-1" />
+                      <span className="text-sm font-semibold tabular-nums text-gray-900">{formatAmount(bankTotal)}</span>
+                    </button>
+
+                    <AnimatePresence initial={false}>
+                      {dateExpanded && (
+                        <motion.div
+                          key="groups"
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2, ease: "easeInOut" }}
+                          className="overflow-hidden"
+                        >
+                          <div className="flex flex-col gap-2 border-t border-gray-100 bg-gray-50/60 p-2">
+                            {dateGroups.map((group) => (
+                              <SubGroupBlock
+                                key={group.key}
+                                group={group}
+                                colorIdx={groups.indexOf(group)}
+                                selected={selectedKeys.has(group.key)}
+                                onToggleSelect={() => onToggleGroup(group.key)}
+                                onRequestUnmatch={() => onRequestUnmatch([group])}
+                              />
+                            ))}
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                );
+              })}
             </div>
           </motion.div>
         )}
@@ -513,12 +609,21 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
 }
 
 export default function MatchHistoryWorkspace() {
-  const initialRange = useMemo(() => monthRange(new Date()), []);
+  // กรองตามวันที่ของ Bank Statement → ค่าเริ่มต้นเป็น "เดือนก่อนหน้า" ไม่ใช่เดือนนี้
+  // งานปกติคือเดือนนี้นั่งกระทบยอด statement ของเดือนที่แล้ว ถ้าเปิดมาที่เดือนนี้จะเจอหน้าว่างเกือบทุกครั้ง
+  // (ทดสอบกับข้อมูลจริง 16 ก.ย. 2026: statement ก.ย. = 0 รายการ, ส.ค. = 20 รายการ)
+  const initialRange = useMemo(() => {
+    const now = new Date();
+    return monthRange(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  }, []);
   // แถบสรุปที่เลือกลอยอยู่กึ่งกลาง "พื้นที่ตาราง" — บน desktop ต้องเผื่อความกว้าง sidebar เหมือน MainContent
   // ไม่งั้นจะเยื้องไปทางขวาเพราะ fixed อิงขอบจอ ไม่ใช่ขอบ content
   const { collapsed } = useSidebar();
 
   const [bankFilter, setBankFilter] = useState("ALL");
+  const [side, setSide] = useState<Side>("ALL");
+  // จำนวน Match ของแต่ละแท็บภายใต้เงื่อนไขอื่นที่เลือกอยู่ — null ระหว่างรอโหลดครั้งแรก
+  const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
@@ -544,10 +649,12 @@ export default function MatchHistoryWorkspace() {
   // matchType=MATCHED เสมอ — หน้านี้เป็นประวัติการจับคู่อย่างเดียว รายการที่พักโอน (SUSPENSE)
   // มีหน้า /suspense ของตัวเองอยู่แล้ว ไม่ต้องมาปนกันที่นี่
   const params = useMemo(() => {
-    const p = new URLSearchParams({ from, to, matchType: "MATCHED" });
+    // dateBasis=BANK: from/to กรองที่วันที่ของรายการใน Bank Statement ไม่ใช่วันที่กดจับคู่
+    const p = new URLSearchParams({ from, to, matchType: "MATCHED", dateBasis: "BANK" });
     if (bankFilter !== "ALL") p.set("bankCode", bankFilter);
+    if (side !== "ALL") p.set("side", side);
     return p.toString();
-  }, [from, to, bankFilter]);
+  }, [from, to, bankFilter, side]);
 
   // โหลดหน้าแรกใหม่ทุกครั้งที่ filter เปลี่ยน หรือหลังยกเลิกการจับคู่สำเร็จ (reloadToken)
   useEffect(() => {
@@ -570,6 +677,7 @@ export default function MatchHistoryWorkspace() {
         setMatches(data.matches);
         setTotal(data.total ?? data.matches.length);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
+        if (data.sideCounts) setSideCounts(data.sideCounts);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
           setError("เชื่อมต่อ server ไม่ได้");
@@ -646,6 +754,10 @@ export default function MatchHistoryWorkspace() {
     };
   }, [loadMore, hasMore]);
 
+  function updateSide(next: Side) {
+    setSide(next);
+    setSelectedKeys(new Set());
+  }
   function updateBankFilter(code: string) {
     setBankFilter(code);
     setSelectedKeys(new Set());
@@ -841,6 +953,34 @@ export default function MatchHistoryWorkspace() {
         — หน้านี้แสดงเฉพาะรายการที่จับคู่แล้ว ไม่รวมรายการพักโอน
       </p>
 
+      {/* แท็บ AP / AR / All — หน้าตาเดียวกับแท็บ AR/AP ของหน้า Dashboard */}
+      <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-gray-200">
+        {SIDE_TABS.map((tab) => {
+          const active = side === tab.value;
+          const count = sideCounts?.[tab.value] ?? null;
+          return (
+            <button
+              key={tab.value}
+              onClick={() => updateSide(tab.value)}
+              aria-pressed={active}
+              className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+                active ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-700"
+              }`}
+            >
+              {tab.label}
+              <span className="text-xs font-normal">{tab.hint}</span>
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
+                  active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {count === null ? "…" : count.toLocaleString()}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
       {unmatchError && <p className="text-sm text-red-600 mb-4">{unmatchError}</p>}
 
@@ -871,7 +1011,7 @@ export default function MatchHistoryWorkspace() {
 
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide pb-1.5">
-          <SlidersHorizontal size={13} /> กรองวันที่
+          <SlidersHorizontal size={13} /> กรองวันที่ Bank Statement
         </div>
 
         <div className="flex flex-col gap-1">
@@ -927,7 +1067,7 @@ export default function MatchHistoryWorkspace() {
       )}
 
       {!loading && matches.length === 0 && (
-        <div className="text-center text-sm text-gray-400 py-10">ไม่พบประวัติการจับคู่ในช่วงวันที่และเงื่อนไขที่เลือก</div>
+        <div className="text-center text-sm text-gray-400 py-10">ไม่พบประวัติการจับคู่ที่มีรายการ Bank Statement ในช่วงวันที่และเงื่อนไขที่เลือก</div>
       )}
 
       {matches.length > 0 && (

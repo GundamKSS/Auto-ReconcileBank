@@ -57,28 +57,28 @@ export async function POST(req: NextRequest) {
           throw new Error(`MatchId ${matchId} ไม่ใช่รายการ Suspense`);
         }
 
-        for (const lineId of group.bank) {
-          const del = new sql.Request(transaction);
-          await del
+        // ลบทีละ match แบบ IN(...) รวดเดียว แทนยิงทีละบรรทัด — "เลือกทั้งหมด" ในหน้า Suspense ส่งมาได้หลายร้อยรายการ
+        // ทุก id ผ่าน Number.isInteger แล้ว ต่อเข้า IN(...) ได้ปลอดภัย
+        const bankIds = [...new Set(group.bank)];
+        if (bankIds.length > 0) {
+          const bankCsv = bankIds.join(',');
+          await new sql.Request(transaction)
             .input('matchId', sql.Int, matchId)
-            .input('lineId', sql.BigInt, lineId)
             .query(
-              `DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'BANK' AND BankLineId = @lineId`
+              `DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'BANK' AND BankLineId IN (${bankCsv})`
             );
-          const upd = new sql.Request(transaction);
-          await upd
-            .input('lineId', sql.BigInt, lineId)
-            .query(`UPDATE BankStatementLine SET MatchStatus = 'UNMATCHED' WHERE LineId = @lineId`);
-          revertedBankLineCount += 1;
+          await new sql.Request(transaction).query(
+            `UPDATE BankStatementLine SET MatchStatus = 'UNMATCHED' WHERE LineId IN (${bankCsv})`
+          );
+          revertedBankLineCount += bankIds.length;
         }
 
-        for (const entryNo of group.gl) {
-          const del = new sql.Request(transaction);
-          await del
+        const glIds = [...new Set(group.gl)];
+        if (glIds.length > 0) {
+          await new sql.Request(transaction)
             .input('matchId', sql.Int, matchId)
-            .input('entryNo', sql.BigInt, entryNo)
             .query(
-              `DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'GL' AND GLEntryNo = @entryNo`
+              `DELETE FROM ReconciliationMatchLine WHERE MatchId = @matchId AND SourceType = 'GL' AND GLEntryNo IN (${glIds.join(',')})`
             );
         }
 

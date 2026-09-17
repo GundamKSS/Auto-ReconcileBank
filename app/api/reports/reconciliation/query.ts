@@ -15,10 +15,17 @@ import sql from 'mssql';
  *
  * รีพอร์ตแยกเป็น 2 ฝั่ง: AR = เงินเข้า (IN), AP = เงินออก (OUT)
  * ใช้ทิศทางของบรรทัดเป็นตัวแบ่งเพราะมีทั้งฝั่ง Bank และ BC (Source_Code มีแต่ฝั่ง BC และแบ่งไม่ตรง)
+ * ยกเว้นกลุ่มหักล้างกันเอง (OFFSET) ซึ่งมีทั้งขาเข้าและขาออกในกลุ่มเดียว — ทั้งกลุ่มไปอยู่ฝั่งของรายการแรก
+ * (ใบเดิม) ไม่งั้นแต่ละแท็บจะเห็นแค่ครึ่งกลุ่ม พร้อมยอดที่ดูเหมือนไม่ดุล
  */
 
 export type DateBasis = 'BANK' | 'GL';
-export type StatusFilter = 'MATCHED' | 'SUSPENSE' | 'UNMATCHED' | 'ALL';
+export type StatusFilter = 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'UNMATCHED' | 'ALL';
+type MatchTypeStatus = 'MATCHED' | 'SUSPENSE' | 'OFFSET';
+
+function isMatchTypeStatus(status: StatusFilter): status is MatchTypeStatus {
+  return status === 'MATCHED' || status === 'SUSPENSE' || status === 'OFFSET';
+}
 export type ReportSide = 'AR' | 'AP';
 export type Direction = 'IN' | 'OUT';
 
@@ -33,6 +40,11 @@ export type ReportFilters = {
   side?: ReportSide;
   bankCode: string | null;
   q: string | null;
+  /**
+   * ตัดกลุ่มหักล้างกันเอง (OFFSET) ออกตอนดูสถานะ ALL — Dashboard ใช้ เพราะนับทุกสถานะที่ไม่ใช่
+   * "จับคู่แล้ว" เป็นงานค้าง ส่วนหน้า Reports ต้องเห็นครบทุกสถานะจึงไม่ตั้ง
+   */
+  excludeOffset?: boolean;
 };
 
 /** filter ของหน้า Reports — ผ่าน parseFilters แล้วมีฝั่งเสมอ */
@@ -70,7 +82,7 @@ export function parseFilters(params: URLSearchParams): ReportPageFilters {
     from: rawFrom && DATE_RE.test(rawFrom) ? rawFrom : fallback.from,
     to: rawTo && DATE_RE.test(rawTo) ? rawTo : fallback.to,
     basis: params.get('basis') === 'GL' ? 'GL' : 'BANK',
-    status: (['MATCHED', 'SUSPENSE', 'UNMATCHED', 'ALL'] as const).includes(rawStatus as StatusFilter)
+    status: (['MATCHED', 'SUSPENSE', 'OFFSET', 'UNMATCHED', 'ALL'] as const).includes(rawStatus as StatusFilter)
       ? (rawStatus as StatusFilter)
       : 'MATCHED',
     side: params.get('side')?.toUpperCase() === 'AP' ? 'AP' : 'AR',
@@ -85,7 +97,7 @@ export function bindFilters(request: sql.Request, f: ReportFilters) {
   request.input('direction', sql.VarChar(3), SIDE_DIRECTION[f.side ?? 'AR']);
   if (f.bankCode) request.input('bankCode', sql.NVarChar, f.bankCode);
   if (f.q) request.input('q', sql.NVarChar, `%${f.q}%`);
-  if (f.status === 'MATCHED' || f.status === 'SUSPENSE') {
+  if (isMatchTypeStatus(f.status)) {
     request.input('matchType', sql.NVarChar, f.status);
   }
   return request;
@@ -144,7 +156,11 @@ function groupDateFilter(basis: DateBasis) {
 export function buildReportCte(f: ReportFilters, { allSides = false }: { allSides?: boolean } = {}): string {
   const includePairs = f.status !== 'UNMATCHED';
   const includeUnmatched = f.status === 'UNMATCHED' || f.status === 'ALL';
-  const matchTypeFilter = f.status === 'MATCHED' || f.status === 'SUSPENSE' ? 'AND rm.MatchType = @matchType' : '';
+  const matchTypeFilter = isMatchTypeStatus(f.status)
+    ? 'AND rm.MatchType = @matchType'
+    : f.excludeOffset
+      ? "AND rm.MatchType <> 'OFFSET'"
+      : '';
   const matchBankFilter = f.bankCode ? 'AND rm.BankCode = @bankCode' : '';
   const dateFilter = groupDateFilter(f.basis);
   const effDate = f.basis === 'BANK' ? 'COALESCE(b.TranDate, g.Posting_Date)' : 'COALESCE(g.Posting_Date, b.TranDate)';
@@ -213,14 +229,20 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
 
   if (includePairs) {
     // หน้าต่าง (window) ระดับกลุ่มคำนวณก่อน paging เสมอ ผลต่าง/จำนวนแถวของกลุ่มจึงถูกต้องแม้กลุ่มถูกตัดข้ามหน้า
-    // กลุ่มเดียวไม่เคยมีทั้ง IN และ OUT ปนกัน (หน้า Reconcile จับคู่แยกทิศทาง) Direction ของแถวแรกจึงแทนทั้งกลุ่มได้
+    // กลุ่มที่จับคู่กับ Bank ไม่เคยมีทั้ง IN และ OUT ปนกัน (หน้า Reconcile จับคู่แยกทิศทาง) Direction ของแถวจึงแทนทั้งกลุ่มได้
+    // แต่กลุ่มหักล้างกันเอง (OFFSET) มีทั้งสองทิศเสมอ — ใช้ทิศของรายการ GL แรก (ใบเดิม เรียงตามวันที่/Entry_No) ทั้งกลุ่ม
     const groupWindow = 'OVER (PARTITION BY p.MatchId, p.GroupNum)';
     branches.push(`
     SELECT
       CAST(CONCAT('M', p.MatchId, '-', p.GroupNum, '-', p.PairRn) AS NVARCHAR(60)) AS RowKey,
       CAST(CONCAT('M', p.MatchId, '-', p.GroupNum) AS NVARCHAR(60)) AS GroupKey,
       CAST(p.MatchType AS VARCHAR(10)) AS Status,
-      CAST(COALESCE(p.BankDirection, p.GLDirection) AS VARCHAR(3)) AS Direction,
+      CAST(CASE
+             WHEN p.MatchType = 'OFFSET' THEN FIRST_VALUE(p.GLDirection) OVER (
+               PARTITION BY p.MatchId, p.GroupNum ORDER BY p.PairRn
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+             ELSE COALESCE(p.BankDirection, p.GLDirection)
+           END AS VARCHAR(3)) AS Direction,
       CAST(p.MatchId AS INT) AS MatchId,
       CAST(p.GroupNum AS INT) AS GroupNum,
       CAST(p.PairRn AS INT) AS PairRn,
@@ -371,7 +393,7 @@ export const ORDER_BY =
 
 export type ReportRow = {
   rowKey: string;
-  status: 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
+  status: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'UNMATCHED';
   direction: Direction;
   matchId: number | null;
   groupNum: number | null;
@@ -452,7 +474,7 @@ export function mapRow(r: Record<string, unknown>): ReportRow {
 }
 
 export type SummaryBucket = {
-  status: 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
+  status: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'UNMATCHED';
   bankCode: string;
   rows: number;
   matches: number;

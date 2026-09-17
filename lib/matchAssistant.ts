@@ -142,6 +142,14 @@ function clusterSameDay(bankItems: Item[], glItems: Item[]): RawCluster[] {
       }
     }
   }
+  // ที่เหลือทั้งวันยอดรวมเท่ากันพอดี = กลุ่มเดียว (เหมือน computeReadyIds — subset หาได้ไม่เกิน 5 รายการ)
+  if (remainingBank.length > 0 && remainingGl.length > 0) {
+    const bankSum = remainingBank.reduce((s, b) => s + b.amount, 0);
+    const glSum = remainingGl.reduce((s, g) => s + g.amount, 0);
+    if (Math.abs(bankSum - glSum) < 0.005) {
+      clusters.push({ bankIds: remainingBank.map((b) => b.id), glIds: remainingGl.map((g) => g.id) });
+    }
+  }
   return clusters;
 }
 

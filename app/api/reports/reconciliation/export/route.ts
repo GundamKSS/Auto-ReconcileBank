@@ -23,6 +23,7 @@ export const dynamic = 'force-dynamic';
 const STATUS_LABEL: Record<string, string> = {
   MATCHED: 'จับคู่แล้ว',
   SUSPENSE: 'พักไว้ (Suspense)',
+  OFFSET: 'หักล้างกันเอง (GL ยกเลิกกันเอง)',
   UNMATCHED: 'ยังไม่จับคู่',
   ALL: 'ทุกสถานะ',
 };

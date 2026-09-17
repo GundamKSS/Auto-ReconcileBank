@@ -13,18 +13,17 @@ import {
   CheckCircle2,
   Check,
   Pencil,
-  CalendarRange,
   Link2,
-  Maximize2,
-  Minimize2,
   WandSparkles,
   AlertTriangle,
+  Scale,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { ReconcileSession } from "./types";
 import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
+import GlOffsetModal, { type OffsetTab } from "./GlOffsetModal";
 import DifferenceBadge from "./DifferenceBadge";
 import { AURA_GRADIENT } from "./AuraOrb";
 
@@ -57,10 +56,15 @@ type GlApiLine = {
   accountName: string | null;
   date: string;
   ref: string;
+  // 'REVERSAL' = แถวที่ BC สร้างตอนกด Reverse — ใช้ติดป้ายในหน้าต่างหักล้างกันเอง
+  sourceCode: string | null;
   direction: Direction;
   description: string;
   amount: number;
 };
+
+// คู่กลับรายการใน BC ที่ /api/reconcile/data แยกออกจากตารางแล้ว รอผู้ใช้ยืนยันบันทึกเป็นหักล้างกันเอง
+type ReversalPairApi = { key: string; original: GlApiLine; reversal: GlApiLine };
 
 type LineItem = {
   id: string;
@@ -93,7 +97,6 @@ type WorkspaceDraft = {
   expandedBankDates: string[];
   expandedGlDates: string[];
   activeDate: string | null;
-  focusMode: boolean;
   bankScrollTop: number;
   glScrollTop: number;
 };
@@ -246,6 +249,20 @@ function computeReadyIds(
           const idx = remainingBank.findIndex((b) => b.id === s.id);
           if (idx !== -1) remainingBank.splice(idx, 1);
         }
+      }
+    }
+    // ที่เหลือทั้งหมดของวันนั้นยอดรวมเท่ากันพอดี = รวบเป็นกลุ่มเดียว — subset จำกัดไว้ไม่เกิน 5 รายการ (กันค้าง)
+    // เดิมเลยไม่ติ๊กเคส Bank 1 ก้อนจ่าย GL 6 ใบขึ้นไป ทั้งที่แถวขึ้น MATCH READY (เคสจริง: BBL 10/08 OUT 168,491.01)
+    // กลุ่มนี้มีหลายรายการ จึงเข้าหมวด "รวมยอด" ให้ตรวจก่อนกด Match เหมือนกลุ่ม 1:N อื่น
+    if (remainingBank.length > 0 && remainingGl.length > 0) {
+      const bankSum = remainingBank.reduce((s, b) => s + b.amount, 0);
+      const glSum = remainingGl.reduce((s, g) => s + g.amount, 0);
+      if (Math.abs(bankSum - glSum) < 0.005) {
+        const bankIds = remainingBank.map((b) => b.id);
+        const glIds = remainingGl.map((g) => g.id);
+        readyBankIds.push(...bankIds);
+        readyGlIds.push(...glIds);
+        recordCluster(bankIds, glIds);
       }
     }
   }
@@ -402,6 +419,7 @@ function DateGroupRow({
   clusterOf,
   dateClusterNumbering,
   lumpClusterIds,
+  onOffsetRequest,
 }: {
   date: string;
   items: LineItem[];
@@ -417,6 +435,8 @@ function DateGroupRow({
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
   lumpClusterIds: Set<number>;
+  // เฉพาะตาราง GL — ปุ่มบนแถวสำหรับหาคู่หักล้างกันเอง (รายการที่แก้ด้วย JV ยอดเท่ากันแต่ทิศตรงข้าม)
+  onOffsetRequest?: (id: string) => void;
 }) {
   const total = items.reduce((sum, i) => sum + i.amount, 0);
   const selectedInGroup = items.filter((i) => selected.has(i.id)).length;
@@ -505,7 +525,7 @@ function DateGroupRow({
               return (
                 <label
                   key={item.id}
-                  className={`flex items-center gap-3 pl-12 pr-4 py-2.5 cursor-pointer transition-colors border-t border-gray-100 ${
+                  className={`group flex items-center gap-3 pl-12 pr-4 py-2.5 cursor-pointer transition-colors border-t border-gray-100 ${
                     isSelected ? "bg-blue-50/60" : "hover:bg-gray-100/60"
                   }`}
                 >
@@ -535,6 +555,22 @@ function DateGroupRow({
                     </div>
                     <p className="text-sm text-gray-800 truncate">{item.description}</p>
                   </div>
+                  {onOffsetRequest && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        // อยู่ใน <label> — กันไม่ให้การกดปุ่มไปติ๊ก/ปลด checkbox ของแถวด้วย
+                        e.preventDefault();
+                        e.stopPropagation();
+                        onOffsetRequest(item.id);
+                      }}
+                      title="หาคู่หักล้างกันเอง — รายการ BC ที่ยกเลิกกันเอง ยอดเท่ากันแต่ทิศตรงข้าม (เช่น แก้ด้วย JV)"
+                      aria-label="หาคู่หักล้างกันเอง"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-white text-teal-600 opacity-0 transition-opacity hover:bg-teal-50 focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <Scale size={12} />
+                    </button>
+                  )}
                   <span className="text-sm text-gray-700 tabular-nums whitespace-nowrap">{formatAmount(item.amount)}</span>
                 </label>
               );
@@ -572,6 +608,8 @@ function Panel({
   onSync,
   syncing,
   syncDisabled,
+  extraActions,
+  onOffsetRequest,
   scrollRef,
   onScroll,
 }: {
@@ -603,6 +641,9 @@ function Panel({
   onSync?: () => void;
   syncing?: boolean;
   syncDisabled?: boolean;
+  // ปุ่มเพิ่มเติมข้างปุ่มซิงค์ (ตาราง GL ใช้วางปุ่มหักล้างกันเอง)
+  extraActions?: React.ReactNode;
+  onOffsetRequest?: (id: string) => void;
   scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
 }) {
@@ -652,19 +693,20 @@ function Panel({
           </p>
         </div>
         <div className="mt-3 flex items-center justify-between gap-2">
-          {onSync ? (
-            <button
-              onClick={onSync}
-              disabled={syncDisabled}
-              title="ดึงรายการ GL ล่าสุด 40 วันจาก Business Central (BC365) มาอัปเดต — ใช้หลังบัญชีแก้ไขข้อมูลใน ERP เสร็จแล้ว"
-              className="flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 px-2.5 py-1.5 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
-              {syncing ? "กำลังซิงค์..." : "ซิงค์จาก BC365"}
-            </button>
-          ) : (
-            <span />
-          )}
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {onSync && (
+              <button
+                onClick={onSync}
+                disabled={syncDisabled}
+                title="ดึงรายการ GL ล่าสุด 40 วันจาก Business Central (BC365) มาอัปเดต — ใช้หลังบัญชีแก้ไขข้อมูลใน ERP เสร็จแล้ว"
+                className="flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 px-2.5 py-1.5 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
+                {syncing ? "กำลังซิงค์..." : "ซิงค์จาก BC365"}
+              </button>
+            )}
+            {extraActions}
+          </div>
           <FilterTabs value={filter} onChange={onFilterChange} />
         </div>
       </div>
@@ -702,6 +744,7 @@ function Panel({
               clusterOf={clusterOf}
               dateClusterNumbering={dateClusterNumbering}
               lumpClusterIds={lumpClusterIds}
+              onOffsetRequest={onOffsetRequest}
             />
           ))}
       </div>
@@ -799,12 +842,9 @@ function SuccessToast({ title, message, onClose }: { title: string; message: str
 export default function ActiveWorkspace({
   session,
   onEditFilters,
-  onFocusModeChange,
 }: {
   session: ReconcileSession;
   onEditFilters: () => void;
-  // แจ้ง parent (ReconcileWorkspace) ตอนสลับโฟกัสตาราง ให้ซ่อน chrome bar ด้านบนสุดพร้อมกันได้
-  onFocusModeChange?: (focusMode: boolean) => void;
 }) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
@@ -816,17 +856,12 @@ export default function ActiveWorkspace({
   const [directionFilter, setDirectionFilter] = useState<Direction>("IN");
   const [selectedBank, setSelectedBank] = useState<Set<string>>(new Set());
   const [selectedGl, setSelectedGl] = useState<Set<string>>(new Set());
-  // โฟกัสตาราง: ซ่อนแถบข้อมูล/ย่อแถบสรุปด้านล่างชั่วคราว ให้พื้นที่ตารางเทียบทั้ง 2 ฝั่งใหญ่ขึ้น
-  const [focusMode, setFocusModeState] = useState(false);
-  // ห่อ setFocusMode ไว้ให้แจ้ง parent ด้วยทุกครั้งที่สลับ (ไม่ใช้ useEffect เพราะจะโดน react-hooks/set-state-in-effect
-  // และจริงๆ นี่คือ event handler ตรงๆ จากปุ่มกด ไม่ใช่ side effect ที่ต้องรอ sync กับอย่างอื่น)
-  function setFocusMode(next: boolean) {
-    setFocusModeState(next);
-    onFocusModeChange?.(next);
-  }
 
   const [bankLinesRaw, setBankLinesRaw] = useState<BankApiLine[]>([]);
   const [glLinesRaw, setGlLinesRaw] = useState<GlApiLine[]>([]);
+  const [reversalPairs, setReversalPairs] = useState<ReversalPairApi[]>([]);
+  // หน้าต่างหักล้างกันเอง — focusEntryNo มีค่าเมื่อเปิดจากปุ่มบนแถว GL
+  const [offsetModal, setOffsetModal] = useState<{ tab: OffsetTab; focusEntryNo: number | null } | null>(null);
   // รัน sql/006 แล้วหรือยัง — ถ้ายัง หน้านี้ยังรวมทุกบัญชีของธนาคารเดียวกันอยู่ ต้องบอกผู้ใช้ให้รู้ตัว
   const [accountDimensionReady, setAccountDimensionReady] = useState(true);
   // จำนวนรายการฝั่ง bank ที่ยังไม่รู้ว่าเป็นบัญชีไหน (ไฟล์เก่า) — แสดงปนอยู่ในตารางแต่ต้องมีป้ายกำกับ
@@ -843,6 +878,13 @@ export default function ActiveWorkspace({
         displayNo: extractDisplayNo(session.accountName),
       })
     : session.bankCode;
+  const accountNotice = !accountDimensionReady
+    ? `ยอดในหน้านี้ยังรวมทุกบัญชีของ ${session.bankCode}`
+    : !session.bankAccountNo
+      ? `งานเดิมนี้ยังไม่ได้ระบุเลขบัญชีของ ${session.bankCode}`
+      : unassignedBankLines > 0
+        ? `มี ${unassignedBankLines} รายการ Bank ที่ยังไม่ได้ระบุบัญชี`
+        : null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -970,6 +1012,7 @@ export default function ActiveWorkspace({
       }
       setBankLinesRaw(data.bankLines);
       setGlLinesRaw(data.glLines);
+      setReversalPairs(Array.isArray(data.reversalPairs) ? data.reversalPairs : []);
       setAccountDimensionReady(data.accountDimensionReady !== false);
       setUnassignedBankLines(Number(data.unassignedBankLines ?? 0));
 
@@ -1012,14 +1055,12 @@ export default function ActiveWorkspace({
       setExpandedBankDates(new Set(draft.expandedBankDates ?? []));
       setExpandedGlDates(new Set(draft.expandedGlDates ?? []));
       setActiveDate(draft.activeDate ?? null);
-      setFocusModeState(Boolean(draft.focusMode));
-      onFocusModeChange?.(Boolean(draft.focusMode));
     }
     // โหลดข้อมูลใหม่จาก server ทุกครั้งที่เปลี่ยนช่วงวันที่/บัญชีธนาคาร แล้วค่อยคืน draft ที่ยังใช้ได้
     void loadData(draft).finally(() => {
       draftReadyRef.current = true;
     });
-  }, [draftKey, loadData, onFocusModeChange]);
+  }, [draftKey, loadData]);
 
   useEffect(() => {
     if (!draftReadyRef.current || loading) return;
@@ -1034,7 +1075,6 @@ export default function ActiveWorkspace({
       expandedBankDates: [...expandedBankDates],
       expandedGlDates: [...expandedGlDates],
       activeDate,
-      focusMode,
       bankScrollTop: bankScrollTopRef.current,
       glScrollTop: glScrollTopRef.current,
     };
@@ -1045,7 +1085,6 @@ export default function ActiveWorkspace({
     draftKey,
     expandedBankDates,
     expandedGlDates,
-    focusMode,
     glGroupTab,
     linkDates,
     loading,
@@ -1078,8 +1117,6 @@ export default function ActiveWorkspace({
     setExpandedBankDates(new Set());
     setExpandedGlDates(new Set());
     setActiveDate(null);
-    setFocusModeState(false);
-    onFocusModeChange?.(false);
     void loadData().finally(() => {
       draftReadyRef.current = true;
     });
@@ -1515,6 +1552,12 @@ export default function ActiveWorkspace({
     }
   }
 
+  // บันทึก/ยกเลิกหักล้างกันเองสำเร็จ — โหลดตารางใหม่แต่คืนสิ่งที่ผู้ใช้ติ๊กไว้ด้วย draft ล่าสุดใน sessionStorage
+  // (loadData เปล่าๆ จะรีเซ็ตเป็นการติ๊กอัตโนมัติ ทำให้รายการที่เลือกไว้ในอีกแท็บหายไปทั้งที่ไม่เกี่ยวกัน)
+  function handleOffsetChanged() {
+    void loadData(readWorkspaceDraft(draftKey));
+  }
+
   // ปิดผู้ช่วยหาคู่ — ถ้าจับคู่ไประหว่างเปิด popup ต้องโหลดตารางใหม่ ไม่งั้นรายการที่จับไปแล้วยังค้างอยู่บนจอ
   function handleAssistantClose(matchedPairs: number) {
     setAssistantOpen(false);
@@ -1699,6 +1742,25 @@ export default function ActiveWorkspace({
         )}
       </AnimatePresence>
       <AnimatePresence>
+        {offsetModal && (
+          <GlOffsetModal
+            key="gl-offset"
+            bankCode={session.bankCode}
+            bankAccountNo={session.bankAccountNo}
+            accountLabel={accountFullLabel}
+            periodStart={session.periodStart}
+            periodEnd={session.periodEnd}
+            glExtendDays={session.includeSuspenseBuffer ? 7 : 0}
+            pairs={reversalPairs}
+            glLines={glLinesRaw}
+            initialTab={offsetModal.tab}
+            focusEntryNo={offsetModal.focusEntryNo}
+            onChanged={handleOffsetChanged}
+            onClose={() => setOffsetModal(null)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
         {confirmSuspenseOpen && (
           <SuspenseConfirmModal
             key="suspense-confirm"
@@ -1715,213 +1777,97 @@ export default function ActiveWorkspace({
         )}
       </AnimatePresence>
 
-      {!focusMode && (
-        <>
-          <div className="px-4 sm:px-6 py-5 flex items-start justify-between gap-4 flex-wrap shrink-0">
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Reconciliation workspace</h1>
-              <p className="text-sm text-gray-500 mt-1">
-                Bank Cr ↔ GL Dr · Bank Dr ↔ GL Cr · same date · GL แยกตามบัญชี
-              </p>
-              {error && <p className="text-sm text-red-600 mt-1">{error}</p>}
+      {/* Active workspace มีรูปแบบเดียว: ตารางเต็มพื้นที่พร้อมแถบคำสั่งแบบบางด้านบน */}
+      <div className="shrink-0 px-4 pt-3 sm:px-6">
+        <div className="flex min-h-14 items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(15,23,42,0.10),inset_0_1px_0_white] backdrop-blur-xl">
+          <div className="min-w-0 flex-1 px-1">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.10)]" />
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Reconcile</p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <p className="mt-0.5 truncate text-xs font-semibold text-slate-700" title={accountFullLabel}>
+              {accountShortLabel}
+              <span className="mx-1.5 font-normal text-slate-300">•</span>
+              <span className="font-medium text-slate-500">
+                {formatDMY(session.periodStart)}–{formatDMY(session.periodEnd)}
+              </span>
+            </p>
+            {error && <p className="mt-0.5 truncate text-[11px] font-medium text-red-600">{error}</p>}
+            {accountNotice && (
+              <p className="mt-0.5 flex items-center gap-1 truncate text-[10px] font-medium text-amber-700" title={accountNotice}>
+                <AlertTriangle size={11} className="shrink-0" />
+                <span className="truncate">{accountNotice}</span>
+              </p>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
               <button
-                onClick={() => setFocusMode(true)}
-                className="flex items-center gap-1.5 text-sm font-medium px-3.5 py-2 rounded-full border transition-colors text-gray-600 border-gray-200 hover:bg-gray-50"
-                title="ซ่อนแถบข้อมูลด้านบน เหลือแค่ไอคอน ให้เห็นตารางเทียบทั้ง 2 ฝั่งชัดขึ้น"
-              >
-                <Maximize2 size={14} />
-                Focus tables
-              </button>
-              <button
+                type="button"
                 onClick={handleResetWorkspace}
                 disabled={loading || busy || syncingGl}
-                className="flex items-center gap-1.5 text-sm text-gray-600 border border-gray-200 px-3.5 py-2 rounded-full hover:bg-gray-50 disabled:opacity-50"
+                className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
+                title="โหลดข้อมูลใหม่"
               >
-                <RotateCcw size={14} /> Reset
+                <RotateCcw size={14} />
+                <span className="hidden xl:inline">รีเซ็ต</span>
               </button>
               <button
+                type="button"
                 onClick={() => setAssistantOpen(true)}
                 disabled={loading || busy || syncingGl}
-                title="ผู้ช่วยหาคู่ — หารายการที่ยอดตรงกันพอดีแต่ Bank กับ GL ลงคนละวัน"
-                className="group relative overflow-hidden rounded-full p-[1.5px] shadow-[0_0_18px_rgba(139,92,246,0.35)] transition-shadow hover:shadow-[0_0_26px_rgba(139,92,246,0.55)] disabled:opacity-50"
+                className="relative overflow-hidden rounded-xl p-[1.5px] disabled:opacity-50"
+                title="เปิดผู้ช่วยหาคู่"
               >
                 <span
                   aria-hidden
-                  className="absolute left-1/2 top-1/2 aspect-square w-[140%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
+                  className="absolute left-1/2 top-1/2 aspect-square w-[200%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
                   style={{ background: AURA_GRADIENT }}
                 />
-                <span className="relative flex items-center gap-1.5 rounded-full bg-white px-3.5 py-2 text-sm font-medium text-violet-700 group-hover:bg-violet-50">
+                <span className="relative flex h-8 items-center gap-1.5 rounded-[10px] bg-white px-3 text-xs font-semibold text-violet-700">
                   <WandSparkles size={14} />
-                  ผู้ช่วยหาคู่
+                  <span>ผู้ช่วยจับคู่</span>
                 </span>
               </button>
-            </div>
-          </div>
-
-          {/* Filter bar — สรุป scope ปัจจุบันจาก session + ปุ่มแก้ไข — ซ่อนตอนโฟกัสตาราง เพื่อเพิ่มพื้นที่ */}
-          <div className="mx-4 sm:mx-6 mb-4 flex items-center justify-between gap-3 flex-wrap bg-blue-50/60 border border-blue-100 rounded-xl px-4 py-2.5 shrink-0">
-            <div className="flex items-center gap-2 text-sm text-blue-900 flex-wrap">
-              <CalendarRange size={15} className="text-blue-500" />
-              <span className="font-medium" title={accountFullLabel}>
-                {accountFullLabel}
-              </span>
-              <span className="text-blue-300">|</span>
-              <span>
-                Period: {formatDMY(session.periodStart)} - {formatDMY(session.periodEnd)}
-              </span>
-              {session.fileName && (
-                <>
-                  <span className="text-blue-300">|</span>
-                  <span className="text-blue-700">{session.fileName}</span>
-                </>
-              )}
-              {session.includeSuspenseBuffer && (
-                <span className="text-[11px] font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
-                  GL +7 วัน (พักโอนข้ามเดือน)
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-3 shrink-0">
               <button
-                onClick={() => setLinkDates((v) => !v)}
-                className="flex items-center gap-2 text-xs font-medium text-blue-900"
-                title="เปิด = กดขยายวันฝั่งไหน อีกฝั่งขยาย+เลื่อนตามให้อัตโนมัติ"
+                type="button"
+                aria-pressed={linkDates}
+                onClick={() => setLinkDates((value) => !value)}
+                className={`flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-all ${
+                  linkDates
+                    ? "border-blue-200 bg-blue-50 text-blue-700 shadow-[0_3px_10px_rgba(37,99,235,0.10)]"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+                title={
+                  linkDates
+                    ? "ลิงก์วันที่เปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งเป็นอิสระต่อกัน"
+                    : "ลิงก์วันที่ปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งขยายและเลื่อนพร้อมกัน"
+                }
               >
-                <Link2 size={13} className={linkDates ? "text-blue-600" : "text-gray-400"} />
-                ลิงค์วันที่ 2 ฝั่ง
+                <Link2 size={14} />
+                <span>ลิงก์วันที่</span>
                 <span
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                    linkDates ? "bg-blue-600" : "bg-gray-300"
+                  className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                    linkDates ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
                   }`}
                 >
-                  <span
-                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
-                      linkDates ? "translate-x-[18px]" : "translate-x-1"
-                    }`}
-                  />
+                  {linkDates ? "เปิด" : "ปิด"}
                 </span>
               </button>
-            </div>
+              <button
+                type="button"
+                onClick={onEditFilters}
+                className="flex h-9 items-center gap-1.5 rounded-xl border border-blue-200 bg-white px-3 text-xs font-semibold text-blue-700 transition-colors hover:bg-blue-50"
+                title="เปลี่ยนธนาคาร บัญชี หรือช่วงวันที่"
+              >
+                <Pencil size={14} />
+                <span className="hidden xl:inline">แก้ไขเงื่อนไข</span>
+              </button>
           </div>
+        </div>
+      </div>
 
-          {/* ป้ายเตือนเรื่องบัญชี — ขึ้นเฉพาะตอนที่หน้านี้ยังไม่ได้แยกตามบัญชีจริงๆ
-              ถ้าไม่บอก ผู้ใช้จะเห็นชื่อบัญชีบนหัวตารางแล้วเข้าใจว่าตัวเลขข้างล่างเป็นของบัญชีนั้นล้วน */}
-          {!accountDimensionReady && (
-            <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 shrink-0">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>
-                ตัวเลขในหน้านี้ยัง<strong>รวมทุกบัญชีของ {session.bankCode}</strong> เข้าด้วยกัน — ต้องรัน{" "}
-                <span className="font-mono">sql/006_bank_statement_bank_account.sql</span>{" "}
-                กับฐานข้อมูลก่อน ระบบจึงจะแยกตามเลขบัญชีได้
-              </span>
-            </div>
-          )}
-          {accountDimensionReady && !session.bankAccountNo && (
-            <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 shrink-0">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>
-                งานนี้ตั้งไว้ตั้งแต่ก่อนระบบแยกตามเลขบัญชี จึงยัง<strong>รวมทุกบัญชีของ {session.bankCode}</strong>{" "}
-                เข้าด้วยกัน — กด <strong>แก้ไข</strong> แล้วเลือกบัญชีที่ต้องการกระทบยอดเพื่อให้ยอดตรงกับ
-                statement ใบที่ถืออยู่
-              </span>
-            </div>
-          )}
-          {accountDimensionReady && session.bankAccountNo && unassignedBankLines > 0 && (
-            <div className="mx-4 sm:mx-6 mb-4 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 text-xs text-amber-800 shrink-0">
-              <AlertTriangle size={14} className="mt-0.5 shrink-0" />
-              <span>
-                มี <strong>{unassignedBankLines} รายการ</strong> ฝั่ง Bank statement
-                ที่มาจากไฟล์ซึ่งยังไม่ได้ระบุว่าเป็นบัญชีไหน — แสดงรวมไว้ในตารางนี้ก่อน
-                กรุณาระบุบัญชีให้ไฟล์นั้นที่หน้า Master Data เพื่อให้ยอดถูกต้องแน่นอน
-              </span>
-            </div>
-          )}
-        </>
-      )}
-
-      <div className="relative lg:flex-1 lg:min-h-0 px-4 sm:px-6 pb-4 lg:overflow-hidden lg:pt-4">
-        {focusMode && (
-          // โฟกัสตารางเต็มที่: เอาแถบหัวข้อ/filter เดิมออกจนหมด ไม่กินพื้นที่แถวใดๆ อีกต่อไป
-          // เหลือแค่กลุ่มไอคอนลอย (absolute) กึ่งกลางด้านล่างตาราง ลอยทับตารางแทน ให้ตารางขยายเต็มพื้นที่จริงๆ
-          // ปุ่มขยายกลับ (วงกลมแดง) ตั้งใจเน้นสีให้เห็นชัดว่ากดตรงนี้เพื่อย้อนกลับไปโหมดปกติได้
-          <div className="absolute bottom-3 left-1/2 z-30 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-1 rounded-[1.35rem] border border-white/80 bg-white/70 px-2 py-2 shadow-[0_14px_42px_rgba(15,23,42,0.16),inset_0_1px_0_white] backdrop-blur-2xl backdrop-saturate-150">
-            {error && (
-              <span className="absolute bottom-[calc(100%+8px)] left-1/2 max-w-[420px] -translate-x-1/2 truncate rounded-full border border-red-100 bg-white/90 px-3 py-1.5 text-[11px] text-red-600 shadow-lg backdrop-blur-xl">
-                {error}
-              </span>
-            )}
-            <button
-              onClick={() => setFocusMode(false)}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-red-200 bg-red-50 text-red-600 transition-colors hover:bg-red-100"
-              title="ย่อกลับ — แสดงหัวข้อและแถบข้อมูลทั้งหมด"
-            >
-              <Minimize2 size={14} />
-            </button>
-            <span aria-hidden className="mx-0.5 h-5 w-px shrink-0 bg-slate-200/80" />
-            <button
-              onClick={handleResetWorkspace}
-              disabled={loading || busy || syncingGl}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white/55 text-slate-500 transition-colors hover:bg-white disabled:opacity-50"
-              title="Reset — โหลดข้อมูลใหม่"
-            >
-              <RotateCcw size={14} />
-            </button>
-            <button
-              onClick={() => setAssistantOpen(true)}
-              disabled={loading || busy || syncingGl}
-              title="ผู้ช่วยหาคู่"
-              aria-label="ผู้ช่วยหาคู่"
-              className="relative h-8 w-8 shrink-0 overflow-hidden rounded-full p-[1.5px] disabled:opacity-50"
-            >
-              <span
-                aria-hidden
-                className="absolute left-1/2 top-1/2 aspect-square w-[200%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
-                style={{ background: AURA_GRADIENT }}
-              />
-              <span className="relative flex h-full w-full items-center justify-center rounded-full bg-white text-violet-700">
-                <WandSparkles size={14} />
-              </span>
-            </button>
-            <button
-              type="button"
-              aria-pressed={linkDates}
-              onClick={() => setLinkDates((value) => !value)}
-              className={`flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[11px] font-semibold transition-all ${
-                linkDates
-                  ? "border-blue-200 bg-blue-50/90 text-blue-700 shadow-[0_3px_10px_rgba(37,99,235,0.10)]"
-                  : "border-slate-200 bg-white/55 text-slate-500 hover:bg-white"
-              }`}
-              title={
-                linkDates
-                  ? "ลิงก์วันที่เปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งเป็นอิสระต่อกัน"
-                  : "ลิงก์วันที่ปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งขยายและเลื่อนพร้อมกัน"
-              }
-            >
-              <Link2 size={13} />
-              <span className="hidden sm:inline">ลิงก์วัน</span>
-              <span
-                aria-hidden
-                className={`h-1.5 w-1.5 rounded-full ${linkDates ? "bg-blue-500 shadow-[0_0_7px_rgba(59,130,246,0.65)]" : "bg-slate-300"}`}
-              />
-            </button>
-            <button
-              onClick={onEditFilters}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-blue-200 bg-white/55 text-blue-700 transition-colors hover:bg-blue-50"
-              title="เปลี่ยนเงื่อนไขการ Reconcile — ธนาคาร/ช่วงวันที่"
-            >
-              <Pencil size={14} />
-            </button>
-            <span aria-hidden className="mx-0.5 hidden h-5 w-px shrink-0 bg-slate-200/80 xl:block" />
-            <span
-              className="hidden max-w-[220px] truncate whitespace-nowrap pr-1 text-[11px] font-medium text-slate-400 xl:inline"
-              title={accountFullLabel}
-            >
-              {accountShortLabel} · {formatDMY(session.periodStart)}-{formatDMY(session.periodEnd)}
-            </span>
-          </div>
-        )}
+      <div className="relative px-4 pb-4 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pt-2">
         {/* relative เพราะกล่องผลต่างลอยอยู่ที่มุมบนตรงกลาง คร่อมรอยต่อของสองตาราง */}
         <div className="relative grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2 lg:gap-3">
           <DifferenceBadge
@@ -1990,25 +1936,50 @@ export default function ActiveWorkspace({
             onSync={handleSyncGl}
             syncing={syncingGl}
             syncDisabled={loading || busy || syncingGl}
+            extraActions={
+              <button
+                onClick={() => setOffsetModal({ tab: reversalPairs.length > 0 ? "auto" : "manual", focusEntryNo: null })}
+                disabled={loading || busy || syncingGl}
+                title={
+                  reversalPairs.length > 0
+                    ? `มีคู่กลับรายการใน BC ${reversalPairs.length} คู่ที่ซ่อนจากตารางแล้ว (ไม่รวมในยอด) — กดเพื่อตรวจและยืนยัน`
+                    : "หักล้างกันเอง — รายการ BC ที่ยกเลิกกันเอง (กด Reverse หรือแก้ด้วย JV) ยอดสุทธิ 0 ไม่ต้องจับคู่กับ Bank"
+                }
+                className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  reversalPairs.length > 0
+                    ? "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                    : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                }`}
+              >
+                <Scale size={12} />
+                หักล้างกันเอง
+                {reversalPairs.length > 0 && (
+                  <span className="rounded-full bg-teal-600 px-1.5 text-[10px] font-semibold leading-4 text-white tabular-nums">
+                    {reversalPairs.length}
+                  </span>
+                )}
+              </button>
+            }
+            onOffsetRequest={(id) => {
+              const line = glLinesRaw.find((l) => l.id === id);
+              setOffsetModal({ tab: "manual", focusEntryNo: line?.entryNo ?? null });
+            }}
             scrollRef={glScrollRef}
             onScroll={(event) => persistScroll("gl", event.currentTarget.scrollTop)}
           />
         </div>
       </div>
 
-      <div className={`shrink-0 px-4 sm:px-6 bg-white border-t border-gray-100 transition-all ${focusMode ? "py-2" : "py-4"}`}>
+      <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-2 sm:px-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-6 flex-wrap">
             <div>
-              {!focusMode && <p className="text-[11px] font-medium text-gray-400 tracking-wide">BANK TOTAL</p>}
               <p className="text-base font-semibold text-gray-900">{formatAmount(bankTotal)}</p>
             </div>
             <div>
-              {!focusMode && <p className="text-[11px] font-medium text-gray-400 tracking-wide">GL TOTAL</p>}
               <p className="text-base font-semibold text-gray-900">{formatAmount(glTotal)}</p>
             </div>
             <div>
-              {!focusMode && <p className="text-[11px] font-medium text-gray-400 tracking-wide">DIFFERENCE</p>}
               <p className={`text-base font-semibold ${amountMatches ? "text-green-600" : "text-red-600"}`}>
                 {formatAmount(difference)}
               </p>
