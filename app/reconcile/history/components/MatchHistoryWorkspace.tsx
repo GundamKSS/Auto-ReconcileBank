@@ -13,11 +13,13 @@ import {
   ArrowUpRight,
   Undo2,
   CheckCircle2,
+  Search,
   X,
 } from "lucide-react";
 import { getCurrentUsername } from "../../../../lib/currentUser";
 import { useSidebar } from "../../../../components/SidebarContext";
 import UnmatchConfirmModal, { UnmatchTarget } from "./UnmatchConfirmModal";
+import { findReversalPairs, isReversalSource } from "../../../../lib/glOffset";
 
 type LineStatus = "ACTIVE" | "REVERSED";
 
@@ -28,7 +30,9 @@ type LineItem = {
   date: string;
   description?: string;
   ref?: string;
+  accountNo?: string;
   accountName?: string;
+  sourceCode?: string | null;
   direction: "IN" | "OUT";
   amount: number;
   status: LineStatus;
@@ -40,7 +44,7 @@ type LineItem = {
 type MatchRecord = {
   matchId: number;
   bankCode: string;
-  matchType: "MATCHED" | "SUSPENSE";
+  matchType: "MATCHED" | "SUSPENSE" | "OFFSET";
   createdBy: string | null;
   createdAt: string;
   status: LineStatus;
@@ -65,23 +69,6 @@ type SubGroup = {
   reversedBy: string | null;
   reversedReason: string | null;
 };
-
-const GROUP_COLORS = [
-  "border-purple-300 bg-purple-50",
-  "border-orange-300 bg-orange-50",
-  "border-cyan-300 bg-cyan-50",
-  "border-pink-300 bg-pink-50",
-  "border-lime-300 bg-lime-50",
-  "border-indigo-300 bg-indigo-50",
-];
-const GROUP_BADGE_COLORS = [
-  "bg-purple-100 text-purple-700",
-  "bg-orange-100 text-orange-700",
-  "bg-cyan-100 text-cyan-700",
-  "bg-pink-100 text-pink-700",
-  "bg-lime-100 text-lime-700",
-  "bg-indigo-100 text-indigo-700",
-];
 
 function formatAmount(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -111,6 +98,20 @@ function monthRange(anchor: Date) {
 // AP = เงินออก, AR = เงินเข้า — ความหมายเดียวกับหน้า Dashboard/Reports (app/dashboard/components/shared.ts)
 // เรียงตามที่ผู้ใช้ขอ: AP / AR / All
 type Side = "AP" | "AR" | "ALL";
+// CREATED = วันที่กดบันทึก — ใช้ในแท็บหักล้างกันเองเท่านั้น (ไม่มีวันที่ Bank ให้อ้างอิง)
+type DateBasis = "BANK" | "GL" | "CREATED";
+// MATCHED = จับคู่กับ Bank (แท็บ AP/AR/All), OFFSET = หักล้างกันเอง (รายการ BC ล้วน ไม่มีฝั่ง Bank)
+type View = "MATCHED" | "OFFSET";
+const DATE_BASIS_OPTIONS: Record<View, readonly (readonly [DateBasis, string])[]> = {
+  MATCHED: [
+    ["BANK", "Statement"],
+    ["GL", "BC365"],
+  ],
+  OFFSET: [
+    ["GL", "BC365"],
+    ["CREATED", "วันที่บันทึก"],
+  ],
+};
 const SIDE_TABS: { value: Side; label: string; hint: string }[] = [
   { value: "AP", label: "AP", hint: "เงินออก" },
   { value: "AR", label: "AR", hint: "เงินเข้า" },
@@ -149,6 +150,47 @@ function toSubGroups(match: MatchRecord): SubGroup[] {
       reversedReason: reversedLine?.reversedReason ?? match.reversedReason,
     };
   });
+}
+
+// กลุ่มหักล้างกันเองแยกเป็นขาเข้า/ขาออก — ยอดสองขาต้องเท่ากัน (server ตรวจไว้ตอนบันทึกแล้ว)
+function splitOffsetLines(lines: LineItem[]) {
+  const inLines = lines.filter((l) => l.direction === "IN");
+  const outLines = lines.filter((l) => l.direction === "OUT");
+  return {
+    inLines,
+    outLines,
+    inTotal: inLines.reduce((s, l) => s + l.amount, 0),
+    outTotal: outLines.reduce((s, l) => s + l.amount, 0),
+  };
+}
+
+// กติกาเดียวกับ /api/reconcile/offsets — ทุกรายการในกลุ่มจับเป็นคู่กลับรายการใน BC ได้ครบ = ระบบเจอให้ ที่เหลือ = ผู้ใช้เลือกเอง
+function offsetKind(lines: LineItem[]): "REVERSAL" | "MANUAL" {
+  const pairs = findReversalPairs(
+    lines.map((l) => ({
+      entryNo: l.entryNo ?? 0,
+      accountNo: l.accountNo ?? "",
+      documentNo: l.ref ?? null,
+      sourceCode: l.sourceCode ?? null,
+      signedAmount: l.direction === "IN" ? l.amount : -l.amount,
+    }))
+  );
+  return lines.length > 0 && pairs.length * 2 === lines.length ? "REVERSAL" : "MANUAL";
+}
+
+function toOffsetUnmatchTarget(g: SubGroup, bankCode: string): UnmatchTarget {
+  const { inLines, outLines, inTotal, outTotal } = splitOffsetLines(g.glLines);
+  // UnmatchConfirmModal variant "offset" อ่าน bank*/gl* เป็นขาเข้า/ขาออก
+  return {
+    key: g.key,
+    matchId: g.matchId,
+    num: g.num,
+    bankCode,
+    bankCount: inLines.length,
+    glCount: outLines.length,
+    bankTotal: inTotal,
+    glTotal: outTotal,
+  };
 }
 
 function toUnmatchTarget(g: SubGroup, bankCode: string): UnmatchTarget {
@@ -258,13 +300,11 @@ function HistorySidePanel({
 // เลยทำให้ติ๊กช่องไหนก็ติ๊ก/ปลดครบทั้งกลุ่มพร้อมกัน
 function SubGroupBlock({
   group,
-  colorIdx,
   selected,
   onToggleSelect,
   onRequestUnmatch,
 }: {
   group: SubGroup;
-  colorIdx: number;
   selected: boolean;
   onToggleSelect: () => void;
   onRequestUnmatch: () => void;
@@ -274,9 +314,13 @@ function SubGroupBlock({
 
   return (
     <div
-      className={`border-l-4 rounded-lg p-3 ${GROUP_COLORS[colorIdx % GROUP_COLORS.length]} ${
-        reversed ? "opacity-60" : ""
-      } ${selected ? "ring-2 ring-gray-900/70" : ""}`}
+      className={`rounded-xl border bg-white p-3 transition ${
+        reversed
+          ? "border-gray-200 bg-gray-50 opacity-60"
+          : selected
+            ? "border-blue-400 ring-2 ring-blue-100"
+            : "border-gray-200"
+      }`}
     >
       <div className="flex items-center gap-2 mb-2 flex-wrap">
         <div className="w-4 flex items-center justify-center shrink-0">
@@ -290,11 +334,7 @@ function SubGroupBlock({
             />
           )}
         </div>
-        <span
-          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-            GROUP_BADGE_COLORS[colorIdx % GROUP_BADGE_COLORS.length]
-          }`}
-        >
+        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
           กลุ่ม {group.num}
         </span>
         <span className="text-xs text-gray-500">
@@ -561,7 +601,6 @@ function MatchCard({
                               <SubGroupBlock
                                 key={group.key}
                                 group={group}
-                                colorIdx={groups.indexOf(group)}
                                 selected={selectedKeys.has(group.key)}
                                 onToggleSelect={() => onToggleGroup(group.key)}
                                 onRequestUnmatch={() => onRequestUnmatch([group])}
@@ -574,6 +613,299 @@ function MatchCard({
                   </div>
                 );
               })}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  );
+}
+
+function OffsetSidePanel({ direction, lines, total }: { direction: "IN" | "OUT"; lines: LineItem[]; total: number }) {
+  const isIn = direction === "IN";
+  return (
+    <div className={`min-w-0 overflow-hidden rounded-xl border bg-white ${isIn ? "border-purple-200/80" : "border-red-200/80"}`}>
+      <div
+        className={`flex items-center justify-between gap-3 border-b px-3 py-2 ${
+          isIn ? "border-purple-100 bg-purple-50/80" : "border-red-100 bg-red-50/80"
+        }`}
+      >
+        <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${isIn ? "text-purple-800" : "text-red-700"}`}>
+          {isIn ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
+          {isIn ? "ขาเข้า (IN)" : "ขาออก (OUT)"}
+        </span>
+        <span className={`text-[10px] font-medium ${isIn ? "text-purple-600" : "text-red-500"}`}>{lines.length} รายการ</span>
+      </div>
+      <div className="divide-y divide-gray-100">
+        {lines.map((line, index) => (
+          <div key={line.entryNo ?? index} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 px-3 py-2.5">
+            <span className="whitespace-nowrap text-[11px] font-medium text-gray-400">{formatDate(line.date)}</span>
+            <p className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600" title={line.ref ?? ""}>
+              <span className="truncate">{line.ref || "-"}</span>
+              {isReversalSource(line.sourceCode) && (
+                <span className="shrink-0 rounded bg-gray-100 px-1 py-0.5 text-[9px] font-semibold text-gray-500">REVERSAL</span>
+              )}
+            </p>
+            <span className="whitespace-nowrap text-xs font-medium tabular-nums text-gray-700">{formatAmount(line.amount)}</span>
+          </div>
+        ))}
+      </div>
+      <div
+        className={`flex items-center justify-between border-t px-3 py-2 ${
+          isIn ? "border-purple-100 bg-purple-50/45" : "border-red-100 bg-red-50/45"
+        }`}
+      >
+        <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-gray-400">Total</span>
+        <span className={`text-sm font-bold tabular-nums ${isIn ? "text-purple-800" : "text-red-700"}`}>{formatAmount(total)}</span>
+      </div>
+    </div>
+  );
+}
+
+function OffsetKindBadge({ kind }: { kind: "REVERSAL" | "MANUAL" }) {
+  return kind === "REVERSAL" ? (
+    <span
+      className="rounded-full bg-teal-100 px-2 py-0.5 text-[10px] font-semibold text-teal-700"
+      title="แถว REVERSAL ใน BC กับใบเดิมเลขเอกสารเดียวกัน — ระบบเจอให้"
+    >
+      กลับรายการใน BC
+    </span>
+  ) : (
+    <span
+      className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700"
+      title="ผู้ใช้เลือกจับคู่เอง เช่น แก้ด้วย JV ที่เลขเอกสารคนละใบ"
+    >
+      จับคู่เอง
+    </span>
+  );
+}
+
+// กลุ่มหักล้างกันเอง 1 กลุ่ม (Num) — ขาเข้าซ้าย ขาออกขวา ตรงกลางคือยอดสุทธิที่ต้องเป็น 0.00
+function OffsetGroupBlock({
+  group,
+  selected,
+  onToggleSelect,
+  onRequestUnmatch,
+}: {
+  group: SubGroup;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onRequestUnmatch: () => void;
+}) {
+  const { inLines, outLines, inTotal, outTotal } = splitOffsetLines(group.glLines);
+  const net = inTotal - outTotal;
+  const balanced = Math.abs(net) < 0.005;
+  const reversed = group.status === "REVERSED";
+
+  return (
+    <div
+      className={`rounded-xl border bg-white p-3 transition ${
+        reversed ? "border-gray-200 bg-gray-50 opacity-60" : selected ? "border-blue-400 ring-2 ring-blue-100" : "border-gray-200"
+      }`}
+    >
+      <div className="mb-2 flex flex-wrap items-center gap-2">
+        <div className="flex w-4 shrink-0 items-center justify-center">
+          {!reversed && (
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={onToggleSelect}
+              className="h-4 w-4 cursor-pointer rounded border-gray-300 text-gray-900 focus:ring-gray-400"
+              aria-label={`เลือกกลุ่มที่ ${group.num} ของ Match #${group.matchId}`}
+            />
+          )}
+        </div>
+        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">กลุ่ม {group.num}</span>
+        <OffsetKindBadge kind={offsetKind(group.glLines)} />
+        <span className="text-xs text-gray-500">
+          {group.glLines.length} รายการ ({inLines.length} เข้า : {outLines.length} ออก)
+        </span>
+        {reversed && <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">ยกเลิกแล้ว</span>}
+        <span className="flex-1" />
+        {!reversed && (
+          <button
+            onClick={onRequestUnmatch}
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-200 px-2.5 py-1 text-[11px] font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-600 hover:text-white"
+            title="ยกเลิกหักล้างกันเองเฉพาะกลุ่มนี้ — รายการ BC กลับไปอยู่หน้า Reconcile"
+          >
+            <Undo2 size={12} />
+            ยกเลิกกลุ่มนี้
+          </button>
+        )}
+      </div>
+
+      {reversed && (
+        <p className="mb-2 text-[11px] text-red-500">
+          ยกเลิกโดย {group.reversedBy ?? "ไม่ทราบผู้ยกเลิก"}
+          {group.reversedAt ? ` เมื่อ ${formatDateTime(group.reversedAt)}` : ""}
+          {group.reversedReason ? ` — เหตุผล: ${group.reversedReason}` : ""}
+        </p>
+      )}
+
+      <div className="grid grid-cols-1 items-stretch gap-2 md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <OffsetSidePanel direction="IN" lines={inLines} total={inTotal} />
+        <div className="flex items-center justify-center">
+          <span
+            className={`whitespace-nowrap rounded-full border bg-white px-2 py-1 text-[10px] font-semibold tabular-nums shadow-sm ${
+              balanced ? "border-emerald-200 text-emerald-600" : "border-red-200 text-red-500"
+            }`}
+            title="ยอดสุทธิ = ขาเข้า − ขาออก"
+          >
+            สุทธิ {formatAmount(net)}
+          </span>
+        </div>
+        <OffsetSidePanel direction="OUT" lines={outLines} total={outTotal} />
+      </div>
+    </div>
+  );
+}
+
+function OffsetMatchCard({
+  match,
+  groups,
+  selectedKeys,
+  onToggleGroup,
+  onToggleAllGroups,
+  onRequestUnmatch,
+}: {
+  match: MatchRecord;
+  groups: SubGroup[];
+  selectedKeys: Set<string>;
+  onToggleGroup: (key: string) => void;
+  onToggleAllGroups: (groups: SubGroup[]) => void;
+  onRequestUnmatch: (groups: SubGroup[]) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
+
+  const activeGroups = useMemo(() => groups.filter((g) => g.status === "ACTIVE"), [groups]);
+  const reversedCount = groups.length - activeGroups.length;
+  const selectedCount = activeGroups.filter((g) => selectedKeys.has(g.key)).length;
+  const allSelected = activeGroups.length > 0 && selectedCount === activeGroups.length;
+  const fullyReversed = activeGroups.length === 0;
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = selectedCount > 0 && !allSelected;
+    }
+  }, [selectedCount, allSelected]);
+
+  // สรุปบนหัวการ์ดจากกลุ่มที่ยังใช้งานอยู่ — ยกเลิกหมดแล้วค่อยสรุปจากทุกกลุ่มให้ยังรู้ว่าเคยเป็นเอกสารอะไร
+  const summaryGroups = fullyReversed ? groups : activeGroups;
+  const summaryLines = summaryGroups.flatMap((g) => g.glLines);
+  const { inTotal } = splitOffsetLines(summaryLines);
+  const kinds = Array.from(new Set(summaryGroups.map((g) => offsetKind(g.glLines))));
+  const docs = Array.from(new Set(summaryLines.map((l) => l.ref).filter((ref): ref is string => Boolean(ref))));
+  const accountName = summaryLines.find((l) => l.accountName)?.accountName;
+  const reversedAt = match.reversedAt ?? groups[0]?.reversedAt ?? null;
+  const reversedReason = match.reversedReason ?? groups[0]?.reversedReason ?? null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: fullyReversed ? 0.7 : 1, y: 0 }}
+      transition={{ duration: 0.2 }}
+      className={`overflow-hidden rounded-2xl border bg-white transition-colors duration-200 ${
+        fullyReversed ? "border-gray-200" : selectedCount > 0 ? "border-gray-900" : "border-gray-200"
+      }`}
+    >
+      <div className="flex w-full items-center gap-3 px-4 py-3">
+        <div className="flex w-5 shrink-0 items-center justify-center">
+          {activeGroups.length > 0 && (
+            <input
+              ref={headerCheckboxRef}
+              type="checkbox"
+              checked={allSelected}
+              onChange={() => onToggleAllGroups(activeGroups)}
+              className="h-4 w-4 cursor-pointer rounded border-gray-300 text-gray-900 focus:ring-gray-400"
+              aria-label={`เลือกทุกกลุ่มของ Match #${match.matchId}`}
+            />
+          )}
+        </div>
+
+        <button onClick={() => setExpanded((v) => !v)} className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-70">
+          <ChevronRight size={14} className={`shrink-0 text-gray-400 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`} />
+          <div className="min-w-0 flex-1">
+            <div className="mb-0.5 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-gray-900">Match #{match.matchId}</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">{match.bankCode}</span>
+              {kinds.map((k) => (
+                <OffsetKindBadge key={k} kind={k} />
+              ))}
+              {groups.length > 1 && (
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">{groups.length} กลุ่ม</span>
+              )}
+              {fullyReversed ? (
+                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">ยกเลิกแล้ว</span>
+              ) : (
+                reversedCount > 0 && (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                    ยกเลิกบางส่วน {reversedCount}/{groups.length} กลุ่ม
+                  </span>
+                )
+              )}
+              {selectedCount > 0 && (
+                <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-semibold text-white">
+                  เลือกแล้ว {selectedCount}/{activeGroups.length} กลุ่ม
+                </span>
+              )}
+            </div>
+            <p className="truncate text-xs text-gray-500" title={docs.join(", ")}>
+              {docs.slice(0, 4).join(" · ") || "-"}
+              {docs.length > 4 ? ` และอีก ${docs.length - 4} ใบ` : ""}
+              {accountName ? ` · ${accountName}` : ""}
+            </p>
+            <p className="text-xs text-gray-400">
+              บันทึกเมื่อ {formatDateTime(match.createdAt)}
+              {match.createdBy ? ` · โดย ${match.createdBy}` : ""}
+            </p>
+            {fullyReversed && (
+              <p className="mt-0.5 text-xs text-red-500">
+                ยกเลิกโดย {match.reversedBy ?? groups[0]?.reversedBy ?? "ไม่ทราบผู้ยกเลิก"}
+                {reversedAt ? ` เมื่อ ${formatDateTime(reversedAt)}` : ""}
+                {reversedReason ? ` — เหตุผล: ${reversedReason}` : ""}
+              </p>
+            )}
+          </div>
+        </button>
+
+        <div className="shrink-0 text-right">
+          <p className="text-sm font-semibold tabular-nums text-gray-900">{formatAmount(inTotal)}</p>
+          <p className="text-[11px] text-gray-400">ยอดที่หักล้าง</p>
+        </div>
+
+        {activeGroups.length > 0 && (
+          <button
+            onClick={() => onRequestUnmatch(activeGroups)}
+            className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-600 hover:text-white"
+            title="ยกเลิกหักล้างกันเอง — รายการ BC กลับไปอยู่หน้า Reconcile"
+          >
+            <Undo2 size={13} />
+            ยกเลิก
+          </button>
+        )}
+      </div>
+
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            key="detail"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: "easeInOut" }}
+            style={{ overflow: "hidden" }}
+          >
+            <div className="flex flex-col gap-2 border-t border-gray-100 bg-gray-50/50 p-3">
+              {groups.map((group) => (
+                <OffsetGroupBlock
+                  key={group.key}
+                  group={group}
+                  selected={selectedKeys.has(group.key)}
+                  onToggleSelect={() => onToggleGroup(group.key)}
+                  onRequestUnmatch={() => onRequestUnmatch([group])}
+                />
+              ))}
             </div>
           </motion.div>
         )}
@@ -621,12 +953,18 @@ export default function MatchHistoryWorkspace() {
   const { collapsed } = useSidebar();
 
   const [bankFilter, setBankFilter] = useState("ALL");
+  const [view, setView] = useState<View>("MATCHED");
   const [side, setSide] = useState<Side>("ALL");
   // จำนวน Match ของแต่ละแท็บภายใต้เงื่อนไขอื่นที่เลือกอยู่ — null ระหว่างรอโหลดครั้งแรก
   const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
+  // จำนวน Match หักล้างกันเอง — รู้เมื่อเปิดแท็บนั้นแล้วเท่านั้น
+  const [offsetCount, setOffsetCount] = useState<number | null>(null);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
   const [from, setFrom] = useState(initialRange.from);
   const [to, setTo] = useState(initialRange.to);
+  const [dateBasis, setDateBasis] = useState<DateBasis>("BANK");
+  const [queryInput, setQueryInput] = useState("");
+  const [query, setQuery] = useState("");
 
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -646,15 +984,15 @@ export default function MatchHistoryWorkspace() {
   // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
   const inFlightRef = useRef(false);
 
-  // matchType=MATCHED เสมอ — หน้านี้เป็นประวัติการจับคู่อย่างเดียว รายการที่พักโอน (SUSPENSE)
-  // มีหน้า /suspense ของตัวเองอยู่แล้ว ไม่ต้องมาปนกันที่นี่
+  // MATCHED หรือ OFFSET (หักล้างกันเอง) ตามแท็บ — รายการที่พักโอน (SUSPENSE) มีหน้า /suspense ของตัวเองอยู่แล้ว
+  // OFFSET ไม่มีบรรทัด Bank จึงไม่ส่ง side (AR/AP ดูจากทิศทางของบรรทัด Bank)
   const params = useMemo(() => {
-    // dateBasis=BANK: from/to กรองที่วันที่ของรายการใน Bank Statement ไม่ใช่วันที่กดจับคู่
-    const p = new URLSearchParams({ from, to, matchType: "MATCHED", dateBasis: "BANK" });
+    const p = new URLSearchParams({ from, to, matchType: view, dateBasis });
     if (bankFilter !== "ALL") p.set("bankCode", bankFilter);
-    if (side !== "ALL") p.set("side", side);
+    if (view === "MATCHED" && side !== "ALL") p.set("side", side);
+    if (query) p.set("q", query);
     return p.toString();
-  }, [from, to, bankFilter, side]);
+  }, [from, to, view, dateBasis, bankFilter, side, query]);
 
   // โหลดหน้าแรกใหม่ทุกครั้งที่ filter เปลี่ยน หรือหลังยกเลิกการจับคู่สำเร็จ (reloadToken)
   useEffect(() => {
@@ -677,7 +1015,9 @@ export default function MatchHistoryWorkspace() {
         setMatches(data.matches);
         setTotal(data.total ?? data.matches.length);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
-        if (data.sideCounts) setSideCounts(data.sideCounts);
+        // จำนวนต่อแท็บ AP/AR/All มาจากการโหลดแท็บจับคู่เท่านั้น — ตอนอยู่แท็บหักล้างกันเองคงเลขเดิมไว้
+        if (data.sideCounts && view === "MATCHED") setSideCounts(data.sideCounts);
+        if (view === "OFFSET") setOffsetCount(data.total ?? data.matches.length);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
           setError("เชื่อมต่อ server ไม่ได้");
@@ -694,7 +1034,7 @@ export default function MatchHistoryWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [params, reloadToken]);
+  }, [params, reloadToken, view]);
 
   const hasMore = matches.length < total;
 
@@ -755,7 +1095,16 @@ export default function MatchHistoryWorkspace() {
   }, [loadMore, hasMore]);
 
   function updateSide(next: Side) {
+    setView("MATCHED");
     setSide(next);
+    // วันที่บันทึก (CREATED) มีเฉพาะแท็บหักล้างกันเอง
+    if (dateBasis === "CREATED") setDateBasis("BANK");
+    setSelectedKeys(new Set());
+  }
+  function openOffsetView() {
+    setView("OFFSET");
+    // หักล้างกันเองไม่มีวันที่ Bank ให้อ้างอิง — สลับไปใช้วันที่ลงบัญชี BC แทน
+    if (dateBasis === "BANK") setDateBasis("GL");
     setSelectedKeys(new Set());
   }
   function updateBankFilter(code: string) {
@@ -768,6 +1117,20 @@ export default function MatchHistoryWorkspace() {
   }
   function updateTo(v: string) {
     setTo(v);
+    setSelectedKeys(new Set());
+  }
+  function updateDateBasis(next: DateBasis) {
+    setDateBasis(next);
+    setSelectedKeys(new Set());
+  }
+  function submitSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setQuery(queryInput.trim());
+    setSelectedKeys(new Set());
+  }
+  function clearSearch() {
+    setQueryInput("");
+    setQuery("");
     setSelectedKeys(new Set());
   }
   function shiftMonth(offset: number) {
@@ -843,7 +1206,8 @@ export default function MatchHistoryWorkspace() {
 
   function requestUnmatch(groups: SubGroup[]) {
     setUnmatchError("");
-    setPendingUnmatch(groups.map((g) => toUnmatchTarget(g, bankCodeByMatchId.get(g.matchId) ?? "")));
+    const toTarget = view === "OFFSET" ? toOffsetUnmatchTarget : toUnmatchTarget;
+    setPendingUnmatch(groups.map((g) => toTarget(g, bankCodeByMatchId.get(g.matchId) ?? "")));
   }
 
   async function handleConfirmUnmatch(reason: string) {
@@ -875,7 +1239,9 @@ export default function MatchHistoryWorkspace() {
       }
       const groupCount = typeof data.groupCount === "number" ? data.groupCount : pendingUnmatch.length;
       setToast(
-        groupCount > 1
+        view === "OFFSET"
+          ? `ยกเลิกหักล้างกันเองสำเร็จ ${groupCount} กลุ่ม — รายการ BC กลับไปอยู่หน้า Reconcile แล้ว`
+          : groupCount > 1
           ? `ยกเลิกการจับคู่สำเร็จ ${groupCount} กลุ่มย่อย จาก ${targetsByMatchId.size} Match — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น UNMATCHED แล้ว`
           : `ยกเลิกการจับคู่ Match #${pendingUnmatch[0].matchId} กลุ่ม ${pendingUnmatch[0].num} สำเร็จ — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น UNMATCHED แล้ว`
       );
@@ -904,6 +1270,7 @@ export default function MatchHistoryWorkspace() {
         {pendingUnmatch.length > 0 && (
           <UnmatchConfirmModal
             targets={pendingUnmatch}
+            variant={view === "OFFSET" ? "offset" : "match"}
             busy={unmatchBusy}
             onCancel={() => {
               if (!unmatchBusy) {
@@ -930,7 +1297,7 @@ export default function MatchHistoryWorkspace() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white rounded-full shadow-xl pl-5 pr-2 py-2"
             >
-              <span className="text-sm font-medium">{selectedGroups.length} กลุ่มย่อยที่เลือก</span>
+              <span className="text-sm font-medium">{selectedGroups.length} {view === "OFFSET" ? "กลุ่มที่เลือก" : "กลุ่มย่อยที่เลือก"}</span>
               <button onClick={() => setSelectedKeys(new Set())} className="text-xs text-gray-300 hover:text-white px-2">
                 ล้าง
               </button>
@@ -938,126 +1305,226 @@ export default function MatchHistoryWorkspace() {
                 onClick={() => requestUnmatch(selectedGroups)}
                 className="flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 active:scale-95 px-4 py-2 rounded-full transition-all"
               >
-                <Undo2 size={13} /> Unmatch ที่เลือก
+                <Undo2 size={13} /> {view === "OFFSET" ? "ยกเลิกที่เลือก" : "Unmatch ที่เลือก"}
               </button>
             </motion.div>
           )}
         </AnimatePresence>
       </div>
 
-      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">ประวัติการจับคู่ (Match History)</h1>
-      <p className="text-sm text-gray-500 mb-5">
-        ย้อนดูได้ว่า Match แต่ละครั้งจับคู่รายการไหนกับรายการไหนบ้าง — กดคลี่การ์ดเพื่อติ๊กเลือกเป็น
-        &ldquo;กลุ่มย่อย&rdquo; แล้วกด Unmatch เฉพาะกลุ่มที่แมชผิดได้ กลุ่มอื่นใน Match เดียวกันยังจับคู่อยู่ตามเดิม
-        รายการที่ยกเลิกจะคืนสถานะไปจับคู่ใหม่ได้ในหน้า Reconcile (ต้องใส่เหตุผลทุกครั้ง เก็บไว้ตรวจสอบย้อนหลังได้)
-        — หน้านี้แสดงเฉพาะรายการที่จับคู่แล้ว ไม่รวมรายการพักโอน
-      </p>
-
-      {/* แท็บ AP / AR / All — หน้าตาเดียวกับแท็บ AR/AP ของหน้า Dashboard */}
-      <div className="mb-4 flex items-center gap-1 overflow-x-auto border-b border-gray-200">
-        {SIDE_TABS.map((tab) => {
-          const active = side === tab.value;
-          const count = sideCounts?.[tab.value] ?? null;
-          return (
-            <button
-              key={tab.value}
-              onClick={() => updateSide(tab.value)}
-              aria-pressed={active}
-              className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
-                active ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-700"
-              }`}
-            >
-              {tab.label}
-              <span className="text-xs font-normal">{tab.hint}</span>
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
-                  active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
-                }`}
-              >
-                {count === null ? "…" : count.toLocaleString()}
-              </span>
-            </button>
-          );
-        })}
+      <div className="mb-5">
+        <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">ประวัติการจับคู่</h1>
+        <p className="mt-1 text-sm text-gray-500">
+          ค้นหารายการที่เคยจับคู่ ตรวจ Bank เทียบ BC และยกเลิกเฉพาะกลุ่มที่ต้องการแก้ไข
+        </p>
       </div>
 
-      {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
-      {unmatchError && <p className="text-sm text-red-600 mb-4">{unmatchError}</p>}
+      <section className="mb-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.05)]">
+        <div className="border-b border-gray-100 p-4">
+          <form onSubmit={submitSearch} className="flex flex-col gap-2 sm:flex-row">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                size={17}
+                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="search"
+                value={queryInput}
+                onChange={(event) => setQueryInput(event.target.value)}
+                placeholder="ค้นหายอดเงิน, Match ID, เลขเอกสาร, เลข Entry, เช็ค หรือรายละเอียด..."
+                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/70 pl-10 pr-10 text-sm text-gray-800 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
+                aria-label="ค้นหาประวัติการจับคู่ทั้งหมด"
+              />
+              {queryInput && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
+                  aria-label="ล้างคำค้นหา"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+            <button
+              type="submit"
+              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
+            >
+              <Search size={15} /> ค้นหาทั้งหมด
+            </button>
+          </form>
+          <p className="mt-2 text-[11px] text-gray-400">
+            ค้นหาจากข้อมูลทั้งหมดในระบบ ไม่จำกัดเฉพาะรายการที่โหลดอยู่บนหน้าจอ
+          </p>
+        </div>
 
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        <label className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 cursor-pointer select-none">
+        <div className="bg-gray-50/60 p-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
+                <SlidersHorizontal size={12} /> อ้างอิงวันที่จาก
+              </label>
+              <div className="flex rounded-xl border border-gray-200 bg-white p-1">
+                {DATE_BASIS_OPTIONS[view].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => updateDateBasis(value)}
+                    aria-pressed={dateBasis === value}
+                    className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                      dateBasis === value ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:bg-gray-100"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-medium text-gray-500">ตั้งแต่วันที่</label>
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => updateFrom(e.target.value)}
+                className="h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700"
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-medium text-gray-500">ถึงวันที่</label>
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => updateTo(e.target.value)}
+                className="h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-medium text-gray-500">เลื่อนช่วงเดือน</label>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => shiftMonth(-1)}
+                  title="เดือนก่อนหน้า"
+                  className="flex size-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToThisMonth}
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 hover:text-gray-900"
+                >
+                  <CalendarRange size={13} /> เดือนนี้
+                </button>
+                <button
+                  type="button"
+                  onClick={() => shiftMonth(1)}
+                  title="เดือนถัดไป"
+                  className="flex size-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center gap-2 overflow-x-auto border-t border-gray-200/80 pt-3">
+            <span className="shrink-0 text-[11px] font-semibold text-gray-400">ธนาคาร</span>
+            {banks.map((b) => (
+              <button
+                key={b}
+                type="button"
+                onClick={() => updateBankFilter(b)}
+                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  bankFilter === b ? "bg-blue-600 text-white" : "border border-gray-200 bg-white text-gray-500 hover:bg-gray-100"
+                }`}
+              >
+                {b === "ALL" ? "ทุกธนาคาร" : b}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-1 overflow-x-auto border-t border-gray-100 px-3">
+          {SIDE_TABS.map((tab) => {
+            const active = view === "MATCHED" && side === tab.value;
+            const count = sideCounts?.[tab.value] ?? null;
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => updateSide(tab.value)}
+                aria-pressed={active}
+                className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+                  active ? "border-blue-600 text-blue-700" : "border-transparent text-gray-400 hover:text-gray-700"
+                }`}
+              >
+                {tab.label}
+                <span className="text-xs font-normal">{tab.hint}</span>
+                <span
+                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
+                    active ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"
+                  }`}
+                >
+                  {count === null ? "…" : count.toLocaleString()}
+                </span>
+              </button>
+            );
+          })}
+          <span className="mx-1 h-5 w-px shrink-0 bg-gray-200" aria-hidden />
+          <button
+            type="button"
+            onClick={openOffsetView}
+            aria-pressed={view === "OFFSET"}
+            title="รายการ BC ที่ยกเลิกกันเองจนยอดสุทธิเป็น 0 — ไม่มีเงินผ่านธนาคาร"
+            className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
+              view === "OFFSET" ? "border-teal-600 text-teal-700" : "border-transparent text-gray-400 hover:text-gray-700"
+            }`}
+          >
+            หักล้างกันเอง
+            <span className="text-xs font-normal">BC ล้วน</span>
+            {offsetCount !== null && (
+              <span
+                className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
+                  view === "OFFSET" ? "bg-teal-100 text-teal-700" : "bg-gray-100 text-gray-500"
+                }`}
+              >
+                {offsetCount.toLocaleString()}
+              </span>
+            )}
+          </button>
+        </div>
+      </section>
+
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {unmatchError && <p className="mb-4 text-sm text-red-600">{unmatchError}</p>}
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-gray-500">
+          <span>
+            พบ <strong className="font-semibold text-gray-900">{total.toLocaleString()}</strong> Match
+          </span>
+          {query && (
+            <span className="inline-flex max-w-[320px] items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+              <span className="truncate">“{query}”</span>
+              <button type="button" onClick={clearSearch} className="shrink-0 rounded-full hover:bg-blue-100" aria-label="ล้างคำค้นหา">
+                <X size={12} />
+              </button>
+            </span>
+          )}
+        </div>
+        <label className="inline-flex cursor-pointer select-none items-center gap-1.5 text-xs font-medium text-gray-500">
           <input
             type="checkbox"
             checked={allEligibleSelected}
             onChange={toggleSelectAll}
             disabled={eligibleGroups.length === 0}
-            className="w-3.5 h-3.5 rounded border-gray-300"
+            className="size-3.5 rounded border-gray-300"
           />
-          เลือกทุกกลุ่มย่อยที่ยกเลิกได้ในหน้านี้ ({eligibleGroups.length})
+          เลือกทุกกลุ่มที่ยกเลิกได้ ({eligibleGroups.length})
         </label>
-        <span className="w-px h-5 bg-gray-200 mx-1" />
-        {banks.map((b) => (
-          <button
-            key={b}
-            onClick={() => updateBankFilter(b)}
-            className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
-              bankFilter === b ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
-            {b === "ALL" ? "ทุกธนาคาร" : b}
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide pb-1.5">
-          <SlidersHorizontal size={13} /> กรองวันที่ Bank Statement
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">ตั้งแต่วันที่</label>
-          <input
-            type="date"
-            value={from}
-            onChange={(e) => updateFrom(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">ถึงวันที่</label>
-          <input
-            type="date"
-            value={to}
-            onChange={(e) => updateTo(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">เลือกเดือน</label>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => shiftMonth(-1)}
-              title="เดือนก่อนหน้า"
-              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={resetToThisMonth}
-              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:text-gray-900"
-            >
-              <CalendarRange size={13} /> เดือนนี้
-            </button>
-            <button
-              onClick={() => shiftMonth(1)}
-              title="เดือนถัดไป"
-              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
       </div>
 
       {loading && matches.length === 0 && (
@@ -1067,7 +1534,9 @@ export default function MatchHistoryWorkspace() {
       )}
 
       {!loading && matches.length === 0 && (
-        <div className="text-center text-sm text-gray-400 py-10">ไม่พบประวัติการจับคู่ที่มีรายการ Bank Statement ในช่วงวันที่และเงื่อนไขที่เลือก</div>
+        <div className="text-center text-sm text-gray-400 py-10">{view === "OFFSET"
+            ? "ไม่พบรายการหักล้างกันเองในช่วงวันที่และเงื่อนไขที่เลือก"
+            : "ไม่พบประวัติการจับคู่ที่มีรายการ Bank Statement ในช่วงวันที่และเงื่อนไขที่เลือก"}</div>
       )}
 
       {matches.length > 0 && (
@@ -1078,7 +1547,18 @@ export default function MatchHistoryWorkspace() {
             aria-busy={loading}
             className={`flex flex-col gap-3 transition-opacity duration-200 ${loading ? "opacity-50 pointer-events-none" : ""}`}
           >
-            {matches.map((m) => (
+            {matches.map((m) =>
+              view === "OFFSET" ? (
+                <OffsetMatchCard
+                  key={m.matchId}
+                  match={m}
+                  groups={groupsByMatchId.get(m.matchId) ?? []}
+                  selectedKeys={selectedKeys}
+                  onToggleGroup={toggleGroup}
+                  onToggleAllGroups={toggleAllGroupsOfMatch}
+                  onRequestUnmatch={requestUnmatch}
+                />
+              ) : (
               <MatchCard
                 key={m.matchId}
                 match={m}
@@ -1088,7 +1568,8 @@ export default function MatchHistoryWorkspace() {
                 onToggleAllGroups={toggleAllGroupsOfMatch}
                 onRequestUnmatch={requestUnmatch}
               />
-            ))}
+              )
+            )}
           </div>
 
           <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">

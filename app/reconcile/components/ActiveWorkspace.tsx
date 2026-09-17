@@ -584,7 +584,6 @@ function DateGroupRow({
 
 function Panel({
   title,
-  subtitle,
   notchSide,
   totalLabel,
   allItems,
@@ -614,10 +613,7 @@ function Panel({
   onScroll,
 }: {
   title: string;
-  // บัญชีที่ตารางนี้กำลังแสดง — ต้องเห็นตลอดเวลา เพราะยอดรวมด้านล่างหมายถึงบัญชีนี้บัญชีเดียว
-  subtitle?: string;
-  // มุมบนด้านในที่ถูกกล่องผลต่าง "แหว่ง" ไป — เว้นที่ให้ด้วยการเติม padding แถวแรกของหัวตาราง
-  // ("right" = ตารางฝั่งซ้ายโดนแหว่งมุมบนขวา / "left" = ตารางฝั่งขวาโดนแหว่งมุมบนซ้าย)
+  // ระบุฝั่งของ panel ใน shared frame — ใช้กำหนดเส้นแบ่งกลางและการจัดหัวข้อให้สมมาตร
   notchSide?: "left" | "right";
   totalLabel: string;
   allItems: LineItem[];
@@ -664,29 +660,33 @@ function Panel({
   }, [filtered]);
 
   return (
-    <div className="flex flex-col bg-white border border-gray-200 rounded-2xl overflow-hidden min-w-0 lg:h-full">
-      {/* หัวตาราง 2 แถว: แถวบนเป็นข้อความล้วน (เว้นที่ให้รอยแหว่งได้) แถวล่างเป็นปุ่มควบคุม
-          เดิมรวมเป็นแถวเดียวโดยเอาปุ่มไว้ขวาสุด ซึ่งชนกับรอยแหว่งที่มุมบนด้านในพอดี */}
+    <div
+      className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white lg:h-full ${
+        notchSide === "right"
+          ? "lg:rounded-none lg:border-0"
+          : notchSide === "left"
+            ? "lg:rounded-none lg:border-y-0 lg:border-r-0 lg:border-l lg:border-l-slate-200"
+            : ""
+      }`}
+    >
+      {/* หัวตาราง: summary row เดียวด้านบนและปุ่มควบคุมด้านล่าง */}
       <div className="px-4 py-3 border-b border-gray-100 shrink-0">
         <div
-          className={`min-w-0 ${
-            notchSide === "right" ? "lg:pr-[122px]" : notchSide === "left" ? "lg:pl-[122px]" : ""
+          className={`flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 ${
+            notchSide === "left" ? "lg:justify-end lg:text-right" : ""
           }`}
         >
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <h2 className="font-semibold text-[15px] text-gray-900 whitespace-nowrap">{title}</h2>
-            <span className="text-xs text-gray-400 whitespace-nowrap">
-              {selectedInDirection} selected · {filtered.length} pending
-            </span>
-          </div>
-          {subtitle && (
-            <p className="text-[11px] text-gray-500 truncate mt-0.5" title={subtitle}>
-              {subtitle}
-            </p>
-          )}
-          <p className="text-[11px] font-medium text-gray-400 tracking-wide mt-0.5 whitespace-nowrap">
+          <h2 className="whitespace-nowrap text-[15px] font-semibold text-gray-900">{title}</h2>
+          <span className="whitespace-nowrap text-xs text-gray-400">
+            {selectedInDirection} selected · {filtered.length} pending
+          </span>
+          <p
+            className={`whitespace-nowrap text-[11px] font-medium tracking-wide text-gray-400 ${
+              notchSide === "left" ? "lg:order-first lg:mr-auto lg:text-left" : "lg:ml-auto lg:text-right"
+            }`}
+          >
             {totalLabel}{" "}
-            <span className="text-sm font-semibold text-gray-900 tabular-nums tracking-normal">
+            <span className="text-sm font-semibold tracking-normal text-gray-900 tabular-nums">
               {loading ? "—" : formatAmount(pendingTotal)}
             </span>{" "}
             บาท
@@ -1779,8 +1779,8 @@ export default function ActiveWorkspace({
 
       {/* Active workspace มีรูปแบบเดียว: ตารางเต็มพื้นที่พร้อมแถบคำสั่งแบบบางด้านบน */}
       <div className="shrink-0 px-4 pt-3 sm:px-6">
-        <div className="flex min-h-14 items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(15,23,42,0.10),inset_0_1px_0_white] backdrop-blur-xl">
-          <div className="min-w-0 flex-1 px-1">
+        <div className="relative flex min-h-14 items-center gap-3 rounded-2xl border border-slate-200/90 bg-white/95 px-3 py-2 shadow-[0_10px_30px_rgba(15,23,42,0.10),inset_0_1px_0_white] backdrop-blur-xl">
+          <div className="min-w-0 flex-1 px-1 lg:max-w-[calc(50%_-_104px)]">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.10)]" />
               <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Reconcile</p>
@@ -1801,7 +1801,14 @@ export default function ActiveWorkspace({
             )}
           </div>
 
-          <div className="flex shrink-0 items-center gap-1.5">
+          <DifferenceBadge
+            bankTotal={bankPendingTotal}
+            glTotal={glPendingTotal}
+            loading={loading}
+            floating
+          />
+
+          <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
                 onClick={handleResetWorkspace}
@@ -1810,7 +1817,7 @@ export default function ActiveWorkspace({
                 title="โหลดข้อมูลใหม่"
               >
                 <RotateCcw size={14} />
-                <span className="hidden xl:inline">รีเซ็ต</span>
+                <span className="hidden 2xl:inline">รีเซ็ต</span>
               </button>
               <button
                 type="button"
@@ -1826,7 +1833,7 @@ export default function ActiveWorkspace({
                 />
                 <span className="relative flex h-8 items-center gap-1.5 rounded-[10px] bg-white px-3 text-xs font-semibold text-violet-700">
                   <WandSparkles size={14} />
-                  <span>ผู้ช่วยจับคู่</span>
+                  <span className="hidden 2xl:inline">ผู้ช่วยจับคู่</span>
                 </span>
               </button>
               <button
@@ -1845,7 +1852,7 @@ export default function ActiveWorkspace({
                 }
               >
                 <Link2 size={14} />
-                <span>ลิงก์วันที่</span>
+                <span className="hidden 2xl:inline">ลิงก์วันที่</span>
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
                     linkDates ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
@@ -1861,24 +1868,16 @@ export default function ActiveWorkspace({
                 title="เปลี่ยนธนาคาร บัญชี หรือช่วงวันที่"
               >
                 <Pencil size={14} />
-                <span className="hidden xl:inline">แก้ไขเงื่อนไข</span>
+                <span className="hidden 2xl:inline">แก้ไขเงื่อนไข</span>
               </button>
           </div>
         </div>
       </div>
 
       <div className="relative px-4 pb-4 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pt-2">
-        {/* relative เพราะกล่องผลต่างลอยอยู่ที่มุมบนตรงกลาง คร่อมรอยต่อของสองตาราง */}
-        <div className="relative grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2 lg:gap-3">
-          <DifferenceBadge
-            bankTotal={bankPendingTotal}
-            glTotal={glPendingTotal}
-            loading={loading}
-            floating
-          />
+        <div className="relative grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2 lg:gap-0 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
           <Panel
             title="Bank statement"
-            subtitle={accountFullLabel}
             notchSide="right"
             totalLabel="BANK TOTAL"
             allItems={bankLines}
@@ -1912,7 +1911,6 @@ export default function ActiveWorkspace({
 
           <Panel
             title="General Ledger (BC365)"
-            subtitle={accountFullLabel}
             notchSide="left"
             totalLabel="GL TOTAL"
             allItems={glLines}

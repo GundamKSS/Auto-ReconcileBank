@@ -16,6 +16,8 @@ export type UnmatchTarget = {
   bankTotal: number;
   glTotal: number;
 };
+// variant "offset" = ยกเลิกหักล้างกันเอง: ไม่มีฝั่ง Bank — ใช้ bankTotal/glTotal เป็นยอดรวม "ขาเข้า/ขาออก" ของกลุ่มแทน
+export type UnmatchVariant = "match" | "offset";
 
 function formatAmount(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -23,11 +25,13 @@ function formatAmount(n: number) {
 
 export default function UnmatchConfirmModal({
   targets,
+  variant = "match",
   busy,
   onCancel,
   onConfirm,
 }: {
   targets: UnmatchTarget[];
+  variant?: UnmatchVariant;
   busy: boolean;
   onCancel: () => void;
   onConfirm: (reason: string) => void;
@@ -38,6 +42,7 @@ export default function UnmatchConfirmModal({
   const glTotal = targets.reduce((s, t) => s + t.glTotal, 0);
   const matchCount = new Set(targets.map((t) => t.matchId)).size;
   const isBulk = targets.length > 1;
+  const isOffset = variant === "offset";
 
   return (
     <motion.div
@@ -61,13 +66,31 @@ export default function UnmatchConfirmModal({
             <AlertTriangle size={18} className="text-amber-500" />
             <div>
               <h2 className="text-base font-semibold text-gray-900">
-                {isBulk ? `ยืนยันยกเลิกการจับคู่ (${targets.length} กลุ่มย่อย)` : "ยืนยันยกเลิกการจับคู่"}
+                {isOffset
+                  ? isBulk
+                    ? `ยืนยันยกเลิกหักล้างกันเอง (${targets.length} กลุ่ม)`
+                    : "ยืนยันยกเลิกหักล้างกันเอง"
+                  : isBulk
+                    ? `ยืนยันยกเลิกการจับคู่ (${targets.length} กลุ่มย่อย)`
+                    : "ยืนยันยกเลิกการจับคู่"}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {isBulk
-                  ? `กลุ่มย่อยที่เลือกทั้งหมดจาก ${matchCount} Match จะกลับไปเป็น UNMATCHED และไปจับคู่ใหม่ได้ในหน้า Reconcile`
-                  : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode} — เฉพาะกลุ่มย่อยนี้จะกลับไปเป็น UNMATCHED และไปจับคู่ใหม่ได้ในหน้า Reconcile`}
-                {" "}(กลุ่มย่อยอื่นใน Match เดียวกันยังจับคู่อยู่ตามเดิม และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้)
+                {isOffset ? (
+                  <>
+                    {isBulk
+                      ? `กลุ่มที่เลือกทั้งหมดจาก ${matchCount} Match`
+                      : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode}`}{" "}
+                    — รายการ BC จะกลับไปอยู่หน้า Reconcile (คู่กลับรายการใน BC กลับไปรอยืนยันในหน้าต่างหักล้างกันเอง)
+                    และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้
+                  </>
+                ) : (
+                  <>
+                    {isBulk
+                      ? `กลุ่มย่อยที่เลือกทั้งหมดจาก ${matchCount} Match จะกลับไปเป็น UNMATCHED และไปจับคู่ใหม่ได้ในหน้า Reconcile`
+                      : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode} — เฉพาะกลุ่มย่อยนี้จะกลับไปเป็น UNMATCHED และไปจับคู่ใหม่ได้ในหน้า Reconcile`}
+                    {" "}(กลุ่มย่อยอื่นใน Match เดียวกันยังจับคู่อยู่ตามเดิม และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้)
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -84,12 +107,12 @@ export default function UnmatchConfirmModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div className="border border-gray-200 rounded-xl p-3">
               <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">
-                Bank statement รวม · {formatAmount(bankTotal)}
+                {isOffset ? "ขาเข้า (IN) รวม" : "Bank statement รวม"} · {formatAmount(bankTotal)}
               </p>
             </div>
             <div className="border border-gray-200 rounded-xl p-3">
               <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">
-                General Ledger รวม · {formatAmount(glTotal)}
+                {isOffset ? "ขาออก (OUT) รวม" : "General Ledger รวม"} · {formatAmount(glTotal)}
               </p>
             </div>
           </div>
@@ -101,7 +124,7 @@ export default function UnmatchConfirmModal({
                 <span className="text-gray-500 shrink-0">กลุ่ม {t.num}</span>
                 <span className="text-gray-400 shrink-0">{t.bankCode}</span>
                 <span className="text-gray-400 flex-1 min-w-0 truncate">
-                  Bank {t.bankCount} · GL {t.glCount}
+                  {isOffset ? `BC ${t.bankCount + t.glCount} รายการ` : `Bank ${t.bankCount} · GL ${t.glCount}`}
                 </span>
                 <span className="tabular-nums text-gray-700 shrink-0">{formatAmount(t.bankTotal)}</span>
               </div>
@@ -137,7 +160,7 @@ export default function UnmatchConfirmModal({
             className="flex items-center gap-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-50 disabled:active:scale-100"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-            {isBulk ? `ยืนยันยกเลิกทั้งหมด (${targets.length})` : "ยืนยันยกเลิกการจับคู่"}
+            {isBulk ? `ยืนยันยกเลิกทั้งหมด (${targets.length})` : isOffset ? "ยืนยันยกเลิก" : "ยืนยันยกเลิกการจับคู่"}
           </button>
         </div>
       </motion.div>

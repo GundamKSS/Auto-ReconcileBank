@@ -13,14 +13,17 @@ const PAGE_SIZE = 50;
  *
  * Query params:
  *   bankCode  - รหัสธนาคาร หรือไม่ใส่ = ทุกธนาคาร
- *   matchType - 'MATCHED' | 'SUSPENSE' หรือไม่ใส่ = ทั้งคู่
+ *   matchType - 'MATCHED' | 'SUSPENSE' | 'OFFSET' (หักล้างกันเอง) หรือไม่ใส่ = ทุกประเภท
+ *               OFFSET มีแต่บรรทัดฝั่ง GL — ใช้คู่กับ dateBasis GL/CREATED และ side ALL เท่านั้น
+ *               (dateBasis BANK หรือ side AR/AP กรองจากบรรทัด Bank จึงไม่มีทางเจอ)
  *   side      - 'AR' (เงินเข้า) | 'AP' (เงินออก) หรือไม่ใส่/ALL = ทั้งคู่ — ความหมายเดียวกับหน้า Dashboard/Reports
  *               ดูจากทิศทางของบรรทัดฝั่ง Bank ใน Match (Credit มีค่า = เงินเข้า) Match ที่มีทั้งสองทิศปนกัน
  *               จะโผล่ทั้งสองแท็บ เพราะมีรายการของทั้งสองฝั่งอยู่จริง
- *   dateBasis - 'BANK' = from/to กรองที่วันที่ของ Bank Statement (TranDate)
- *               'CREATED' หรือไม่ใส่ = กรองที่เวลาที่กดจับคู่ (CreatedAt) แบบเดิม — หน้า Suspense ยังใช้แบบนี้
+ *   dateBasis - 'BANK' = วันที่ Bank Statement, 'GL' = วันที่ลงบัญชี BC (Posting_Date)
+ *               'CREATED' หรือไม่ใส่ = เวลาที่กดจับคู่ (หน้า Suspense ยังใช้แบบนี้)
  *   from, to  - ช่วงวันที่ YYYY-MM-DD (ไม่ใส่ = ไม่กรองวันที่)
- *   q         - ค้นหาข้อความอิสระ — ตรงกับ MatchId, รายละเอียดฝั่ง Bank, หรือเลขที่/ชื่อบัญชีฝั่ง GL
+ *   q         - ค้นหาทั้ง MatchId, Line/Entry No., ยอดเงิน, รายละเอียด/เช็คฝั่ง Bank,
+ *               เลขเอกสาร/เลขบัญชี/ชื่อบัญชีฝั่ง GL, ธนาคาร และผู้จับคู่
  *   offset    - เริ่มที่ Match ลำดับที่เท่าไร (infinite scroll ทีละ 50 Match)
  *
  * ตอบกลับ total + bankCodes + sideCounts เฉพาะตอนโหลดหน้าแรก (offset = 0) เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll
@@ -37,6 +40,7 @@ export async function GET(req: NextRequest) {
     const to = params.get('to');
     const rawQ = params.get('q');
     const q = rawQ && rawQ.trim() ? rawQ.trim() : null;
+    const qCompact = q?.replace(/,/g, '') ?? null;
     const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
 
     const rawSide = params.get('side')?.toUpperCase() ?? 'ALL';
@@ -44,8 +48,10 @@ export async function GET(req: NextRequest) {
     const side = rawSide as 'AR' | 'AP' | 'ALL';
 
     const rawBasis = params.get('dateBasis')?.toUpperCase() ?? 'CREATED';
-    if (rawBasis !== 'BANK' && rawBasis !== 'CREATED') return badRequest('dateBasis ต้องเป็น BANK หรือ CREATED');
-    const dateBasis = rawBasis as 'BANK' | 'CREATED';
+    if (rawBasis !== 'BANK' && rawBasis !== 'GL' && rawBasis !== 'CREATED') {
+      return badRequest('dateBasis ต้องเป็น BANK, GL หรือ CREATED');
+    }
+    const dateBasis = rawBasis as 'BANK' | 'GL' | 'CREATED';
 
     // ตรวจรูปแบบและลำดับวันที่ก่อนส่งเข้า query — ค่าผิดต้องได้ 400 พร้อมข้อความที่อ่านรู้เรื่อง
     // ไม่ใช่ปล่อยให้ mssql โยน "Validation failed for parameter 'from'" ออกมาเป็น 500
@@ -63,6 +69,7 @@ export async function GET(req: NextRequest) {
       toDateExclusive.setUTCDate(toDateExclusive.getUTCDate() + 1);
     }
     const byBankDate = dateBasis === 'BANK' && Boolean(fromDate || toDate);
+    const byGlDate = dateBasis === 'GL' && Boolean(fromDate || toDate);
 
     // เงื่อนไขของ "บรรทัดฝั่ง Bank" — ทิศทาง (AR/AP) กับวันที่ Bank ต้องเป็นของบรรทัดเดียวกัน จึงรวมไว้ใน EXISTS ก้อนเดียว
     // ไม่งั้นแท็บ AR + เดือน ส.ค. จะได้ Match ที่มีเงินเข้าเดือน ก.ค. กับเงินออกเดือน ส.ค. ติดมาด้วย
@@ -81,6 +88,19 @@ export async function GET(req: NextRequest) {
       )`;
     }
 
+    function glLineExists() {
+      if (!byGlDate) return '';
+      const conds = [
+        fromDate ? 'x_e.Posting_Date >= @glFrom' : '',
+        toDate ? 'x_e.Posting_Date <= @glTo' : '',
+      ].filter(Boolean);
+      return `AND EXISTS (
+        SELECT 1 FROM ReconciliationMatchLine x_rml
+        JOIN BankAccountLedgerEntries x_e ON x_e.Entry_No = x_rml.GLEntryNo
+        WHERE x_rml.MatchId = rm.MatchId AND x_rml.SourceType = 'GL' AND ${conds.join(' AND ')}
+      )`;
+    }
+
     // ค้นหาต้องเห็นได้ทุก Match ในระบบ ไม่ใช่แค่หน้าที่โหลดมาแล้ว จึงกรองที่ SQL ไม่ใช่ฝั่ง client
     // (ต่างจาก MatchId ที่ cast ตรงๆ ได้ — คำค้นอาจตรงกับรายละเอียดฝั่ง Bank หรือ GL เท่านั้น เลยต้อง EXISTS
     // เข้าไปเช็คที่บรรทัดย่อยของ Match นั้น ตาม SourceType)
@@ -95,23 +115,40 @@ export async function GET(req: NextRequest) {
           q
             ? `AND (
                 CAST(rm.MatchId AS NVARCHAR(20)) LIKE @q
+                OR rm.BankCode LIKE @q
+                OR rm.CreatedBy LIKE @q
                 OR EXISTS (
                   SELECT 1 FROM ReconciliationMatchLine q_rml
                   JOIN BankStatementLine q_bsl ON q_bsl.LineId = q_rml.BankLineId
-                  WHERE q_rml.MatchId = rm.MatchId AND q_rml.SourceType = 'BANK' AND q_bsl.Description LIKE @q
+                  WHERE q_rml.MatchId = rm.MatchId AND q_rml.SourceType = 'BANK'
+                    AND (
+                      CAST(q_bsl.LineId AS NVARCHAR(30)) LIKE @q
+                      OR q_bsl.Description LIKE @q
+                      OR q_bsl.ChequeNo LIKE @q
+                      OR q_bsl.RawDescription LIKE @q
+                      OR CONVERT(NVARCHAR(50), q_bsl.Credit) LIKE @qCompact
+                      OR CONVERT(NVARCHAR(50), q_bsl.Debit) LIKE @qCompact
+                    )
                 )
                 OR EXISTS (
                   SELECT 1 FROM ReconciliationMatchLine q_rml
                   JOIN BankAccountLedgerEntries q_e ON q_e.Entry_No = q_rml.GLEntryNo
                   LEFT JOIN BankAccountMapping q_m ON q_m.BankAccountNo = q_e.Bank_Account_No
                   WHERE q_rml.MatchId = rm.MatchId AND q_rml.SourceType = 'GL'
-                    AND (q_e.Document_No LIKE @q OR q_m.BankAccountName LIKE @q)
+                    AND (
+                      CAST(q_e.Entry_No AS NVARCHAR(30)) LIKE @q
+                      OR q_e.Document_No LIKE @q
+                      OR q_e.Bank_Account_No LIKE @q
+                      OR q_m.BankAccountName LIKE @q
+                      OR CONVERT(NVARCHAR(50), q_e.Debit_Amount_LCY) LIKE @qCompact
+                      OR CONVERT(NVARCHAR(50), q_e.Credit_Amount_LCY) LIKE @qCompact
+                    )
                 )
               )`
             : ''
         }
     `;
-    const whereClause = `${baseWhere} ${bankLineExists(side)}`;
+    const whereClause = `${baseWhere} ${bankLineExists(side)} ${glLineExists()}`;
 
     // ทุก query ที่ใช้ baseWhere ต้อง bind พารามิเตอร์ชุดเดียวกัน — รวมไว้ที่เดียวกันลืม
     function bindFilters(request: sql.Request) {
@@ -121,7 +158,12 @@ export async function GET(req: NextRequest) {
       if (dateBasis === 'CREATED' && toDateExclusive) request.input('to', sql.DateTime2, toDateExclusive);
       if (byBankDate && fromDate) request.input('bankFrom', sql.Date, fromDate);
       if (byBankDate && toDate) request.input('bankTo', sql.Date, toDate);
-      if (q) request.input('q', sql.NVarChar, `%${q}%`);
+      if (byGlDate && fromDate) request.input('glFrom', sql.Date, fromDate);
+      if (byGlDate && toDate) request.input('glTo', sql.Date, toDate);
+      if (q) {
+        request.input('q', sql.NVarChar, `%${q}%`);
+        request.input('qCompact', sql.NVarChar, `%${qCompact}%`);
+      }
       return request;
     }
 
@@ -158,7 +200,7 @@ export async function GET(req: NextRequest) {
     // 3) รายละเอียดฝั่ง Bank เฉพาะ MatchId หน้านี้ (join กลับ BankStatementLine) — ดึง Num มาด้วย
     const bankLinesResult = await pool.request().query(`
       SELECT rm.MatchId, rml.Num, rml.Status, rml.ReversedAt, rml.ReversedBy, rml.ReversedReason,
-             bsl.LineId, bsl.TranDate, bsl.Description, bsl.Debit, bsl.Credit
+             bsl.LineId, bsl.TranDate, bsl.Description, bsl.ChequeNo, bsl.Debit, bsl.Credit
       FROM ReconciliationMatch rm
       JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'BANK'
       JOIN BankStatementLine bsl ON bsl.LineId = rml.BankLineId
@@ -168,7 +210,7 @@ export async function GET(req: NextRequest) {
     // 4) รายละเอียดฝั่ง GL เฉพาะ MatchId หน้านี้ (join กลับ BankAccountLedgerEntries)
     const glLinesResult = await pool.request().query(`
       SELECT rm.MatchId, rml.Num, rml.Status, rml.ReversedAt, rml.ReversedBy, rml.ReversedReason,
-             e.Entry_No, e.Posting_Date, e.Document_No, e.Bank_Account_No,
+             e.Entry_No, e.Posting_Date, e.Document_No, e.Bank_Account_No, e.Source_Code,
              m.BankAccountName, e.Debit_Amount_LCY, e.Credit_Amount_LCY
       FROM ReconciliationMatch rm
       JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'GL'
@@ -185,6 +227,7 @@ export async function GET(req: NextRequest) {
         lineId: Number(r.LineId),
         num: r.Num,
         date: r.TranDate,
+        ref: r.ChequeNo,
         description: r.Description,
         direction: r.Credit !== null ? 'IN' : 'OUT',
         amount: r.Credit !== null ? r.Credit : r.Debit,
@@ -204,7 +247,10 @@ export async function GET(req: NextRequest) {
         num: r.Num,
         date: r.Posting_Date,
         ref: r.Document_No,
+        accountNo: r.Bank_Account_No,
         accountName: r.BankAccountName,
+        // หน้าประวัติหักล้างกันเองใช้แยก "กลับรายการใน BC" ออกจาก "จับคู่เอง" (lib/glOffset.ts)
+        sourceCode: r.Source_Code ?? null,
         direction: glDirection(r),
         amount: glAmount(r),
         status: r.Status ?? 'ACTIVE',
@@ -250,7 +296,7 @@ export async function GET(req: NextRequest) {
           CASE WHEN 1=1 ${bankLineExists('AR')} THEN 1 ELSE 0 END AS IsAr,
           CASE WHEN 1=1 ${bankLineExists('AP')} THEN 1 ELSE 0 END AS IsAp
         FROM ReconciliationMatch rm
-        ${baseWhere} ${bankLineExists('ALL')}
+        ${baseWhere} ${bankLineExists('ALL')} ${glLineExists()}
       ) t
     `);
     const counts = countResult.recordset[0] ?? {};
