@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { ReconcileSession, BankStatementImportSummary } from "./types";
 import { BankAccountOption, fullAccountLabel } from "../../../lib/bankAccounts";
+import OpeningBalanceInput, { parseAmountInput } from "./OpeningBalanceInput";
 
 const BANKS = [
   { code: "BBL", label: "ธนาคารกรุงเทพ (BBL)" },
@@ -19,6 +20,23 @@ const ANIM_MS = 180;
 function toDateInputValue(iso: string) {
   return iso ? iso.slice(0, 10) : "";
 }
+function formatAmount(n: number) {
+  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatDMY(iso: string) {
+  const [y, m, d] = iso.slice(0, 10).split("-");
+  return `${d}/${m}/${y}`;
+}
+
+// ยอดยกมาของงวดจาก /api/reconcile/balance — เฉพาะส่วนที่หน้าต่างนี้ใช้
+type OpeningInfo = {
+  key: string;
+  extrasReady: boolean;
+  bankOpening: number | null;
+  glOpening: number | null;
+  suggestedOpening: number | null;
+  suggestedFromPeriod: string | null;
+};
 
 export default function NewReconciliationModal({
   initialSession,
@@ -50,6 +68,16 @@ export default function NewReconciliationModal({
   const [includeSuspenseBuffer, setIncludeSuspenseBuffer] = useState(
     initialSession?.includeSuspenseBuffer ?? false
   );
+
+  // ยอดยกมา GL ของงวด — กรอกครั้งเดียวต่อบัญชีต่องวดตอนสร้างงาน (ประชุม 17 ก.ย. 2026)
+  // ฝั่ง Bank ไม่ต้องกรอก ระบบคำนวณจากยอดคงเหลือในไฟล์ statement ให้
+  const [loadedOpening, setLoadedOpening] = useState<OpeningInfo | null>(null);
+  // ผลที่โหลดไว้ใช้ได้เฉพาะบัญชี/ช่วงวันที่เดียวกับที่เลือกอยู่ — เปลี่ยนเงื่อนไขแล้วช่องจะซ่อนจนกว่าจะโหลดใหม่เสร็จ
+  const openingKey = `${bankAccountNo}|${periodStart}|${periodEnd}`;
+  const openingInfo = loadedOpening?.key === openingKey ? loadedOpening : null;
+  const [openingText, setOpeningText] = useState("");
+  const [openingError, setOpeningError] = useState("");
+  const [starting, setStarting] = useState(false);
 
   // ควบคุม enter/exit animation เอง แทนที่จะ unmount ทันที กันความรู้สึก "ตัดฉับ"
   const [visible, setVisible] = useState(false);
@@ -131,6 +159,36 @@ export default function NewReconciliationModal({
     };
   }, [bankCode, bankAccountNo]);
 
+  useEffect(() => {
+    if (!bankAccountNo || !periodStart || !periodEnd || periodStart > periodEnd) return;
+    let cancelled = false;
+    // หน่วงไว้ก่อน ผู้ใช้พิมพ์วันที่ทีละตัวจะได้ไม่ยิง API ทุกครั้งที่กดคีย์
+    const timer = setTimeout(async () => {
+      try {
+        const qs = new URLSearchParams({ bankAccountNo, from: periodStart, to: periodEnd });
+        const res = await fetch(`/api/reconcile/balance?${qs}`);
+        const data = await res.json();
+        if (cancelled || !res.ok) return;
+        setOpeningError("");
+        setLoadedOpening({
+          key: `${bankAccountNo}|${periodStart}|${periodEnd}`,
+          extrasReady: Boolean(data.extrasReady),
+          bankOpening: data.bank?.opening ?? null,
+          glOpening: data.gl?.opening ?? null,
+          suggestedOpening: data.gl?.suggestedOpening ?? null,
+          suggestedFromPeriod: data.gl?.suggestedFromPeriod ?? null,
+        });
+        setOpeningText(data.gl?.opening !== null && data.gl?.opening !== undefined ? formatAmount(data.gl.opening) : "");
+      } catch {
+        // ไม่มียอดยกมาก็เริ่มงานได้ — ไปกรอกทีหลังในหน้าสรุปยอดคงเหลือ
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [bankAccountNo, periodStart, periodEnd]);
+
   function handleImportChange(value: string) {
     setSelectedImportId(value);
     if (value === CUSTOM_RANGE) return;
@@ -164,8 +222,37 @@ export default function NewReconciliationModal({
     bankCode && periodStart && periodEnd && !rangeError && (accounts.length === 0 || bankAccountNo)
   );
 
-  function handleStart() {
-    if (!canStart) return;
+  async function handleStart() {
+    if (!canStart || starting) return;
+
+    // บันทึกยอดยกมา GL ก่อนเข้างาน ถ้ากรอกไว้และต่างจากที่บันทึกไว้เดิม — ไม่กรอกก็เริ่มงานได้
+    const amount = openingText.trim() === "" ? null : parseAmountInput(openingText);
+    if (openingText.trim() !== "" && amount === null) {
+      setOpeningError("ยอดยกมา GL ต้องเป็นตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง");
+      return;
+    }
+    if (openingInfo?.extrasReady && bankAccountNo && amount !== null && amount !== openingInfo.glOpening) {
+      setStarting(true);
+      setOpeningError("");
+      try {
+        const res = await fetch("/api/reconcile/balance", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bankAccountNo, periodStart, glOpeningBalance: amount }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setOpeningError(data.error || "บันทึกยอดยกมาไม่สำเร็จ");
+          return;
+        }
+      } catch {
+        setOpeningError("เชื่อมต่อ server ไม่ได้");
+        return;
+      } finally {
+        setStarting(false);
+      }
+    }
+
     const imp = imports.find((i) => String(i.ImportId) === selectedImportId);
     const session: ReconcileSession = {
       bankCode,
@@ -318,6 +405,28 @@ export default function NewReconciliationModal({
             </p>
           )}
 
+          {openingInfo?.extrasReady && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                ยอดยกมา GL (BC365) ณ ต้นวันที่ {formatDMY(periodStart)}
+              </label>
+              <OpeningBalanceInput
+                value={openingText}
+                onChange={(v) => {
+                  setOpeningText(v);
+                  setOpeningError("");
+                }}
+                suggestion={openingInfo.glOpening === null ? openingInfo.suggestedOpening : null}
+                suggestionFrom={openingInfo.suggestedFromPeriod ? formatDMY(openingInfo.suggestedFromPeriod) : null}
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                กรอกครั้งเดียวต่องวด ใช้เทียบยอดคงเหลือกับธนาคาร
+                {openingInfo.bankOpening !== null && ` · ยอดยกมาฝั่ง Bank จากไฟล์ = ${formatAmount(openingInfo.bankOpening)}`}
+              </p>
+              {openingError && <p className="text-xs text-red-600 mt-1">{openingError}</p>}
+            </div>
+          )}
+
           <label className="flex items-start gap-2.5 cursor-pointer">
             <input
               type="checkbox"
@@ -341,7 +450,7 @@ export default function NewReconciliationModal({
           </button>
           <button
             onClick={handleStart}
-            disabled={!canStart}
+            disabled={!canStart || starting}
             className="text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
           >
             Start Reconcile

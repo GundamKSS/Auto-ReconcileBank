@@ -68,11 +68,11 @@ export default function UnmatchConfirmModal({
               <h2 className="text-base font-semibold text-gray-900">
                 {isOffset
                   ? isBulk
-                    ? `ยืนยันยกเลิกหักล้างกันเอง (${targets.length} กลุ่ม)`
-                    : "ยืนยันยกเลิกหักล้างกันเอง"
+                    ? `ส่ง ${targets.length} กลุ่มกลับไป Reconcile?`
+                    : "ส่งกลุ่มนี้กลับไป Reconcile?"
                   : isBulk
-                    ? `ยืนยันยกเลิกการจับคู่ (${targets.length} กลุ่มย่อย)`
-                    : "ยืนยันยกเลิกการจับคู่"}
+                    ? `ส่ง ${targets.length} กลุ่มกลับไป Reconcile?`
+                    : "ส่งกลุ่มนี้กลับไป Reconcile?"}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
                 {isOffset ? (
@@ -132,7 +132,7 @@ export default function UnmatchConfirmModal({
           </div>
 
           <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            เหตุผลที่ยกเลิก <span className="text-red-500">*</span>
+            เหตุผลที่ส่งกลับ <span className="text-red-500">*</span>
             {isBulk && <span className="text-gray-400 font-normal"> (ใช้ร่วมกันทุกกลุ่มย่อยที่เลือก)</span>}
           </label>
           <textarea
@@ -152,7 +152,7 @@ export default function UnmatchConfirmModal({
             disabled={busy}
             className="text-sm text-gray-600 hover:bg-gray-100 active:scale-95 px-4 py-2 rounded-full transition-all disabled:opacity-40"
           >
-            ยกเลิก
+            ยังไม่ส่งกลับ
           </button>
           <button
             onClick={() => canConfirm && onConfirm(reason.trim())}
@@ -160,7 +160,7 @@ export default function UnmatchConfirmModal({
             className="flex items-center gap-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-50 disabled:active:scale-100"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-            {isBulk ? `ยืนยันยกเลิกทั้งหมด (${targets.length})` : isOffset ? "ยืนยันยกเลิก" : "ยืนยันยกเลิกการจับคู่"}
+            {isBulk ? `ส่งกลับไป Reconcile (${targets.length})` : "ส่งกลับไป Reconcile"}
           </button>
         </div>
       </motion.div>

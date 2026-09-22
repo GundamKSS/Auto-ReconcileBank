@@ -9,8 +9,13 @@ import ImportBatchList, { ImportBatch } from "./ImportBatchList";
 import LineItemsView from "./LineItemsView";
 import DeleteImportModal from "./DeleteImportModal";
 import DeleteHistoryList from "./DeleteHistoryList";
+import MasterDataTabs from "../../components/MasterDataTabs";
+import { useSessionState } from "../../../../hooks/useSessionState";
 
 type View = "files" | "history";
+
+const isView = (v: unknown): v is View => v === "files" || v === "history";
+const isImportId = (v: unknown): v is number | null => v === null || (typeof v === "number" && Number.isInteger(v));
 
 const VIEWS = [
   { key: "files", label: "ไฟล์ที่นำเข้า", icon: FileSpreadsheet },
@@ -19,13 +24,20 @@ const VIEWS = [
 
 export default function MasterBankStatement() {
   const { toggleMobileOpen } = useSidebar();
-  const [bankCode, setBankCode] = useState("BBL");
-  const [view, setView] = useState<View>("files");
+  // ธนาคาร มุมมอง และไฟล์ที่เปิดดูอยู่ จำไว้ตลอดแท็บนี้ — สลับไปหน้า GL แล้วกลับมาเจอไฟล์เดิม
+  const [bankCode, setBankCode] = useSessionState("master-data:bank:bankCode", "BBL");
+  const [view, setView] = useSessionState<View>("master-data:bank:view", "files", isView);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [selectedBatch, setSelectedBatch] = useState<ImportBatch | null>(null);
+  // เก็บแค่ ImportId แล้วหาไฟล์จากรายการที่โหลดมา — จำทั้ง object ไว้จะได้ LockedCount ค้างของเก่า
+  // ไฟล์ที่ถูกลบไปแล้วจะหาไม่เจอ ก็กลับไปหน้ารายชื่อไฟล์เอง
+  const [selectedImportId, setSelectedImportId] = useSessionState<number | null>(
+    "master-data:bank:importId",
+    null,
+    isImportId
+  );
   const [deleteTarget, setDeleteTarget] = useState<ImportBatch | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
@@ -41,6 +53,10 @@ export default function MasterBankStatement() {
         return;
       }
       setBatches(data.imports);
+      // ไฟล์ที่จำไว้ไม่อยู่ในรายการแล้ว (ถูกลบจากแท็บอื่น) — ลืมไปเลย ไม่งั้นนำเข้าไฟล์ใหม่ก็ไม่มีผล แต่ค่าค้างไว้เปล่าๆ
+      setSelectedImportId((id) =>
+        id !== null && !(data.imports as ImportBatch[]).some((b) => b.ImportId === id) ? null : id
+      );
     } catch {
       setError("เชื่อมต่อ server ไม่ได้");
     } finally {
@@ -49,18 +65,25 @@ export default function MasterBankStatement() {
   }
 
   useEffect(() => {
-    // เปลี่ยนธนาคารแล้วต้องเคลียร์ไฟล์ที่เลือกไว้ + โหลดรายการไฟล์ใหม่ — fetch-on-param-change ปกติ
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setSelectedBatch(null);
-    setNotice("");
+    // โหลดรายการไฟล์ใหม่ทุกครั้งที่เปลี่ยนธนาคาร — fetch-on-param-change ปกติ
+    // การล้างไฟล์ที่เปิดอยู่ย้ายไปอยู่ที่ selectBank แล้ว เพราะตอน mount ต้องคืนไฟล์ที่จำไว้ ห้ามล้าง
+    /* eslint-disable-next-line react-hooks/set-state-in-effect */
     loadBatches();
-    /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bankCode]);
 
+  const selectedBatch = batches.find((b) => b.ImportId === selectedImportId) ?? null;
+
+  function selectBank(code: string) {
+    if (code === bankCode) return;
+    setBankCode(code);
+    setSelectedImportId(null);
+    setNotice("");
+  }
+
+  // สลับไปดูประวัติการลบแล้วกลับมา ไฟล์ที่เปิดไว้ยังอยู่
   function switchView(next: View) {
     setView(next);
-    setSelectedBatch(null);
     setNotice("");
   }
 
@@ -88,7 +111,7 @@ export default function MasterBankStatement() {
         return;
       }
       setDeleteTarget(null);
-      setSelectedBatch(null);
+      setSelectedImportId(null);
       setNotice(`ลบไฟล์ "${target.FileName}" แล้ว — ดูผู้ลบ วันเวลา และเหตุผลได้ที่แท็บ "ประวัติการลบ"`);
       await loadBatches();
     } catch {
@@ -100,7 +123,7 @@ export default function MasterBankStatement() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] p-8">
-      <div className="mb-7 flex items-start gap-3">
+      <div className="mb-2 flex items-start gap-3">
         <button
           onClick={toggleMobileOpen}
           className="mt-1 text-slate-500 hover:text-slate-700 lg:hidden"
@@ -121,9 +144,11 @@ export default function MasterBankStatement() {
         </div>
       </div>
 
+      <MasterDataTabs />
+
       <section className="rounded-[20px] border border-white/80 bg-white p-6 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-          <BankTabs selected={bankCode} onSelect={setBankCode} />
+          <BankTabs selected={bankCode} onSelect={selectBank} />
           <div role="tablist" aria-label="มุมมอง" className="inline-flex rounded-full bg-slate-100 p-1">
             {VIEWS.map(({ key, label, icon: Icon }) => (
               <button
@@ -158,9 +183,19 @@ export default function MasterBankStatement() {
         {view === "history" ? (
           <DeleteHistoryList key={bankCode} bankCode={bankCode} />
         ) : !selectedBatch ? (
-          <ImportBatchList batches={batches} loading={loading} onSelect={setSelectedBatch} onDelete={openDelete} />
+          <ImportBatchList
+            batches={batches}
+            loading={loading}
+            onSelect={(b) => setSelectedImportId(b.ImportId)}
+            onDelete={openDelete}
+          />
         ) : (
-          <LineItemsView batch={selectedBatch} onBack={() => setSelectedBatch(null)} onDelete={openDelete} />
+          <LineItemsView
+            key={selectedBatch.ImportId}
+            batch={selectedBatch}
+            onBack={() => setSelectedImportId(null)}
+            onDelete={openDelete}
+          />
         )}
       </section>
 

@@ -24,6 +24,7 @@ const STATUS_LABEL: Record<string, string> = {
   MATCHED: 'จับคู่แล้ว',
   SUSPENSE: 'พักไว้ (Suspense)',
   OFFSET: 'หักล้างกันเอง (GL ยกเลิกกันเอง)',
+  EXCLUDED: 'JV ปรับปรุงพักโอน',
   UNMATCHED: 'ยังไม่จับคู่',
   ALL: 'ทุกสถานะ',
 };

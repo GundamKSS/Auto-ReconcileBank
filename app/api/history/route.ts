@@ -5,17 +5,25 @@ import { getPool } from '../../../lib/db';
 import { requireRole } from '../../../lib/session';
 import { RECONCILE_ROLES } from '../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../lib/apiInput';
-import { glAmount, glDirection } from '../../../lib/glAmount';
+import { bankSignedSql, glAmount, glDirection, glSignedSql } from '../../../lib/glAmount';
+import { reconcileExtrasReady } from '../../../lib/reconcileExtrasDb';
 const PAGE_SIZE = 50;
+
+// ประเภทของ ReconciliationMatch ทั้งหมดที่ระบบสร้างได้ (ดู app/api/reconcile/match/route.ts)
+// MATCHED = จับคู่ Bank ↔ BC, SUSPENSE = ย้ายเข้าบัญชีพัก, OFFSET = หักล้างกันเองใน BC,
+// EXCLUDED = JV ปรับปรุงพักโอนที่ไม่นำมาจับคู่ — สามแบบหลังมีแต่บรรทัดฝั่ง GL
+const MATCH_TYPES = ['MATCHED', 'SUSPENSE', 'OFFSET', 'EXCLUDED'] as const;
+type MatchTypeValue = (typeof MATCH_TYPES)[number];
 
 /**
  * GET /api/history
  *
  * Query params:
  *   bankCode  - รหัสธนาคาร หรือไม่ใส่ = ทุกธนาคาร
- *   matchType - 'MATCHED' | 'SUSPENSE' | 'OFFSET' (หักล้างกันเอง) หรือไม่ใส่ = ทุกประเภท
- *               OFFSET มีแต่บรรทัดฝั่ง GL — ใช้คู่กับ dateBasis GL/CREATED และ side ALL เท่านั้น
- *               (dateBasis BANK หรือ side AR/AP กรองจากบรรทัด Bank จึงไม่มีทางเจอ)
+ *   matchType - 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'EXCLUDED' ใส่ได้หลายค่าคั่นด้วย comma
+ *               ('MATCHED,OFFSET') หรือไม่ใส่ = ทุกประเภท
+ *               ทุกประเภทยกเว้น MATCHED มีแต่บรรทัดฝั่ง GL — ใช้คู่กับ dateBasis GL/CREATED และ side ALL
+ *               เท่านั้น (dateBasis BANK หรือ side AR/AP กรองจากบรรทัด Bank จึงไม่มีทางเจอ)
  *   side      - 'AR' (เงินเข้า) | 'AP' (เงินออก) หรือไม่ใส่/ALL = ทั้งคู่ — ความหมายเดียวกับหน้า Dashboard/Reports
  *               ดูจากทิศทางของบรรทัดฝั่ง Bank ใน Match (Credit มีค่า = เงินเข้า) Match ที่มีทั้งสองทิศปนกัน
  *               จะโผล่ทั้งสองแท็บ เพราะมีรายการของทั้งสองฝั่งอยู่จริง
@@ -26,7 +34,9 @@ const PAGE_SIZE = 50;
  *               เลขเอกสาร/เลขบัญชี/ชื่อบัญชีฝั่ง GL, ธนาคาร และผู้จับคู่
  *   offset    - เริ่มที่ Match ลำดับที่เท่าไร (infinite scroll ทีละ 50 Match)
  *
- * ตอบกลับ total + bankCodes + sideCounts เฉพาะตอนโหลดหน้าแรก (offset = 0) เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll
+ * ตอบกลับ total + bankCodes + sideCounts + typeCounts เฉพาะตอนโหลดหน้าแรก (offset = 0)
+ * เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll — typeCounts นับโดยไม่สนตัวกรองประเภท เพื่อให้แท็บประเภท
+ * ยังโชว์เลขของแท็บอื่นได้ตอนที่เลือกแท็บใดแท็บหนึ่งอยู่ (หลักเดียวกับ sideCounts)
  */
 export async function GET(req: NextRequest) {
   const auth = await requireRole(RECONCILE_ROLES);
@@ -35,13 +45,52 @@ export async function GET(req: NextRequest) {
   try {
     const params = req.nextUrl.searchParams;
     const bankCode = params.get('bankCode');
-    const matchType = params.get('matchType');
+    // matchType รับได้ทั้งค่าเดียวและหลายค่าคั่นด้วย comma — หน้าประวัติแท็บ "ทั้งหมด" ไม่ส่งมาเลย = ไม่กรองประเภท
+    const rawMatchTypes = (params.get('matchType') ?? '')
+      .split(',')
+      .map((v) => v.trim().toUpperCase())
+      .filter(Boolean);
+    if (rawMatchTypes.some((t) => !(MATCH_TYPES as readonly string[]).includes(t))) {
+      return badRequest(`matchType ต้องเป็น ${MATCH_TYPES.join(', ')}`);
+    }
+    const matchTypes = [...new Set(rawMatchTypes)] as MatchTypeValue[];
+    // ชื่อพารามิเตอร์ของแต่ละประเภท — ประกอบเป็น IN (@matchType0, @matchType1, ...) ใช้ร่วมกันทุก query
+    const matchTypeParams = matchTypes.map((_, i) => `@matchType${i}`).join(', ');
+    function bindMatchTypes(request: sql.Request) {
+      matchTypes.forEach((t, i) => request.input(`matchType${i}`, sql.NVarChar, t));
+      return request;
+    }
     const from = params.get('from');
     const to = params.get('to');
     const rawQ = params.get('q');
     const q = rawQ && rawQ.trim() ? rawQ.trim() : null;
     const qCompact = q?.replace(/,/g, '') ?? null;
     const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
+    const extrasReady = await reconcileExtrasReady();
+    // หน้า Suspense ต้องรวมทั้งรายการที่พักทั้งแถว และผลต่างของ MATCHED ที่ยอด Bank/BC ไม่เท่ากัน
+    const includeDifferenceSuspense =
+      params.get('includeDifferenceSuspense') === '1' &&
+      matchTypes.length === 1 &&
+      matchTypes[0] === 'SUSPENSE' &&
+      extrasReady;
+
+    const differenceSuspenseSql = `
+      rm.MatchType = 'MATCHED' AND rm.Status = 'ACTIVE' AND rm.Remark IS NOT NULL
+      AND ABS(
+        ABS(COALESCE((
+          SELECT SUM(${bankSignedSql('ds_b')})
+          FROM ReconciliationMatchLine ds_bl
+          JOIN BankStatementLine ds_b ON ds_b.LineId = ds_bl.BankLineId
+          WHERE ds_bl.MatchId = rm.MatchId AND ds_bl.SourceType = 'BANK' AND ds_bl.Status = 'ACTIVE'
+        ), 0))
+        - ABS(COALESCE((
+          SELECT SUM(${glSignedSql('ds_g')})
+          FROM ReconciliationMatchLine ds_gl
+          JOIN BankAccountLedgerEntries ds_g ON ds_g.Entry_No = ds_gl.GLEntryNo
+          WHERE ds_gl.MatchId = rm.MatchId AND ds_gl.SourceType = 'GL' AND ds_gl.Status = 'ACTIVE'
+        ), 0))
+      ) >= 0.005
+    `;
 
     const rawSide = params.get('side')?.toUpperCase() ?? 'ALL';
     if (rawSide !== 'AR' && rawSide !== 'AP' && rawSide !== 'ALL') return badRequest('side ต้องเป็น AR, AP หรือ ALL');
@@ -105,10 +154,17 @@ export async function GET(req: NextRequest) {
     // (ต่างจาก MatchId ที่ cast ตรงๆ ได้ — คำค้นอาจตรงกับรายละเอียดฝั่ง Bank หรือ GL เท่านั้น เลยต้อง EXISTS
     // เข้าไปเช็คที่บรรทัดย่อยของ Match นั้น ตาม SourceType)
     // ไม่รวมเงื่อนไข AR/AP ไว้ที่นี่ — ส่วนนับจำนวนต่อแท็บต้องใช้เงื่อนไขอื่นทั้งหมดเหมือนเดิมแต่ไม่กรองฝั่ง
-    const baseWhere = `
+    // และแยกเงื่อนไข "ประเภท" ออกมาต่างหาก เพราะการนับจำนวนต่อประเภท (typeCounts) ต้องไม่กรองประเภท
+    const typeCondition =
+      matchTypes.length === 0
+        ? ''
+        : includeDifferenceSuspense
+          ? `AND (rm.MatchType IN (${matchTypeParams}) OR (${differenceSuspenseSql}))`
+          : `AND rm.MatchType IN (${matchTypeParams})`;
+
+    const whereWithoutType = `
       WHERE 1=1
         ${bankCode ? 'AND rm.BankCode = @bankCode' : ''}
-        ${matchType ? 'AND rm.MatchType = @matchType' : ''}
         ${dateBasis === 'CREATED' && fromDate ? 'AND rm.CreatedAt >= @from' : ''}
         ${dateBasis === 'CREATED' && toDateExclusive ? 'AND rm.CreatedAt < @to' : ''}
         ${
@@ -148,12 +204,13 @@ export async function GET(req: NextRequest) {
             : ''
         }
     `;
+    const baseWhere = `${whereWithoutType} ${typeCondition}`;
     const whereClause = `${baseWhere} ${bankLineExists(side)} ${glLineExists()}`;
 
     // ทุก query ที่ใช้ baseWhere ต้อง bind พารามิเตอร์ชุดเดียวกัน — รวมไว้ที่เดียวกันลืม
     function bindFilters(request: sql.Request) {
       if (bankCode) request.input('bankCode', sql.NVarChar, bankCode);
-      if (matchType) request.input('matchType', sql.NVarChar, matchType);
+      bindMatchTypes(request);
       if (dateBasis === 'CREATED' && fromDate) request.input('from', sql.DateTime2, fromDate);
       if (dateBasis === 'CREATED' && toDateExclusive) request.input('to', sql.DateTime2, toDateExclusive);
       if (byBankDate && fromDate) request.input('bankFrom', sql.Date, fromDate);
@@ -177,8 +234,24 @@ export async function GET(req: NextRequest) {
     const idResult = await idRequest.query(`
       SELECT rm.MatchId
       FROM ReconciliationMatch rm
+      ${
+        dateBasis === 'BANK'
+          ? `OUTER APPLY (
+               SELECT MIN(o_bsl.TranDate) AS FirstBankDate
+               FROM ReconciliationMatchLine o_rml
+               JOIN BankStatementLine o_bsl ON o_bsl.LineId = o_rml.BankLineId
+               WHERE o_rml.MatchId = rm.MatchId AND o_rml.SourceType = 'BANK'
+             ) ord`
+          : ''
+      }
       ${whereClause}
-      ORDER BY rm.CreatedAt DESC, rm.MatchId DESC
+      ${
+        // กรองตามวันที่ Bank → เรียงวันที่ 1 ไปสิ้นเดือนตามวันที่รายการแรกใน statement
+        // Match ที่ไม่มีบรรทัด Bank ให้อ้างอิงไปอยู่ท้ายสุด; MatchId ต่อท้ายให้ลำดับนิ่งตอน infinite scroll
+        dateBasis === 'BANK'
+          ? 'ORDER BY CASE WHEN ord.FirstBankDate IS NULL THEN 1 ELSE 0 END, ord.FirstBankDate ASC, rm.MatchId ASC'
+          : 'ORDER BY rm.CreatedAt DESC, rm.MatchId DESC'
+      }
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
     const pageMatchIds: number[] = idResult.recordset.map((r) => Number(r.MatchId));
@@ -191,8 +264,10 @@ export async function GET(req: NextRequest) {
     const idsCsv = pageMatchIds.length > 0 ? pageMatchIds.join(',') : 'NULL';
 
     // 2) หัวบันทึกของ MatchId หน้านี้เท่านั้น
+    // หมายเหตุมีเฉพาะหลังรัน sql/007 — คู่ที่จับทั้งที่ยอดไม่เท่ากันต้องเห็นเหตุผลในหน้าประวัติ
+    const remarkColumn = extrasReady ? 'Remark' : 'CAST(NULL AS NVARCHAR(500)) AS Remark';
     const headerResult = await pool.request().query(`
-      SELECT MatchId, BankCode, MatchType, CreatedBy, CreatedAt, Status, ReversedAt, ReversedBy, ReversedReason
+      SELECT MatchId, BankCode, MatchType, CreatedBy, CreatedAt, Status, ReversedAt, ReversedBy, ReversedReason, ${remarkColumn}
       FROM ReconciliationMatch
       WHERE MatchId IN (${idsCsv})
     `);
@@ -267,19 +342,33 @@ export async function GET(req: NextRequest) {
     const matches = pageMatchIds
       .map((id) => headerByMatchId.get(id))
       .filter((h): h is NonNullable<typeof h> => h != null)
-      .map((h) => ({
-        matchId: h.MatchId,
-        bankCode: h.BankCode,
-        matchType: h.MatchType,
-        createdBy: h.CreatedBy,
-        createdAt: h.CreatedAt,
-        status: h.Status ?? 'ACTIVE',
-        reversedAt: h.ReversedAt,
-        reversedBy: h.ReversedBy,
-        reversedReason: h.ReversedReason,
-        bankLines: bankLinesByMatch.get(h.MatchId) ?? [],
-        glLines: glLinesByMatch.get(h.MatchId) ?? [],
-      }));
+      .map((h) => {
+        const bankLines = (bankLinesByMatch.get(h.MatchId) ?? []) as Array<{ direction: 'IN' | 'OUT'; amount: number; status: string }>;
+        const glLines = (glLinesByMatch.get(h.MatchId) ?? []) as Array<{ direction: 'IN' | 'OUT'; amount: number; status: string }>;
+        const activeBank = bankLines.filter((l) => l.status === 'ACTIVE');
+        const activeGl = glLines.filter((l) => l.status === 'ACTIVE');
+        const bankSigned = activeBank.reduce((s, l) => s + (l.direction === 'IN' ? l.amount : -l.amount), 0);
+        const glSigned = activeGl.reduce((s, l) => s + (l.direction === 'IN' ? l.amount : -l.amount), 0);
+        const suspenseDifference = Math.round((Math.abs(bankSigned) - Math.abs(glSigned)) * 100) / 100;
+        const isDifferenceSuspense = h.MatchType === 'MATCHED' && Math.abs(suspenseDifference) >= 0.005;
+        return {
+          matchId: h.MatchId,
+          bankCode: h.BankCode,
+          matchType: h.MatchType,
+          suspenseKind: isDifferenceSuspense ? 'DIFFERENCE' : 'LINE',
+          suspenseDifference: isDifferenceSuspense ? suspenseDifference : null,
+          suspenseDirection: (bankSigned >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
+          createdBy: h.CreatedBy,
+          createdAt: h.CreatedAt,
+          status: h.Status ?? 'ACTIVE',
+          reversedAt: h.ReversedAt,
+          reversedBy: h.ReversedBy,
+          reversedReason: h.ReversedReason,
+          remark: h.Remark ?? null,
+          bankLines,
+          glLines,
+        };
+      });
 
     if (offset > 0) {
       return NextResponse.json({ matches });
@@ -307,14 +396,83 @@ export async function GET(req: NextRequest) {
     };
     const total = sideCounts[side];
 
+    // จำนวน Match ของแต่ละประเภท ภายใต้ตัวกรองอื่นที่เลือกอยู่ (ธนาคาร/ช่วงวันที่/คำค้น/ฝั่ง) แต่ไม่กรองประเภท
+    // — ไม่งั้นพอกดแท็บ "หักล้างกันเอง" แล้วเลขบนแท็บอื่นจะกลายเป็น 0 ทั้งแถว
+    const typeCountResult = await bindFilters(pool.request()).query(`
+      SELECT rm.MatchType AS MatchType, COUNT(*) AS Cnt
+      FROM ReconciliationMatch rm
+      ${whereWithoutType} ${bankLineExists(side)} ${glLineExists()}
+      GROUP BY rm.MatchType
+    `);
+    const typeCounts: Record<MatchTypeValue, number> = { MATCHED: 0, SUSPENSE: 0, OFFSET: 0, EXCLUDED: 0 };
+    let typeCountAll = 0;
+    for (const row of typeCountResult.recordset) {
+      const cnt = Number(row.Cnt ?? 0);
+      typeCountAll += cnt;
+      const key = String(row.MatchType ?? '') as MatchTypeValue;
+      if (key in typeCounts) typeCounts[key] = cnt;
+    }
+
+    let suspenseSummary: { incoming: number; outgoing: number; lineCount: number; differenceCount: number } | undefined;
+    if (includeDifferenceSuspense) {
+      const summaryResult = await bindFilters(pool.request()).query(`
+        SELECT
+          COALESCE(SUM(CASE
+            WHEN x.MatchType = 'SUSPENSE' THEN x.GlIn
+            WHEN x.MatchType = 'MATCHED' AND x.BankNet >= 0 THEN x.DifferenceAmount
+            ELSE 0 END), 0) AS Incoming,
+          COALESCE(SUM(CASE
+            WHEN x.MatchType = 'SUSPENSE' THEN x.GlOut
+            WHEN x.MatchType = 'MATCHED' AND x.BankNet < 0 THEN x.DifferenceAmount
+            ELSE 0 END), 0) AS Outgoing,
+          COALESCE(SUM(CASE WHEN x.MatchType = 'SUSPENSE' THEN 1 ELSE 0 END), 0) AS LineCount,
+          COALESCE(SUM(CASE WHEN x.MatchType = 'MATCHED' THEN 1 ELSE 0 END), 0) AS DifferenceCount
+        FROM (
+          SELECT rm.MatchType,
+                 COALESCE(bt.BankNet, 0) AS BankNet,
+                 ABS(ABS(COALESCE(bt.BankNet, 0)) - ABS(COALESCE(gt.GlNet, 0))) AS DifferenceAmount,
+                 COALESCE(gt.GlIn, 0) AS GlIn,
+                 COALESCE(gt.GlOut, 0) AS GlOut
+          FROM ReconciliationMatch rm
+          OUTER APPLY (
+            SELECT SUM(${bankSignedSql('sb')}) AS BankNet
+            FROM ReconciliationMatchLine sl
+            JOIN BankStatementLine sb ON sb.LineId = sl.BankLineId
+            WHERE sl.MatchId = rm.MatchId AND sl.SourceType = 'BANK' AND sl.Status = 'ACTIVE'
+          ) bt
+          OUTER APPLY (
+            SELECT SUM(${glSignedSql('sg')}) AS GlNet,
+                   SUM(CASE WHEN ${glSignedSql('sg')} > 0 THEN ${glSignedSql('sg')} ELSE 0 END) AS GlIn,
+                   SUM(CASE WHEN ${glSignedSql('sg')} < 0 THEN -${glSignedSql('sg')} ELSE 0 END) AS GlOut
+            FROM ReconciliationMatchLine sl
+            JOIN BankAccountLedgerEntries sg ON sg.Entry_No = sl.GLEntryNo
+            WHERE sl.MatchId = rm.MatchId AND sl.SourceType = 'GL' AND sl.Status = 'ACTIVE'
+          ) gt
+          ${whereClause}
+        ) x
+      `);
+      const s = summaryResult.recordset[0] ?? {};
+      suspenseSummary = {
+        incoming: Math.round(Number(s.Incoming ?? 0) * 100) / 100,
+        outgoing: Math.round(Number(s.Outgoing ?? 0) * 100) / 100,
+        lineCount: Number(s.LineCount ?? 0),
+        differenceCount: Number(s.DifferenceCount ?? 0),
+      };
+    }
+
     // รายชื่อธนาคารสำหรับปุ่มกรอง — ดึงจากข้อมูลจริงทั้งหมด ไม่ผูกกับ filter ธนาคาร/วันที่ที่เลือกอยู่
     // ไม่งั้นพอเลือกธนาคารเดียวแล้วปุ่มธนาคารอื่นจะหายไปหมด
     // (แต่ยังผูกกับ matchType — หน้า Match History ไม่ควรมีปุ่มธนาคารที่มีแต่รายการพักโอนโผล่มาแล้วกดได้ผลลัพธ์ว่าง)
-    const bankCodesRequest = pool.request();
-    if (matchType) bankCodesRequest.input('matchType', sql.NVarChar, matchType);
+    const bankCodesRequest = bindMatchTypes(pool.request());
     const bankCodesResult = await bankCodesRequest.query(`
       SELECT DISTINCT BankCode FROM ReconciliationMatch
-      WHERE BankCode IS NOT NULL ${matchType ? 'AND MatchType = @matchType' : ''}
+      WHERE BankCode IS NOT NULL ${
+        matchTypes.length === 0
+          ? ''
+          : includeDifferenceSuspense
+            ? `AND (MatchType IN (${matchTypeParams}) OR (MatchType = 'MATCHED' AND Remark IS NOT NULL))`
+            : `AND MatchType IN (${matchTypeParams})`
+      }
       ORDER BY BankCode
     `);
 
@@ -322,6 +480,8 @@ export async function GET(req: NextRequest) {
       matches,
       total,
       sideCounts,
+      typeCounts: { ...typeCounts, ALL: typeCountAll },
+      suspenseSummary,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
     });
   } catch (err) {

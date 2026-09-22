@@ -16,6 +16,8 @@ import {
   Link2,
   WandSparkles,
   AlertTriangle,
+  Ban,
+  ListChecks,
   Scale,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
@@ -23,8 +25,11 @@ import { ReconcileSession } from "./types";
 import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
-import GlOffsetModal, { type OffsetTab } from "./GlOffsetModal";
-import DifferenceBadge from "./DifferenceBadge";
+import BalanceBadge from "./BalanceBadge";
+import BalanceModal from "./BalanceModal";
+import RemarkActionModal from "./RemarkActionModal";
+import OffsetConfirmModal from "./OffsetConfirmModal";
+import type { BalanceData } from "./balanceTypes";
 import { AURA_GRADIENT } from "./AuraOrb";
 
 type Direction = "IN" | "OUT";
@@ -56,15 +61,10 @@ type GlApiLine = {
   accountName: string | null;
   date: string;
   ref: string;
-  // 'REVERSAL' = แถวที่ BC สร้างตอนกด Reverse — ใช้ติดป้ายในหน้าต่างหักล้างกันเอง
-  sourceCode: string | null;
   direction: Direction;
   description: string;
   amount: number;
 };
-
-// คู่กลับรายการใน BC ที่ /api/reconcile/data แยกออกจากตารางแล้ว รอผู้ใช้ยืนยันบันทึกเป็นหักล้างกันเอง
-type ReversalPairApi = { key: string; original: GlApiLine; reversal: GlApiLine };
 
 type LineItem = {
   id: string;
@@ -419,7 +419,6 @@ function DateGroupRow({
   clusterOf,
   dateClusterNumbering,
   lumpClusterIds,
-  onOffsetRequest,
 }: {
   date: string;
   items: LineItem[];
@@ -435,8 +434,6 @@ function DateGroupRow({
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
   lumpClusterIds: Set<number>;
-  // เฉพาะตาราง GL — ปุ่มบนแถวสำหรับหาคู่หักล้างกันเอง (รายการที่แก้ด้วย JV ยอดเท่ากันแต่ทิศตรงข้าม)
-  onOffsetRequest?: (id: string) => void;
 }) {
   const total = items.reduce((sum, i) => sum + i.amount, 0);
   const selectedInGroup = items.filter((i) => selected.has(i.id)).length;
@@ -555,22 +552,6 @@ function DateGroupRow({
                     </div>
                     <p className="text-sm text-gray-800 truncate">{item.description}</p>
                   </div>
-                  {onOffsetRequest && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        // อยู่ใน <label> — กันไม่ให้การกดปุ่มไปติ๊ก/ปลด checkbox ของแถวด้วย
-                        e.preventDefault();
-                        e.stopPropagation();
-                        onOffsetRequest(item.id);
-                      }}
-                      title="หาคู่หักล้างกันเอง — รายการ BC ที่ยกเลิกกันเอง ยอดเท่ากันแต่ทิศตรงข้าม (เช่น แก้ด้วย JV)"
-                      aria-label="หาคู่หักล้างกันเอง"
-                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-white text-teal-600 opacity-0 transition-opacity hover:bg-teal-50 focus-visible:opacity-100 group-hover:opacity-100"
-                    >
-                      <Scale size={12} />
-                    </button>
-                  )}
                   <span className="text-sm text-gray-700 tabular-nums whitespace-nowrap">{formatAmount(item.amount)}</span>
                 </label>
               );
@@ -608,7 +589,6 @@ function Panel({
   syncing,
   syncDisabled,
   extraActions,
-  onOffsetRequest,
   scrollRef,
   onScroll,
 }: {
@@ -637,9 +617,8 @@ function Panel({
   onSync?: () => void;
   syncing?: boolean;
   syncDisabled?: boolean;
-  // ปุ่มเพิ่มเติมข้างปุ่มซิงค์ (ตาราง GL ใช้วางปุ่มหักล้างกันเอง)
+  // ปุ่มเพิ่มเติมข้างปุ่มซิงค์
   extraActions?: React.ReactNode;
-  onOffsetRequest?: (id: string) => void;
   scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
 }) {
@@ -656,7 +635,9 @@ function Panel({
       if (!map.has(d)) map.set(d, []);
       map.get(d)!.push(item);
     }
-    return { byDate: [...map.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1)), pendingTotal: total };
+    // เรียงวันที่ 1 ไปสิ้นเดือน ตามลำดับที่บัญชีไล่กระทบยอดจริง
+    // เรียงเฉพาะตอนแสดงผล — ลำดับจาก API ต้องคงเดิม เพราะการจับกลุ่มอัตโนมัติกับผู้ช่วยหาคู่อิงลำดับนั้นร่วมกัน
+    return { byDate: [...map.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1)), pendingTotal: total };
   }, [filtered]);
 
   return (
@@ -744,7 +725,6 @@ function Panel({
               clusterOf={clusterOf}
               dateClusterNumbering={dateClusterNumbering}
               lumpClusterIds={lumpClusterIds}
-              onOffsetRequest={onOffsetRequest}
             />
           ))}
       </div>
@@ -859,9 +839,6 @@ export default function ActiveWorkspace({
 
   const [bankLinesRaw, setBankLinesRaw] = useState<BankApiLine[]>([]);
   const [glLinesRaw, setGlLinesRaw] = useState<GlApiLine[]>([]);
-  const [reversalPairs, setReversalPairs] = useState<ReversalPairApi[]>([]);
-  // หน้าต่างหักล้างกันเอง — focusEntryNo มีค่าเมื่อเปิดจากปุ่มบนแถว GL
-  const [offsetModal, setOffsetModal] = useState<{ tab: OffsetTab; focusEntryNo: number | null } | null>(null);
   // รัน sql/006 แล้วหรือยัง — ถ้ายัง หน้านี้ยังรวมทุกบัญชีของธนาคารเดียวกันอยู่ ต้องบอกผู้ใช้ให้รู้ตัว
   const [accountDimensionReady, setAccountDimensionReady] = useState(true);
   // จำนวนรายการฝั่ง bank ที่ยังไม่รู้ว่าเป็นบัญชีไหน (ไฟล์เก่า) — แสดงปนอยู่ในตารางแต่ต้องมีป้ายกำกับ
@@ -896,6 +873,18 @@ export default function ActiveWorkspace({
   // ผู้ช่วยหาคู่ (popup หาคู่ที่ยอดตรงแต่ลงคนละวัน) — ดู MatchAssistantModal
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [confirmSuspenseOpen, setConfirmSuspenseOpen] = useState(false);
+  // หน้าต่างที่ต้องใส่หมายเหตุ: จับคู่และพักโอนส่วนต่าง / ไม่นำ GL มาจับคู่
+  const [remarkModal, setRemarkModal] = useState<"match" | "exclude" | null>(null);
+  // จับชนขาเข้ากับขาออกฝั่ง GL จากรายการที่ติ๊กไว้บนตารางหลัก (ข้ามแท็บ IN/OUT ได้)
+  const [offsetConfirmOpen, setOffsetConfirmOpen] = useState(false);
+  const [remarkError, setRemarkError] = useState("");
+
+  // ยอดคงเหลือ Bank เทียบ GL ของทั้งงวด — โหลดใหม่ทุกครั้งที่ตารางโหลดใหม่ (หลัง Match/พัก/ยกเลิก)
+  const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState("");
+  const [balanceOpen, setBalanceOpen] = useState(false);
+  const [dataVersion, setDataVersion] = useState(0);
 
   // สวิชลิงค์วันที่: เปิด = กดขยายฝั่งไหน อีกฝั่งขยาย+เลื่อนตามให้อัตโนมัติ / ปิด = 2 ฝั่งอิสระต่อกัน
   const [linkDates, setLinkDates] = useState(true);
@@ -1012,7 +1001,6 @@ export default function ActiveWorkspace({
       }
       setBankLinesRaw(data.bankLines);
       setGlLinesRaw(data.glLines);
-      setReversalPairs(Array.isArray(data.reversalPairs) ? data.reversalPairs : []);
       setAccountDimensionReady(data.accountDimensionReady !== false);
       setUnassignedBankLines(Number(data.unassignedBankLines ?? 0));
 
@@ -1030,6 +1018,7 @@ export default function ActiveWorkspace({
         setSelectedGl(new Set(readyGlIds));
       }
       setClusterOf(newClusterOf);
+      setDataVersion((v) => v + 1);
     } catch {
       setError("เชื่อมต่อ server ไม่ได้");
     } finally {
@@ -1091,6 +1080,78 @@ export default function ActiveWorkspace({
     selectedBank,
     selectedGl,
   ]);
+
+  const balanceUnavailable = session.bankAccountNo ? null : "งานเดิมนี้ไม่ได้ระบุเลขบัญชี — กดแก้ไขเงื่อนไขแล้วเลือกบัญชีก่อน";
+
+  const loadBalance = useCallback(async () => {
+    if (!session.bankAccountNo) return;
+    setBalanceLoading(true);
+    setBalanceError("");
+    try {
+      const qs = new URLSearchParams({
+        bankAccountNo: session.bankAccountNo,
+        from: session.periodStart,
+        to: session.periodEnd,
+      });
+      const res = await fetch(`/api/reconcile/balance?${qs.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setBalanceError(data.error || "คำนวณยอดคงเหลือไม่สำเร็จ");
+        setBalanceData(null);
+        return;
+      }
+      setBalanceData(data);
+    } catch {
+      setBalanceError("เชื่อมต่อ server ไม่ได้");
+    } finally {
+      setBalanceLoading(false);
+    }
+  }, [session.bankAccountNo, session.periodStart, session.periodEnd]);
+
+  useEffect(() => {
+    if (dataVersion === 0) return;
+    // ยอดคงเหลือขึ้นกับผลการจับคู่ล่าสุด จึงโหลดตามทุกครั้งที่ตารางโหลดเสร็จ
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void loadBalance();
+  }, [dataVersion, loadBalance]);
+
+  async function handleSaveOpening(amount: number): Promise<string | null> {
+    if (!session.bankAccountNo) return "ต้องเลือกบัญชีก่อน";
+    try {
+      const res = await fetch("/api/reconcile/balance", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankAccountNo: session.bankAccountNo,
+          periodStart: session.periodStart,
+          glOpeningBalance: amount,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return data.error || "บันทึกยอดยกมาไม่สำเร็จ";
+      await loadBalance();
+      return null;
+    } catch {
+      return "เชื่อมต่อ server ไม่ได้";
+    }
+  }
+
+  async function handleUndoExcluded(matchId: number, num: number, reason: string): Promise<string | null> {
+    try {
+      const res = await fetch("/api/reconcile/unmatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targets: [{ matchId, nums: [num] }], reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return data.error || "ยกเลิกไม่สำเร็จ";
+      // รายการ GL กลับเข้าตาราง — loadData จะโหลดยอดคงเหลือตามให้เอง
+      await loadData(readWorkspaceDraft(draftKey));
+      return null;
+    } catch {
+      return "เชื่อมต่อ server ไม่ได้";
+    }
+  }
 
   function persistScroll(side: "bank" | "gl", top: number) {
     if (side === "bank") bankScrollTopRef.current = top;
@@ -1198,17 +1259,6 @@ export default function ActiveWorkspace({
 
   const matchReadyDates = matchReadyDatesByDirection[directionFilter];
 
-  // ยอดคงค้างของแต่ละฝั่งในทิศทางที่กำลังดู — ต้องคำนวณด้วยกติกาเดียวกับ pendingTotal ใน Panel เป๊ะ
-  // (กรองตามแท็บกลุ่มก่อน แล้วค่อยกรองตามทิศทาง) ไม่งั้นตัวเลขบนป้ายผลต่างกับในหัวตารางจะไม่ตรงกัน
-  const sumPending = useCallback(
-    (lines: LineItem[], groupTab: string) =>
-      lines
-        .filter((l) => (groupTab === "ALL" || l.groupKey === groupTab) && l.direction === directionFilter)
-        .reduce((sum, l) => sum + l.amount, 0),
-    [directionFilter]
-  );
-  const bankPendingTotal = useMemo(() => sumPending(bankLines, "ALL"), [bankLines, sumPending]);
-  const glPendingTotal = useMemo(() => sumPending(glLines, glGroupTab), [glLines, glGroupTab, sumPending]);
 
   // เลขกลุ่ม "กลุ่ม N" ที่โชว์บนจอต้องคำนวณครั้งเดียวใช้ร่วมกันทั้งฝั่ง bank และ GL ของวันเดียวกัน
   // ไล่จาก bankLines พอ เพราะทุก cluster ที่ computeReadyIds สร้างมีฝั่ง bank อย่างน้อย 1 รายการเสมอ
@@ -1384,7 +1434,11 @@ export default function ActiveWorkspace({
   // ถ้ายังไม่เข้าเงื่อนไข จะปิดปุ่มพร้อมบอกเหตุผล ไม่ตัดรายการทิ้งเงียบอีกต่อไป
   const matchPlan = useMemo(() => {
     if (selectedBankItems.length === 0 || selectedGlItems.length === 0) {
-      return { groups: [] as { bankIds: number[]; glIds: number[] }[], problem: null as string | null };
+      return {
+        groups: [] as { bankIds: number[]; glIds: number[] }[],
+        problem: null as string | null,
+        needsRemark: false,
+      };
     }
 
     const bankById = new Map(selectedBankItems.map((l) => [l.lineId, l]));
@@ -1425,31 +1479,48 @@ export default function ActiveWorkspace({
       return {
         groups: [],
         problem: `ยังไม่ได้เลือกรายการฝั่ง ${isBank ? "GL (BC365)" : "Bank"} มาจับคู่กับ ${shown}${more}`,
+        needsRemark: false,
       };
     }
 
-    for (let i = 0; i < groups.length; i++) {
-      const bankSum = groups[i].bankIds.reduce((s, id) => s + (bankById.get(id)?.amount ?? 0), 0);
-      const glSum = groups[i].glIds.reduce((s, id) => s + (glById.get(id)?.amount ?? 0), 0);
-      if (Math.abs(bankSum - glSum) >= AMOUNT_TOLERANCE) {
-        return {
-          groups: [],
-          problem:
-            groups.length === 1
-              ? `ยอดสองฝั่งต่างกัน ${formatAmount(Math.abs(bankSum - glSum))} — จับคู่ไม่ได้`
-              : `กลุ่มย่อยที่ ${i + 1} ยอดไม่ตรงกัน (Bank ${formatAmount(bankSum)} / GL ${formatAmount(glSum)}) — ลองจับคู่ทีละกลุ่ม`,
-        };
-      }
+    // ยอดไม่เท่ากัน: จับคู่รายการต้นทางตามจริง แล้วพักโอนเฉพาะส่วนต่างพร้อมหมายเหตุไว้กับ MatchId
+    // รวบทุกรายการที่เลือกเป็นกลุ่มเดียว เพื่อให้ยอดพักโอนผูกกับเหตุผลเดียวชัดเจน ไม่กระจายไปหลายกลุ่มย่อย
+    const unbalanced = groups.some((g) => {
+      const bankSum = g.bankIds.reduce((s, id) => s + (bankById.get(id)?.amount ?? 0), 0);
+      const glSum = g.glIds.reduce((s, id) => s + (glById.get(id)?.amount ?? 0), 0);
+      return Math.abs(bankSum - glSum) >= AMOUNT_TOLERANCE;
+    });
+    if (unbalanced) {
+      return {
+        groups: [
+          {
+            bankIds: selectedBankItems.map((l) => l.lineId),
+            glIds: selectedGlItems.map((l) => l.entryNo),
+          },
+        ],
+        problem: null as string | null,
+        needsRemark: true,
+      };
     }
 
-    return { groups, problem: null as string | null };
+    return { groups, problem: null as string | null, needsRemark: false };
     // groupSelectionByDateDirection อ่านค่าจาก selectedBankItems/selectedGlItems/clusterOf เท่านั้น
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedBankItems, selectedGlItems, clusterOf]);
 
   const canMatch = matchPlan.groups.length > 0 && matchPlan.problem === null;
 
-  async function handleMatch() {
+  function handleMatchClick() {
+    if (!canMatch || busy || syncingGl) return;
+    if (matchPlan.needsRemark) {
+      setRemarkError("");
+      setRemarkModal("match");
+      return;
+    }
+    void handleMatch();
+  }
+
+  async function handleMatch(remark?: string) {
     if (!canMatch || busy || syncingGl || matchInFlightRef.current) return;
     const startedAt = Date.now();
     matchInFlightRef.current = true;
@@ -1471,6 +1542,7 @@ export default function ActiveWorkspace({
           bankAccountNo: session.bankAccountNo,
           matchType: "MATCHED",
           groups,
+          ...(remark ? { remark } : {}),
         }),
       });
       const data = await res.json();
@@ -1496,8 +1568,9 @@ export default function ActiveWorkspace({
       await new Promise((resolve) => setTimeout(resolve, 850));
       setToast({
         title: "จับคู่สำเร็จ",
-        message:
-          groups.length === 1
+        message: remark
+          ? `จับคู่สำเร็จ (MatchId ${data.matchId}) · พักโอนส่วนต่าง ${Number(data.suspenseDifference ?? data.difference ?? 0) < 0 ? "−" : "+"}${formatAmount(Math.abs(Number(data.suspenseDifference ?? data.difference ?? 0)))} บาท`
+          : groups.length === 1
             ? `จับคู่สำเร็จ (MatchId ${data.matchId}) ยอด ${formatAmount(bankTotal)} บาท`
             : `จับคู่สำเร็จ ${groups.length} กลุ่มย่อย ภายใต้ MatchId ${data.matchId}`,
       });
@@ -1552,11 +1625,117 @@ export default function ActiveWorkspace({
     }
   }
 
-  // บันทึก/ยกเลิกหักล้างกันเองสำเร็จ — โหลดตารางใหม่แต่คืนสิ่งที่ผู้ใช้ติ๊กไว้ด้วย draft ล่าสุดใน sessionStorage
-  // (loadData เปล่าๆ จะรีเซ็ตเป็นการติ๊กอัตโนมัติ ทำให้รายการที่เลือกไว้ในอีกแท็บหายไปทั้งที่ไม่เกี่ยวกัน)
-  function handleOffsetChanged() {
-    void loadData(readWorkspaceDraft(draftKey));
+  // ไม่นำมาจับคู่ — รายการ GL ที่ไม่มีวันมีคู่ในธนาคาร เช่น JV ปรับปรุงยอดท้ายเดือน (ประชุม 17 ก.ย. 2026)
+  // ต่างจากพัก: ไม่ได้รอเคลียร์ในอนาคต จึงแยกสถานะให้ดูออกในรายงาน
+  async function handleExclude(remark: string) {
+    if (selectedGlItems.length === 0 || busy || syncingGl) return;
+    setBusy(true);
+    setRemarkError("");
+    try {
+      const res = await fetch("/api/reconcile/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankCode: session.bankCode,
+          bankAccountNo: session.bankAccountNo,
+          matchType: "EXCLUDED",
+          groups: [{ bankLineIds: [], glEntryNos: selectedGlItems.map((l) => l.entryNo) }],
+          remark,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRemarkError(data.error || "บันทึกไม่สำเร็จ");
+        return;
+      }
+      setRemarkModal(null);
+      setToast({
+        title: "บันทึกเป็น JV ปรับปรุงพักโอนแล้ว",
+        message: `GL ${selectedGlItems.length} รายการ (MatchId ${data.matchId}) — ดูยอดพักโอนได้ที่ป้ายด้านบน`,
+      });
+      await loadData(readWorkspaceDraft(draftKey));
+    } catch {
+      setRemarkError("เชื่อมต่อ server ไม่ได้");
+    } finally {
+      setBusy(false);
+    }
   }
+
+  // เลือก GL ที่ระบบหาคู่ไม่เจอทั้งหมดในแท็บที่ดูอยู่ — ทีมบัญชีจับคู่ครบแล้วจะพักที่เหลือทีเดียว
+  // (ในที่ประชุมสั่งซ้ำหลายรอบว่า "ที่ยังไม่เจอ กดทั้งหมดแล้วพักไป") ไม่รวมรายการที่ระบบจับกลุ่มกับ Bank ได้
+  const remainingGlIds = useMemo(
+    () => glLinesRaw.filter((l) => l.direction === directionFilter && !clusterOf.has(l.id)).map((l) => l.id),
+    [glLinesRaw, directionFilter, clusterOf]
+  );
+  const remainingGlSelected = remainingGlIds.length > 0 && remainingGlIds.every((id) => selectedGl.has(id));
+  function toggleRemainingGl() {
+    setSelectedGl((prev) => {
+      const next = new Set(prev);
+      for (const id of remainingGlIds) {
+        if (remainingGlSelected) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  // ติ๊กค้างไว้ข้ามแท็บ IN/OUT ได้อยู่แล้ว (selectedGl เก็บทั้งสองทิศ) — ยกไปเป็นกลุ่มตั้งต้นในหน้าต่างจับชน
+  // ต่างจากปุ่มอื่นในแถบล่างที่ตั้งใจให้เห็นเฉพาะทิศที่เปิดดูอยู่ เพราะ IN/OUT มักคนละคนดูแล
+  const offsetSelection = useMemo(
+    () => glLinesRaw.filter((l) => selectedGl.has(l.id)),
+    [glLinesRaw, selectedGl]
+  );
+  const offsetCounts = useMemo(() => {
+    const inCount = offsetSelection.filter((l) => l.direction === "IN").length;
+    return { inCount, outCount: offsetSelection.length - inCount };
+  }, [offsetSelection]);
+  async function handleOffsetSelection(groups: number[][]) {
+    if (groups.length === 0 || busy || syncingGl) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/reconcile/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankCode: session.bankCode,
+          bankAccountNo: session.bankAccountNo,
+          matchType: "OFFSET",
+          groups: groups.map((entryNos) => ({ bankLineIds: [], glEntryNos: entryNos })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "จับชนไม่สำเร็จ");
+        return;
+      }
+      setOffsetConfirmOpen(false);
+      const rows = groups.reduce((sum, g) => sum + g.length, 0);
+      setToast({
+        title: "จับชนสำเร็จ",
+        message:
+          groups.length === 1
+            ? `หักล้าง GL ${rows} รายการ (MatchId ${data.matchId})`
+            : `หักล้าง GL ${rows} รายการ ${groups.length} กลุ่ม (MatchId ${data.matchId})`,
+      });
+      await loadData();
+    } catch {
+      setError("เชื่อมต่อ server ไม่ได้");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const remarkLines = useMemo(
+    () =>
+      remarkModal === "match"
+        ? [
+            ...selectedBankItems.map((l) => ({ id: l.id, side: "Bank" as const, date: l.date, ref: `${l.ref} ${l.description ?? ""}`.trim(), amount: l.amount })),
+            ...selectedGlItems.map((l) => ({ id: l.id, side: "GL" as const, date: l.date, ref: l.ref, amount: l.amount })),
+          ]
+        : selectedGlItems.map((l) => ({ id: l.id, side: "GL" as const, date: l.date, ref: l.ref, amount: l.amount })),
+    [remarkModal, selectedBankItems, selectedGlItems]
+  );
 
   // ปิดผู้ช่วยหาคู่ — ถ้าจับคู่ไประหว่างเปิด popup ต้องโหลดตารางใหม่ ไม่งั้นรายการที่จับไปแล้วยังค้างอยู่บนจอ
   function handleAssistantClose(matchedPairs: number) {
@@ -1742,21 +1921,56 @@ export default function ActiveWorkspace({
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {offsetModal && (
-          <GlOffsetModal
-            key="gl-offset"
-            bankCode={session.bankCode}
-            bankAccountNo={session.bankAccountNo}
+        {remarkModal && (
+          <RemarkActionModal
+            key="remark-action"
+            mode={remarkModal}
+            lines={remarkLines}
+            busy={busy}
+            error={remarkError}
+            onCancel={() => setRemarkModal(null)}
+            onConfirm={(remark) => {
+              if (remarkModal === "exclude") {
+                void handleExclude(remark);
+              } else {
+                setRemarkModal(null);
+                void handleMatch(remark);
+              }
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {offsetConfirmOpen && (
+          <OffsetConfirmModal
+            key="offset-confirm"
+            lines={glLinesRaw.map((l) => ({
+              id: l.id,
+              entryNo: l.entryNo,
+              date: l.date,
+              ref: l.ref,
+              direction: l.direction,
+              amount: l.amount,
+            }))}
+            initialSelectedIds={offsetSelection.map((l) => l.id)}
+            busy={busy}
+            error={error}
+            onCancel={() => setOffsetConfirmOpen(false)}
+            onConfirm={handleOffsetSelection}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {balanceOpen && (
+          <BalanceModal
+            key="balance"
+            data={balanceData}
+            loading={balanceLoading}
+            error={balanceError}
             accountLabel={accountFullLabel}
-            periodStart={session.periodStart}
-            periodEnd={session.periodEnd}
-            glExtendDays={session.includeSuspenseBuffer ? 7 : 0}
-            pairs={reversalPairs}
-            glLines={glLinesRaw}
-            initialTab={offsetModal.tab}
-            focusEntryNo={offsetModal.focusEntryNo}
-            onChanged={handleOffsetChanged}
-            onClose={() => setOffsetModal(null)}
+            onClose={() => setBalanceOpen(false)}
+            onSaveOpening={handleSaveOpening}
+            onUndoExcluded={handleUndoExcluded}
           />
         )}
       </AnimatePresence>
@@ -1801,11 +2015,14 @@ export default function ActiveWorkspace({
             )}
           </div>
 
-          <DifferenceBadge
-            bankTotal={bankPendingTotal}
-            glTotal={glPendingTotal}
-            loading={loading}
+          <BalanceBadge
+            difference={balanceData?.difference ?? null}
+            remaining={balanceData?.adjustment.remaining ?? null}
+            needsOpening={Boolean(balanceData && balanceData.gl.opening === null)}
+            unavailable={balanceUnavailable}
+            loading={loading || (balanceLoading && !balanceData)}
             floating
+            onOpen={() => setBalanceOpen(true)}
           />
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
@@ -1902,11 +2119,14 @@ export default function ActiveWorkspace({
             onScroll={(event) => persistScroll("bank", event.currentTarget.scrollTop)}
           />
           {/* จอเล็กที่ตารางเรียงซ้อนกัน ไม่มีรอยต่อให้คร่อม จึงแทรกเป็นชิ้นปกติระหว่างสองตารางแทน */}
-          <DifferenceBadge
-            bankTotal={bankPendingTotal}
-            glTotal={glPendingTotal}
-            loading={loading}
+          <BalanceBadge
+            difference={balanceData?.difference ?? null}
+            remaining={balanceData?.adjustment.remaining ?? null}
+            needsOpening={Boolean(balanceData && balanceData.gl.opening === null)}
+            unavailable={balanceUnavailable}
+            loading={loading || (balanceLoading && !balanceData)}
             floating={false}
+            onOpen={() => setBalanceOpen(true)}
           />
 
           <Panel
@@ -1936,32 +2156,20 @@ export default function ActiveWorkspace({
             syncDisabled={loading || busy || syncingGl}
             extraActions={
               <button
-                onClick={() => setOffsetModal({ tab: reversalPairs.length > 0 ? "auto" : "manual", focusEntryNo: null })}
-                disabled={loading || busy || syncingGl}
-                title={
-                  reversalPairs.length > 0
-                    ? `มีคู่กลับรายการใน BC ${reversalPairs.length} คู่ที่ซ่อนจากตารางแล้ว (ไม่รวมในยอด) — กดเพื่อตรวจและยืนยัน`
-                    : "หักล้างกันเอง — รายการ BC ที่ยกเลิกกันเอง (กด Reverse หรือแก้ด้วย JV) ยอดสุทธิ 0 ไม่ต้องจับคู่กับ Bank"
-                }
+                onClick={toggleRemainingGl}
+                disabled={loading || busy || syncingGl || remainingGlIds.length === 0}
+                aria-pressed={remainingGlSelected}
+                title="เลือก/ยกเลิก GL ทั้งหมดในแท็บนี้ที่ระบบหาคู่ไม่เจอ — ใช้ตอนจับคู่ครบแล้วจะพักที่เหลือทีเดียว"
                 className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  reversalPairs.length > 0
-                    ? "border-teal-200 bg-teal-50 text-teal-700 hover:bg-teal-100"
+                  remainingGlSelected
+                    ? "border-blue-200 bg-blue-50 text-blue-700"
                     : "border-gray-200 text-gray-600 hover:bg-gray-50"
                 }`}
               >
-                <Scale size={12} />
-                หักล้างกันเอง
-                {reversalPairs.length > 0 && (
-                  <span className="rounded-full bg-teal-600 px-1.5 text-[10px] font-semibold leading-4 text-white tabular-nums">
-                    {reversalPairs.length}
-                  </span>
-                )}
+                <ListChecks size={12} />
+                ที่ไม่มีคู่ ({remainingGlIds.length})
               </button>
             }
-            onOffsetRequest={(id) => {
-              const line = glLinesRaw.find((l) => l.id === id);
-              setOffsetModal({ tab: "manual", focusEntryNo: line?.entryNo ?? null });
-            }}
             scrollRef={glScrollRef}
             onScroll={(event) => persistScroll("gl", event.currentTarget.scrollTop)}
           />
@@ -2012,6 +2220,33 @@ export default function ActiveWorkspace({
               <X size={14} /> Clear
             </button>
             <button
+              onClick={() => {
+                setError("");
+                setOffsetConfirmOpen(true);
+              }}
+              disabled={loading || busy || syncingGl || glLinesRaw.length === 0}
+              title="เปิดหน้าต่างจับชน — เลือก GL ขาเข้ากับขาออกที่ล้างกันเองได้ทั้งสองฝั่งในที่เดียว"
+              className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Scale size={14} /> จับชน IN↔OUT
+              {offsetSelection.length > 0 && (
+                <span className="tabular-nums text-xs">
+                  ({offsetCounts.inCount}:{offsetCounts.outCount})
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setRemarkError("");
+                setRemarkModal("exclude");
+              }}
+              disabled={selectedGlItems.length === 0 || busy || syncingGl}
+              title="JV ปรับปรุงพักโอนใน BC (เช่น JVMUAY2609016) — ไม่นำมาจับคู่กับ Bank แต่ใช้ปิดยอดพักโอน"
+              className="flex items-center gap-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
+            >
+              <Ban size={14} /> ปรับปรุงพักโอน
+            </button>
+            <button
               onClick={() => setConfirmSuspenseOpen(true)}
               disabled={!canMoveToSuspense || busy || syncingGl}
               className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
@@ -2019,13 +2254,20 @@ export default function ActiveWorkspace({
               Move to suspense
             </button>
             <button
-              onClick={handleMatch}
+              onClick={handleMatchClick}
               disabled={!canMatch || busy || syncingGl}
-              title={matchPlan.problem ?? (matchPlan.groups.length > 1 ? `จะบันทึกเป็น ${matchPlan.groups.length} กลุ่มย่อย` : undefined)}
+              title={
+                matchPlan.problem ??
+                (matchPlan.needsRemark
+                  ? "ยอดสองฝั่งไม่เท่ากัน — ระบบจะพักโอนเฉพาะส่วนต่างและให้ระบุหมายเหตุ"
+                  : matchPlan.groups.length > 1
+                    ? `จะบันทึกเป็น ${matchPlan.groups.length} กลุ่มย่อย`
+                    : undefined)
+              }
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-              Match {selectedBankItems.length}:{selectedGlItems.length}
+              {matchPlan.needsRemark ? "Match + พักส่วนต่าง" : "Match"} {selectedBankItems.length}:{selectedGlItems.length}
             </button>
           </div>
         </div>

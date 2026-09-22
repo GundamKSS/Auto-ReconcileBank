@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
 import UnsuspendConfirmModal, { ConfirmLine } from "./UnsuspendConfirmModal";
+import { loadReconcileSession } from "../../../lib/reconcileSession";
+import { useSessionState } from "../../../hooks/useSessionState";
+import type { ReconcileSession } from "../../reconcile/components/types";
+import type { BalanceData } from "../../reconcile/components/balanceTypes";
 
 type RawBankLine = {
   lineId: number;
@@ -40,6 +44,10 @@ type MatchRecord = {
   matchId: number;
   bankCode: string;
   matchType: "MATCHED" | "SUSPENSE";
+  suspenseKind?: "LINE" | "DIFFERENCE";
+  suspenseDifference?: number | null;
+  suspenseDirection?: "IN" | "OUT";
+  remark?: string | null;
   createdBy: string | null;
   createdAt: string;
   bankLines: RawBankLine[];
@@ -77,6 +85,10 @@ const GROUP_BADGE_COLORS = [
 
 function formatAmount(n: number) {
   return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function formatSigned(n: number) {
+  if (Math.abs(n) < 0.005) return "0.00";
+  return `${n > 0 ? "+" : "−"}${formatAmount(Math.abs(n))}`;
 }
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
@@ -181,6 +193,34 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
   );
 }
 
+function SummaryCell({
+  label,
+  detail,
+  value,
+  tone,
+}: {
+  label: string;
+  detail: string;
+  value: number | null;
+  tone: "slate" | "emerald" | "rose" | "amber";
+}) {
+  const colors = {
+    slate: "text-slate-800",
+    emerald: "text-emerald-700",
+    rose: "text-rose-700",
+    amber: "text-amber-700",
+  } as const;
+  return (
+    <div className="bg-white px-4 py-3">
+      <p className="text-[11px] font-medium text-slate-500">{label}</p>
+      <p className={`mt-1 text-xl font-semibold tabular-nums ${colors[tone]}`}>
+        {value === null ? "—" : formatSigned(value)}
+      </p>
+      <p className="mt-1 truncate text-[10px] text-slate-400" title={detail}>{detail}</p>
+    </div>
+  );
+}
+
 function SubGroupTable({
   num,
   colorIdx,
@@ -255,6 +295,7 @@ function MatchCard({
   onRevertMatch: (match: MatchRecord) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isDifferenceSuspense = match.suspenseKind === "DIFFERENCE";
   const unified = useMemo(() => toUnifiedLines(match), [match]);
   const bankTotal = match.bankLines.reduce((s, l) => s + l.amount, 0);
   const glTotal = match.glLines.reduce((s, l) => s + l.amount, 0);
@@ -274,14 +315,18 @@ function MatchCard({
       className="bg-white border border-gray-200 rounded-2xl overflow-hidden"
     >
       <div className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
-        <input
-          type="checkbox"
-          checked={allSelected}
-          onChange={() => onToggleMatch(match)}
-          onClick={(e) => e.stopPropagation()}
-          className="w-4 h-4 rounded border-gray-300 shrink-0"
-          title="เลือกทั้งหมดใน match นี้"
-        />
+        {isDifferenceSuspense ? (
+          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${match.suspenseDirection === "IN" ? "bg-emerald-500" : "bg-rose-500"}`} />
+        ) : (
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={() => onToggleMatch(match)}
+            onClick={(e) => e.stopPropagation()}
+            className="w-4 h-4 rounded border-gray-300 shrink-0"
+            title="เลือกทั้งหมดใน match นี้"
+          />
+        )}
         <button
           onClick={() => setExpanded((v) => !v)}
           className="flex items-center gap-3 flex-1 min-w-0 text-left"
@@ -298,7 +343,7 @@ function MatchCard({
                 {match.bankCode}
               </span>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                SUSPENSE
+                {isDifferenceSuspense ? "พักส่วนต่าง" : "พักทั้งรายการ"}
               </span>
               <AgingBadge createdAt={match.createdAt} />
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
@@ -314,21 +359,34 @@ function MatchCard({
               {formatDateTime(match.createdAt)} · Bank {match.bankLines.length} รายการ · GL {match.glLines.length}{" "}
               รายการ
             </p>
+            {isDifferenceSuspense && match.remark && (
+              <p className="mt-0.5 truncate text-xs text-amber-700" title={match.remark}>หมายเหตุ: {match.remark}</p>
+            )}
           </div>
           <div className="text-right shrink-0">
-            <p className="text-sm font-semibold text-gray-900 tabular-nums">{formatAmount(bankTotal)}</p>
-            {Math.abs(bankTotal - glTotal) >= 0.005 && (
-              <p className="text-[11px] text-red-500">GL {formatAmount(glTotal)}</p>
+            {isDifferenceSuspense ? (
+              <>
+                <p className={`text-sm font-semibold tabular-nums ${match.suspenseDirection === "IN" ? "text-emerald-700" : "text-rose-700"}`}>
+                  {match.suspenseDirection === "IN" ? "รับ" : "จ่าย"} {formatAmount(Math.abs(match.suspenseDifference ?? 0))}
+                </p>
+                <p className="text-[11px] text-gray-400">Bank {formatAmount(bankTotal)} · BC {formatAmount(glTotal)}</p>
+              </>
+            ) : (
+              <p className="text-sm font-semibold text-gray-900 tabular-nums">{formatAmount(glTotal)}</p>
             )}
           </div>
         </button>
-        <button
-          onClick={() => onRevertMatch(match)}
-          className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-3 py-1.5 rounded-full transition-colors shrink-0"
-        >
-          <Undo2 size={13} />
-          ดึงกลับไป Reconcile
-        </button>
+        {isDifferenceSuspense ? (
+          <span className="hidden shrink-0 text-[11px] text-gray-400 sm:inline">ยกเลิกคู่ได้ที่ Match History</span>
+        ) : (
+          <button
+            onClick={() => onRevertMatch(match)}
+            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-3 py-1.5 rounded-full transition-colors shrink-0"
+          >
+            <Undo2 size={13} />
+            ดึงกลับไป Reconcile
+          </button>
+        )}
       </div>
 
       <AnimatePresence initial={false}>
@@ -365,6 +423,14 @@ export default function SuspenseWorkspace() {
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
+  const [queueSummary, setQueueSummary] = useState({ incoming: 0, outgoing: 0, lineCount: 0, differenceCount: 0 });
+  const [reconcileSession, setReconcileSession] = useState<ReconcileSession | null>(null);
+  // การ์ดสรุปยอดพับเก็บได้ และเริ่มแบบพับไว้ — ตารางผลต่างรายวันสูงมาก ถ้ากางค้างไว้ตลอด
+  // ตัวกรองกับรายการพักโอนจะถูกดันลงไปจนต้องเลื่อนหาทุกครั้งที่เปิดหน้า (จำไว้ตลอดแท็บนี้)
+  const [summaryOpen, setSummaryOpen] = useSessionState("suspense:summaryOpen", false);
+  const [balance, setBalance] = useState<BalanceData | null>(null);
+  const [balanceLoading, setBalanceLoading] = useState(false);
+  const [balanceError, setBalanceError] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
@@ -389,15 +455,49 @@ export default function SuspenseWorkspace() {
   // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
   const inFlightRef = useRef(false);
 
+  useEffect(() => {
+    const saved = loadReconcileSession();
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setReconcileSession(saved);
+  }, []);
+
+  useEffect(() => {
+    if (!reconcileSession?.bankAccountNo) return;
+    const controller = new AbortController();
+    const qs = new URLSearchParams({
+      bankAccountNo: reconcileSession.bankAccountNo,
+      from: reconcileSession.periodStart,
+      to: reconcileSession.periodEnd,
+    });
+    // เปลี่ยนบัญชี/งวดต้องแสดงสถานะโหลดของ request ชุดใหม่ทันที
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBalanceLoading(true);
+    setBalanceError("");
+    fetch(`/api/reconcile/balance?${qs}`, { signal: controller.signal })
+      .then(async (res) => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "โหลดสรุปพักโอนไม่สำเร็จ");
+        setBalance(data);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setBalanceError(err instanceof Error ? err.message : "โหลดสรุปพักโอนไม่สำเร็จ");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setBalanceLoading(false);
+      });
+    return () => controller.abort();
+  }, [reconcileSession]);
+
   // หน่วงคำค้นก่อนยิง API ไม่ให้โหลดใหม่ทุกตัวอักษร (เหมือนหน้า Reports)
   useEffect(() => {
     const t = setTimeout(() => setQ(searchInput.trim()), 350);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  // matchType=SUSPENSE เสมอ — หน้านี้เป็นรายการพักโอนอย่างเดียว รายการจับคู่แล้วมีหน้า Match History ของตัวเอง
+  // รวมรายการพักทั้งแถวกับผลต่างของคู่ที่ยอด Bank/BC ไม่เท่ากัน
   const params = useMemo(() => {
-    const p = new URLSearchParams({ matchType: "SUSPENSE" });
+    const p = new URLSearchParams({ matchType: "SUSPENSE", includeDifferenceSuspense: "1" });
     if (bankFilter !== "ALL") p.set("bankCode", bankFilter);
     if (dateFrom) p.set("from", dateFrom);
     if (dateTo) p.set("to", dateTo);
@@ -429,6 +529,7 @@ export default function SuspenseWorkspace() {
         loadedParamsRef.current = params;
         setMatches(data.matches);
         setTotal(data.total ?? data.matches.length);
+        if (data.suspenseSummary) setQueueSummary(data.suspenseSummary);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
@@ -525,6 +626,7 @@ export default function SuspenseWorkspace() {
   }
 
   function toggleMatch(match: MatchRecord) {
+    if (match.suspenseKind === "DIFFERENCE") return;
     const keys = toUnifiedLines(match).map((l) => l.key);
     const allSelected = keys.length > 0 && keys.every((k) => selected.has(k));
     setSelected((prev) => {
@@ -535,7 +637,10 @@ export default function SuspenseWorkspace() {
     });
   }
 
-  const loadedKeys = useMemo(() => matches.flatMap(toUnifiedLines).map((l) => l.key), [matches]);
+  const loadedKeys = useMemo(
+    () => matches.filter((m) => m.suspenseKind !== "DIFFERENCE").flatMap(toUnifiedLines).map((l) => l.key),
+    [matches]
+  );
   // "เลือกทั้งหมด" = ทุกรายการที่ตรงกับตัวกรอง ไม่ใช่แค่ 50 match ที่โหลดมาแล้ว — ยังโหลดไม่ครบถือว่ายังไม่ได้เลือกทั้งหมด
   const allSelected = !hasMore && loadedKeys.length > 0 && loadedKeys.every((k) => selected.has(k));
   const someSelected = loadedKeys.some((k) => selected.has(k));
@@ -573,7 +678,7 @@ export default function SuspenseWorkspace() {
       }
       if (reqId !== requestIdRef.current) return;
       setMatches(all);
-      setSelected(new Set(all.flatMap(toUnifiedLines).map((l) => l.key)));
+      setSelected(new Set(all.filter((m) => m.suspenseKind !== "DIFFERENCE").flatMap(toUnifiedLines).map((l) => l.key)));
     } catch {
       if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
     } finally {
@@ -583,6 +688,7 @@ export default function SuspenseWorkspace() {
   }
 
   function openConfirmForMatch(match: MatchRecord) {
+    if (match.suspenseKind === "DIFFERENCE") return;
     setConfirmLines(toUnifiedLines(match).map(toConfirmLine));
   }
 
@@ -632,11 +738,19 @@ export default function SuspenseWorkspace() {
     return allUnified.filter((l) => selected.has(l.key)).reduce((s, l) => s + l.amount, 0);
   }, [matches, selected]);
 
+  const openingDifference =
+    balance?.bank.opening != null && balance.gl.opening != null ? balance.bank.opening - balance.gl.opening : null;
+  const incomingDifference = balance ? balance.bank.totalIn - balance.gl.totalIn : null;
+  const outgoingDifference = balance ? balance.bank.totalOut - balance.gl.totalOut : null;
+  const dailyDifferences = balance?.daily.filter(
+    (day) => Math.abs(day.dayDiffIn) >= 0.005 || Math.abs(day.dayDiffOut) >= 0.005
+  ) ?? [];
+
   return (
     <div className="flex-1 min-w-0 p-4 sm:p-6 pb-24">
       <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Suspense</h1>
       <p className="text-sm text-gray-500 mb-5">
-        รายการที่พักไว้จากหน้า Reconcile — ติ๊กเลือกรายการแล้วกดดึงกลับไป Reconcile เพื่อคืนสถานะเป็น UNMATCHED แล้วไปจับคู่ใหม่ได้
+        รวมรายการที่พักทั้งแถวและส่วนต่างจากคู่ที่ยอด Bank/BC ไม่เท่ากัน แยกยอดรับและจ่ายให้ตรวจสอบได้ทันที
       </p>
 
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
@@ -653,6 +767,138 @@ export default function SuspenseWorkspace() {
             {b}
           </button>
         ))}
+      </div>
+
+      <section className="mb-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <button
+          type="button"
+          aria-expanded={summaryOpen}
+          onClick={() => setSummaryOpen((open) => !open)}
+          className={`flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50 ${
+            summaryOpen ? "border-b border-slate-100" : ""
+          }`}
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <ChevronRight
+              size={15}
+              className={`shrink-0 text-slate-400 transition-transform ${summaryOpen ? "rotate-90 text-slate-600" : ""}`}
+            />
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-900">สรุปพักโอนตามบัญชี</h2>
+              <p className="mt-0.5 truncate text-xs text-slate-500">
+                {reconcileSession?.accountName ?? reconcileSession?.bankAccountNo ?? "เลือกบัญชีที่หน้า Reconcile ก่อน"}
+                {reconcileSession && ` · ${reconcileSession.periodStart} – ${reconcileSession.periodEnd}`}
+              </p>
+            </div>
+          </div>
+          {/* ตอนพับอยู่ยังเห็นตัวเลขสำคัญ — ยอดพักโอนปลายงวดกับจำนวนวันที่ยอดสองฝั่งไม่ตรงกัน */}
+          <span className="flex shrink-0 items-center gap-2 text-[11px] font-medium text-slate-600">
+            {!summaryOpen && balance && (
+              <span className="tabular-nums">
+                พักโอนปลายงวด {balance.difference == null ? "-" : formatAmount(balance.difference)}
+                {dailyDifferences.length > 0 && ` · ต่างกัน ${dailyDifferences.length} วัน`}
+              </span>
+            )}
+            {!summaryOpen && balanceLoading && <span className="text-slate-400">กำลังคำนวณ...</span>}
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">Bank เทียบ BC365 รายวัน</span>
+          </span>
+        </button>
+
+        {summaryOpen && (
+          <>
+
+        {balanceLoading ? (
+          <div className="flex items-center justify-center gap-2 py-10 text-sm text-slate-400">
+            <Loader2 size={15} className="animate-spin" /> กำลังคำนวณตามงวดล่าสุด...
+          </div>
+        ) : balanceError ? (
+          <p className="px-4 py-5 text-sm text-rose-600">{balanceError}</p>
+        ) : !balance ? (
+          <p className="px-4 py-5 text-sm text-slate-500">เลือกบัญชีและช่วงวันที่ในหน้า Reconcile ก่อน ระบบจึงจะสรุปแบบกระดาษบัญชีให้ได้</p>
+        ) : (
+          <>
+            <div className="grid gap-px bg-slate-100 sm:grid-cols-2 xl:grid-cols-4">
+              <SummaryCell
+                label="ผลต่างยอดยกมา"
+                detail={`Bank ${formatAmount(balance.bank.opening ?? 0)} · BC ${formatAmount(balance.gl.opening ?? 0)}`}
+                value={openingDifference}
+                tone="slate"
+              />
+              <SummaryCell
+                label="ผลต่างฝั่งรับ · IN"
+                detail={`Bank ${formatAmount(balance.bank.totalIn)} · BC ${formatAmount(balance.gl.totalIn)}`}
+                value={incomingDifference}
+                tone="emerald"
+              />
+              <SummaryCell
+                label="ผลต่างฝั่งจ่าย · OUT"
+                detail={`Bank ${formatAmount(balance.bank.totalOut)} · BC ${formatAmount(balance.gl.totalOut)}`}
+                value={outgoingDifference}
+                tone="rose"
+              />
+              <SummaryCell
+                label="ยอดพักโอนปลายงวด"
+                detail="ยกมา + IN − OUT"
+                value={balance.difference}
+                tone="amber"
+              />
+            </div>
+
+            <div className="border-t border-slate-100 px-4 py-3">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-semibold text-slate-700">ผลต่างรายวันที่ต้องตรวจสอบ</h3>
+                  <p className="text-[11px] text-slate-400">แสดงเฉพาะวันที่ยอดรับหรือยอดจ่ายของ Bank กับ BC ไม่ตรงกัน</p>
+                </div>
+                <span className="text-xs text-slate-400">{dailyDifferences.length} วัน</span>
+              </div>
+              <div className="max-h-[340px] overflow-auto rounded-xl border border-slate-100">
+                <table className="w-full min-w-[760px] text-xs">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-500">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-medium">วันที่</th>
+                      <th className="px-3 py-2 text-right font-medium">Bank IN</th>
+                      <th className="px-3 py-2 text-right font-medium">BC IN</th>
+                      <th className="px-3 py-2 text-right font-medium">พัก IN</th>
+                      <th className="px-3 py-2 text-right font-medium">Bank OUT</th>
+                      <th className="px-3 py-2 text-right font-medium">BC OUT</th>
+                      <th className="px-3 py-2 text-right font-medium">พัก OUT</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dailyDifferences.map((day) => (
+                      <tr key={day.date} className="hover:bg-slate-50/70">
+                        <td className="px-3 py-2 font-medium text-slate-700">{formatDate(day.date)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatAmount(day.bankIn)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatAmount(day.glIn)}</td>
+                        <td className={`px-3 py-2 text-right font-semibold tabular-nums ${Math.abs(day.dayDiffIn) < 0.005 ? "text-slate-300" : "text-emerald-700"}`}>
+                          {formatSigned(day.dayDiffIn)}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatAmount(day.bankOut)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600">{formatAmount(day.glOut)}</td>
+                        <td className={`px-3 py-2 text-right font-semibold tabular-nums ${Math.abs(day.dayDiffOut) < 0.005 ? "text-slate-300" : "text-rose-700"}`}>
+                          {formatSigned(day.dayDiffOut)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            </>
+          )}
+          </>
+        )}
+      </section>
+
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
+        <div>
+          <h2 className="text-sm font-semibold text-slate-800">รายการพักโอนที่บันทึกไว้</h2>
+          <p className="text-[11px] text-slate-400">พักทั้งรายการ {queueSummary.lineCount} Match · พักส่วนต่าง {queueSummary.differenceCount} Match</p>
+        </div>
+        <p className="text-xs text-slate-500 tabular-nums">
+          IN {formatAmount(queueSummary.incoming)} · OUT {formatAmount(queueSummary.outgoing)}
+        </p>
       </div>
 
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">

@@ -20,11 +20,11 @@ import sql from 'mssql';
  */
 
 export type DateBasis = 'BANK' | 'GL';
-export type StatusFilter = 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'UNMATCHED' | 'ALL';
-type MatchTypeStatus = 'MATCHED' | 'SUSPENSE' | 'OFFSET';
+export type StatusFilter = 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'EXCLUDED' | 'UNMATCHED' | 'ALL';
+type MatchTypeStatus = 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'EXCLUDED';
 
 function isMatchTypeStatus(status: StatusFilter): status is MatchTypeStatus {
-  return status === 'MATCHED' || status === 'SUSPENSE' || status === 'OFFSET';
+  return status === 'MATCHED' || status === 'SUSPENSE' || status === 'OFFSET' || status === 'EXCLUDED';
 }
 export type ReportSide = 'AR' | 'AP';
 export type Direction = 'IN' | 'OUT';
@@ -41,7 +41,7 @@ export type ReportFilters = {
   bankCode: string | null;
   q: string | null;
   /**
-   * ตัดกลุ่มหักล้างกันเอง (OFFSET) ออกตอนดูสถานะ ALL — Dashboard ใช้ เพราะนับทุกสถานะที่ไม่ใช่
+   * ตัดกลุ่มหักล้างกันเอง (OFFSET) และไม่นำมาจับคู่ (EXCLUDED) ออกตอนดูสถานะ ALL — Dashboard ใช้ เพราะนับทุกสถานะที่ไม่ใช่
    * "จับคู่แล้ว" เป็นงานค้าง ส่วนหน้า Reports ต้องเห็นครบทุกสถานะจึงไม่ตั้ง
    */
   excludeOffset?: boolean;
@@ -82,7 +82,7 @@ export function parseFilters(params: URLSearchParams): ReportPageFilters {
     from: rawFrom && DATE_RE.test(rawFrom) ? rawFrom : fallback.from,
     to: rawTo && DATE_RE.test(rawTo) ? rawTo : fallback.to,
     basis: params.get('basis') === 'GL' ? 'GL' : 'BANK',
-    status: (['MATCHED', 'SUSPENSE', 'OFFSET', 'UNMATCHED', 'ALL'] as const).includes(rawStatus as StatusFilter)
+    status: (['MATCHED', 'SUSPENSE', 'OFFSET', 'EXCLUDED', 'UNMATCHED', 'ALL'] as const).includes(rawStatus as StatusFilter)
       ? (rawStatus as StatusFilter)
       : 'MATCHED',
     side: params.get('side')?.toUpperCase() === 'AP' ? 'AP' : 'AR',
@@ -159,7 +159,7 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
   const matchTypeFilter = isMatchTypeStatus(f.status)
     ? 'AND rm.MatchType = @matchType'
     : f.excludeOffset
-      ? "AND rm.MatchType <> 'OFFSET'"
+      ? "AND rm.MatchType NOT IN ('OFFSET', 'EXCLUDED')"
       : '';
   const matchBankFilter = f.bankCode ? 'AND rm.BankCode = @bankCode' : '';
   const dateFilter = groupDateFilter(f.basis);
@@ -393,7 +393,7 @@ export const ORDER_BY =
 
 export type ReportRow = {
   rowKey: string;
-  status: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'UNMATCHED';
+  status: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'EXCLUDED' | 'UNMATCHED';
   direction: Direction;
   matchId: number | null;
   groupNum: number | null;
@@ -474,7 +474,7 @@ export function mapRow(r: Record<string, unknown>): ReportRow {
 }
 
 export type SummaryBucket = {
-  status: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'UNMATCHED';
+  status: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'EXCLUDED' | 'UNMATCHED';
   bankCode: string;
   rows: number;
   matches: number;

@@ -6,9 +6,8 @@ import { getPool } from  '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../../lib/apiInput';
-import { glAmount, glDirection, glSignedAmount } from '../../../../lib/glAmount';
+import { glAmount, glDirection } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
-import { splitReversalPairs } from '../../../../lib/glOffset';
 // กัน Next.js cache response ของ route นี้ไว้ (ต้องเป็นข้อมูลสดทุกครั้ง เพราะ filter วันที่/ธนาคารเปลี่ยนได้ตลอด)
 export const dynamic = 'force-dynamic';
 
@@ -114,17 +113,6 @@ export async function GET(req: NextRequest) {
       amount: r.Credit !== null ? r.Credit : r.Debit,
     }));
 
-    // คู่กลับรายการใน BC (ใบเดิม + แถว REVERSAL) หักล้างกันเองเหลือ 0 ไม่เคยมีเงินผ่านธนาคาร — แยกออกจากตาราง
-    // ไม่งั้นทั้งคู่ค้างอยู่ตลอด ถ่วงยอดรวมทั้งฝั่ง IN และ OUT และการติ๊กอัตโนมัติอาจเอาใบที่ถูกยกเลิกไปจับกับ
-    // เงินจริงในธนาคาร ส่งแยกเป็น reversalPairs ให้หน้าจอยืนยันบันทึกเป็น OFFSET (ดู lib/glOffset.ts)
-    const { pairs, rest } = splitReversalPairs(glResult.recordset, (r) => ({
-      entryNo: Number(r.Entry_No),
-      accountNo: r.Bank_Account_No,
-      documentNo: r.Document_No,
-      sourceCode: r.Source_Code,
-      signedAmount: glSignedAmount(r),
-    }));
-
     const toGlLine = (r: (typeof glResult.recordset)[number]) => ({
       id: `gl-${r.Entry_No}`,
       entryNo: Number(r.Entry_No),
@@ -133,17 +121,11 @@ export async function GET(req: NextRequest) {
       accountName: r.BankAccountName,
       date: r.Posting_Date,
       ref: r.Document_No,
-      sourceCode: r.Source_Code ?? null,
       direction: glDirection(r),
       description: r.Document_No,
       amount: glAmount(r),
     });
-    const glLines = rest.map(toGlLine);
-    const reversalPairs = pairs.map((p) => ({
-      key: `rev-${p.reversal.Entry_No}`,
-      original: toGlLine(p.original),
-      reversal: toGlLine(p.reversal),
-    }));
+    const glLines = glResult.recordset.map(toGlLine);
 
     // รายการฝั่ง bank ที่ยังไม่ได้ระบุบัญชี — หน้าจอเอาไปขึ้นป้ายเตือน (ดู ActiveWorkspace.tsx)
     const unassignedBankLines = byAccount ? bankLines.filter((l) => l.accountNo === null).length : 0;
@@ -151,7 +133,6 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       bankLines,
       glLines,
-      reversalPairs,
       accountDimensionReady: accountReady,
       unassignedBankLines,
     });

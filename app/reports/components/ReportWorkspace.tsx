@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 
 type Direction = "IN" | "OUT";
-type StatusValue = "MATCHED" | "SUSPENSE" | "OFFSET" | "UNMATCHED";
+type StatusValue = "MATCHED" | "SUSPENSE" | "OFFSET" | "EXCLUDED" | "UNMATCHED";
 type StatusFilter = StatusValue | "ALL";
 type DateBasis = "BANK" | "GL";
 type Side = "AR" | "AP";
@@ -92,7 +92,7 @@ const SIDES: { value: Side; label: string; hint: string }[] = [
 const STATUSES: { value: StatusFilter; label: string }[] = [
   { value: "MATCHED", label: "จับคู่แล้ว" },
   { value: "SUSPENSE", label: "พักไว้" },
-  { value: "OFFSET", label: "หักล้างกันเอง" },
+  { value: "EXCLUDED", label: "ปรับปรุงพักโอน" },
   { value: "UNMATCHED", label: "ยังไม่จับคู่" },
   { value: "ALL", label: "ทั้งหมด" },
 ];
@@ -101,6 +101,7 @@ const STATUS_BADGE: Record<StatusValue, string> = {
   MATCHED: "bg-green-100 text-green-700",
   SUSPENSE: "bg-amber-100 text-amber-700",
   OFFSET: "bg-teal-100 text-teal-700",
+  EXCLUDED: "bg-slate-200 text-slate-700",
   UNMATCHED: "bg-slate-200 text-slate-600",
 };
 
@@ -108,6 +109,7 @@ const STATUS_LABEL: Record<StatusValue, string> = {
   MATCHED: "จับคู่แล้ว",
   SUSPENSE: "พักไว้",
   OFFSET: "หักล้างกันเอง",
+  EXCLUDED: "ปรับปรุงพักโอน",
   UNMATCHED: "ยังไม่จับคู่",
 };
 
@@ -189,7 +191,7 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
   const inGroup = row.groupRows > 1;
   const hasDiff = row.diff !== null && Math.abs(row.diff) >= 0.005;
   // กลุ่มหักล้างกันเองไม่มีฝั่ง Bank โดยธรรมชาติ — บอกเหตุผลแทนคำว่า "รวมในกลุ่มเดียวกัน" ซึ่งทำให้เข้าใจผิดว่ามีคู่อยู่แถวอื่น
-  const noBankSide = row.status === "OFFSET";
+  const noBankSide = row.status === "OFFSET" || row.status === "EXCLUDED";
 
   return (
     <tr

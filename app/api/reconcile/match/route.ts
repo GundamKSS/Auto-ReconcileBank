@@ -5,6 +5,8 @@ import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { bankSignedSql, glSignedSql } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
+import { EXTRAS_MIGRATION_HINT, reconcileExtrasReady } from '../../../../lib/reconcileExtrasDb';
+import { remarkProblem } from '../../../../lib/matchRemark';
 
 type MatchGroup = {
   bankLineIds: number[];
@@ -15,9 +17,12 @@ type MatchRequestBody = {
   bankCode: string;
   // บัญชีของ session ที่กำลังทำอยู่ — ใช้ยืนยันว่าทุกรายการที่ส่งมาเป็นบัญชีเดียวกันจริง
   bankAccountNo?: string | null;
-  // OFFSET = หักล้างกันเอง: รายการ GL ล้วนที่ยกเลิกกันเองจนสุทธิเป็น 0 ไม่มีเงินผ่านธนาคาร (ดู lib/glOffset.ts)
-  matchType: 'MATCHED' | 'SUSPENSE' | 'OFFSET';
+  // OFFSET = จับชนขาเข้ากับขาออก: รายการ GL ล้วนที่ล้างกันเองจนสุทธิเป็น 0 ไม่มีเงินผ่านธนาคาร (ดู lib/glOffset.ts)
+  // EXCLUDED = ไม่นำมาจับคู่: รายการ GL ที่ไม่มีวันมีคู่ในธนาคาร เช่น JV ปรับปรุงยอดท้ายเดือน — ต้องมีหมายเหตุ
+  matchType: 'MATCHED' | 'SUSPENSE' | 'OFFSET' | 'EXCLUDED';
   groups: MatchGroup[]; // แต่ละ group = 1 กลุ่มย่อย (Num) ภายใน MatchId เดียวกัน
+  // บังคับเมื่อ EXCLUDED หรือ MATCHED ที่ยอดสองฝั่งไม่เท่ากัน — ใส่มากับประเภทอื่นได้ด้วย
+  remark?: string;
 };
 
 // ผลต่างที่ยอมรับได้ตอนเทียบยอด Bank กับ GL — ครึ่งสตางค์ ให้ตรงกับเกณฑ์ที่ฝั่ง UI ใช้
@@ -34,6 +39,7 @@ export async function POST(req: NextRequest) {
   try {
     const body: MatchRequestBody = await req.json();
     const { bankCode, bankAccountNo, matchType, groups } = body;
+    const remark = typeof body.remark === 'string' ? body.remark.trim() : '';
     // ผู้ทำรายการอ่านจาก session cookie ที่เซ็นไว้เท่านั้น ไม่รับค่าจาก body อีกต่อไป
     // ไม่งั้นใครก็ตั้งชื่อคนอื่นเป็นผู้จับคู่ได้ ทำให้ audit trail เชื่อถือไม่ได้
     const createdBy = auth.session.displayName;
@@ -43,7 +49,12 @@ export async function POST(req: NextRequest) {
     }
     // matchType ถูกนำไปใช้ทั้ง bind param และประกอบ SQL ต่อ (UPDATE MatchStatus) — ต้องจำกัดไว้เฉพาะ
     // ค่าที่รู้จักเท่านั้น กันค่าแปลกปลอมจาก client หลุดเข้า query (SQL injection) และกันสถานะขยะลง DB
-    if (matchType !== 'MATCHED' && matchType !== 'SUSPENSE' && matchType !== 'OFFSET') {
+    if (
+      matchType !== 'MATCHED' &&
+      matchType !== 'SUSPENSE' &&
+      matchType !== 'OFFSET' &&
+      matchType !== 'EXCLUDED'
+    ) {
       return NextResponse.json({ error: 'matchType ไม่ถูกต้อง' }, { status: 400 });
     }
     if (!Array.isArray(groups) || groups.length === 0) {
@@ -76,17 +87,25 @@ export async function POST(req: NextRequest) {
           );
         }
       }
-      // หักล้างกันเองต้องมีอย่างน้อยขาเข้า 1 + ขาออก 1 และห้ามมีฝั่ง Bank — ถ้ามีเงินผ่านธนาคารจริงต้องใช้ MATCHED
+      // จับชน IN↔OUT ต้องมีอย่างน้อยขาเข้า 1 + ขาออก 1 และห้ามมีฝั่ง Bank — ถ้ามีเงินผ่านธนาคารจริงต้องใช้ MATCHED
       if (matchType === 'OFFSET') {
         if (g.bankLineIds.length > 0) {
           return NextResponse.json(
-            { error: 'หักล้างกันเองใช้ได้เฉพาะรายการฝั่ง GL (BC365) — รายการที่มีเงินผ่านธนาคารต้องจับคู่ด้วยปุ่ม Match' },
+            { error: 'จับชนใช้ได้เฉพาะรายการฝั่ง GL (BC365) — รายการที่มีเงินผ่านธนาคารต้องจับคู่ด้วยปุ่ม Match' },
             { status: 400 }
           );
         }
         if (g.glEntryNos.length < 2) {
           return NextResponse.json(
-            { error: 'การหักล้างกันเองแต่ละกลุ่มต้องมีรายการ GL อย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
+            { error: 'การจับชนแต่ละกลุ่มต้องมีรายการ GL อย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
+            { status: 400 }
+          );
+        }
+      }
+      if (matchType === 'EXCLUDED') {
+        if (g.bankLineIds.length > 0 || g.glEntryNos.length === 0) {
+          return NextResponse.json(
+            { error: 'ปรับปรุงพักโอนใช้ได้เฉพาะรายการ JV ฝั่ง GL (BC365) — ฝั่ง Bank Statement เป็นข้อมูลจากธนาคาร ต้องค้างไว้' },
             { status: 400 }
           );
         }
@@ -115,8 +134,20 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    if (remark) {
+      const problem = remarkProblem(remark);
+      if (problem) return NextResponse.json({ error: problem }, { status: 400 });
+    }
+    if (matchType === 'EXCLUDED' && !remark) {
+      return NextResponse.json({ error: 'ปรับปรุงพักโอนต้องใส่หมายเหตุ' }, { status: 400 });
+    }
+
     const pool = await getPool();
     const accountReady = await bankAccountColumnsReady();
+    const extrasReady = await reconcileExtrasReady();
+    if ((matchType === 'EXCLUDED' || remark) && !extrasReady) {
+      return NextResponse.json({ error: EXTRAS_MIGRATION_HINT }, { status: 409 });
+    }
     const transaction = new sql.Transaction(pool);
     await transaction.begin();
 
@@ -214,6 +245,9 @@ export async function POST(req: NextRequest) {
 
       // 2) แต่ละกลุ่มของ MATCHED ต้องมียอดสองฝั่งดุลกัน — ตรวจจากยอดจริงใน DB ไม่ใช่ตัวเลขที่ client ส่งมา
       //    ด่านนี้จำเป็นเพราะฝั่ง UI เคยส่งกลุ่มที่ยอดไม่ดุลมาได้ (ตอนผู้ใช้เลือกข้ามวันแล้วบางรายการถูกตัดทิ้ง)
+      //    ยกเว้นมีหมายเหตุ: จับคู่รายการต้นทางตามจริงและพักโอนเฉพาะส่วนต่างไว้กับ MatchId
+      let totalDifference = 0;
+      let totalSuspenseDifference = 0;
       if (matchType === 'MATCHED') {
         for (let i = 0; i < groups.length; i++) {
           const g = groups[i];
@@ -231,16 +265,27 @@ export async function POST(req: NextRequest) {
           const glTotal = Number(glSum.recordset[0]?.Total ?? 0);
 
           if (Math.abs(bankTotal - glTotal) >= AMOUNT_TOLERANCE) {
-            throw new Error(
-              `กลุ่มย่อยที่ ${i + 1} ยอดสองฝั่งไม่ตรงกัน ` +
-                `(Bank ${formatAmount(bankTotal)} / GL ${formatAmount(glTotal)} ` +
-                `ต่างกัน ${formatAmount(Math.abs(bankTotal - glTotal))}) — จับคู่ไม่ได้`
-            );
+            if (!remark) {
+              throw new Error(
+                `กลุ่มย่อยที่ ${i + 1} ยอดสองฝั่งไม่ตรงกัน ` +
+                  `(Bank ${formatAmount(bankTotal)} / GL ${formatAmount(glTotal)} ` +
+                  `ต่างกัน ${formatAmount(Math.abs(bankTotal - glTotal))}) — ต้องใส่หมายเหตุจึงจะจับคู่ได้`
+              );
+            }
+            // ส่วนต่างที่มีทิศตรงข้ามกับรายการ (เช่น Bank IN 5,000 จับกับ GL IN 6,000) คือ GL บันทึกเกินธนาคาร
+            // ยังยอมให้บันทึกได้ แต่ถ้ายอดฝั่งหนึ่งเป็น 0 แปลว่าเลือกผิดทิศ ไม่ใช่ส่วนต่าง
+            if (Math.sign(bankTotal) !== Math.sign(glTotal)) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} ฝั่ง Bank กับ GL เป็นคนละทิศทาง (เข้า/ออก) — จับคู่ไม่ได้`);
+            }
+            totalDifference += bankTotal - glTotal;
+            // หน้าจอเปรียบเทียบ "ยอด" แบบไม่ติดเครื่องหมายทิศทาง จึงต้องได้ 649,469.00 - 649,469.56 = -0.56
+            // ส่วน totalDifference ด้านบนยังคงเครื่องหมายทางบัญชีไว้ใช้คำนวณยอดคงเหลือ
+            totalSuspenseDifference += Math.abs(bankTotal) - Math.abs(glTotal);
           }
         }
       }
 
-      // 2b) กลุ่มหักล้างกันเองต้องมีทั้งขาเข้าและขาออก และยอดสุทธิเป็น 0 จริง — ตรวจจากยอดใน DB เช่นกัน
+      // 2b) กลุ่มจับชนต้องมีทั้งขาเข้าและขาออก และยอดสุทธิเป็น 0 จริง — ตรวจจากยอดใน DB ไม่ใช่ตัวเลขจาก client
       if (matchType === 'OFFSET') {
         const signed = glSignedSql();
         for (let i = 0; i < groups.length; i++) {
@@ -254,21 +299,30 @@ export async function POST(req: NextRequest) {
           `);
           const row = result.recordset[0] ?? {};
           const net = Number(row.Net ?? 0);
-          // ด่าน 1c ข้ามไปถ้ายังไม่ได้รัน sql/006 แต่การหักล้างข้ามบัญชีผิดเสมอ ฝั่ง GL มีเลขบัญชีทุกแถวอยู่แล้วจึงเช็คได้เลย
+          // ด่าน 1c ข้ามไปถ้ายังไม่ได้รัน sql/006 แต่การจับชนข้ามบัญชีผิดเสมอ ฝั่ง GL มีเลขบัญชีทุกแถวอยู่แล้วจึงเช็คได้เลย
           if (Number(row.AccountCount ?? 0) !== 1) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการจากหลายบัญชี — หักล้างข้ามบัญชีไม่ได้`);
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการจากหลายบัญชี — จับชนข้ามบัญชีไม่ได้`);
           }
           if (Number(row.ZeroCount ?? 0) > 0) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการยอด 0 บาท — หักล้างไม่ได้`);
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการยอด 0 บาท — จับชนไม่ได้`);
           }
           if (Number(row.InCount ?? 0) === 0 || Number(row.OutCount ?? 0) === 0) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} ต้องมีทั้งรายการขาเข้า (IN) และขาออก (OUT) — หักล้างไม่ได้`);
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} ต้องมีทั้งรายการขาเข้า (IN) และขาออก (OUT) — จับชนไม่ได้`);
           }
           if (Math.abs(net) >= AMOUNT_TOLERANCE) {
-            throw new Error(
-              `กลุ่มย่อยที่ ${i + 1} ขาเข้ากับขาออกต่างกัน ${formatAmount(Math.abs(net))} — หักล้างกันเองไม่ได้`
-            );
+            throw new Error(`กลุ่มย่อยที่ ${i + 1} ขาเข้ากับขาออกต่างกัน ${formatAmount(Math.abs(net))} — จับชนไม่ได้`);
           }
+        }
+      }
+
+      // 2a) ไม่นำมาจับคู่ต้องเป็นบัญชีเดียวกันทั้งกลุ่ม — ด่าน 1c ข้ามไปถ้ายังไม่ได้รัน sql/006
+      if (matchType === 'EXCLUDED') {
+        const result = await new sql.Request(transaction).query(`
+          SELECT COUNT(DISTINCT Bank_Account_No) AS AccountCount
+          FROM BankAccountLedgerEntries WHERE Entry_No IN (${[...seenGl].join(',')})
+        `);
+        if (Number(result.recordset[0]?.AccountCount ?? 0) !== 1) {
+          throw new Error('รายการที่เลือกมาจากหลายบัญชี — ปรับปรุงพักโอนข้ามบัญชีไม่ได้');
         }
       }
 
@@ -281,11 +335,13 @@ export async function POST(req: NextRequest) {
         .input('createdBy', sql.NVarChar, createdBy);
       const storeAccount = accountReady && Boolean(matchAccountNo);
       if (storeAccount) matchRequest.input('bankAccountNo', sql.NVarChar, matchAccountNo);
+      const storeRemark = extrasReady && Boolean(remark);
+      if (storeRemark) matchRequest.input('remark', sql.NVarChar(500), remark);
 
       const matchResult = await matchRequest.query(`
-          INSERT INTO ReconciliationMatch (BankCode, ${storeAccount ? 'BankAccountNo, ' : ''}MatchType, CreatedBy)
+          INSERT INTO ReconciliationMatch (BankCode, ${storeAccount ? 'BankAccountNo, ' : ''}${storeRemark ? 'Remark, ' : ''}MatchType, CreatedBy)
           OUTPUT INSERTED.MatchId
-          VALUES (@bankCode, ${storeAccount ? '@bankAccountNo, ' : ''}@matchType, @createdBy)
+          VALUES (@bankCode, ${storeAccount ? '@bankAccountNo, ' : ''}${storeRemark ? '@remark, ' : ''}@matchType, @createdBy)
         `);
       const matchId = matchResult.recordset[0].MatchId;
 
@@ -335,6 +391,9 @@ export async function POST(req: NextRequest) {
         bankAccountNo: matchAccountNo,
         groupCount: groups.length,
         bankLineCount: allBankIds.length,
+        difference: Math.round(totalDifference * 100) / 100,
+        // ชื่อที่สื่อความหมายทางบัญชีชัดเจนกว่า difference และคง difference ไว้เพื่อ backward compatibility
+        suspenseDifference: Math.round(totalSuspenseDifference * 100) / 100,
       });
     } catch (err) {
       await transaction.rollback();
