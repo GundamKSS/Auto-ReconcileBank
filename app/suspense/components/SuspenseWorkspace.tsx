@@ -338,7 +338,7 @@ function MatchCard({
           )}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap mb-0.5">
-              <span className="text-sm font-medium text-gray-900">Match #{match.matchId}</span>
+              <span className="text-sm font-medium text-gray-900">เลขอ้างอิง #{match.matchId}</span>
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                 {match.bankCode}
               </span>
@@ -356,7 +356,7 @@ function MatchCard({
               )}
             </div>
             <p className="text-xs text-gray-400">
-              {formatDateTime(match.createdAt)} · Bank {match.bankLines.length} รายการ · GL {match.glLines.length}{" "}
+              {formatDateTime(match.createdAt)} · ธนาคาร {match.bankLines.length} รายการ · BC365 {match.glLines.length}{" "}
               รายการ
             </p>
             {isDifferenceSuspense && match.remark && (
@@ -369,7 +369,7 @@ function MatchCard({
                 <p className={`text-sm font-semibold tabular-nums ${match.suspenseDirection === "IN" ? "text-emerald-700" : "text-rose-700"}`}>
                   {match.suspenseDirection === "IN" ? "รับ" : "จ่าย"} {formatAmount(Math.abs(match.suspenseDifference ?? 0))}
                 </p>
-                <p className="text-[11px] text-gray-400">Bank {formatAmount(bankTotal)} · BC {formatAmount(glTotal)}</p>
+                <p className="text-[11px] text-gray-400">ธนาคาร {formatAmount(bankTotal)} · BC {formatAmount(glTotal)}</p>
               </>
             ) : (
               <p className="text-sm font-semibold text-gray-900 tabular-nums">{formatAmount(glTotal)}</p>
@@ -377,14 +377,14 @@ function MatchCard({
           </div>
         </button>
         {isDifferenceSuspense ? (
-          <span className="hidden shrink-0 text-[11px] text-gray-400 sm:inline">ยกเลิกคู่ได้ที่ Match History</span>
+          <span className="hidden shrink-0 text-[11px] text-gray-400 sm:inline">ยกเลิกคู่ได้ที่ ประวัติการจับคู่</span>
         ) : (
           <button
             onClick={() => onRevertMatch(match)}
             className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-3 py-1.5 rounded-full transition-colors shrink-0"
           >
             <Undo2 size={13} />
-            ดึงกลับไป Reconcile
+            คืนรายการเพื่อจับคู่ใหม่
           </button>
         )}
       </div>
@@ -533,7 +533,7 @@ export default function SuspenseWorkspace() {
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
-          setError("เชื่อมต่อ server ไม่ได้");
+          setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
           setMatches([]);
           setTotal(0);
         }
@@ -566,7 +566,7 @@ export default function SuspenseWorkspace() {
       }
       setMatches((prev) => [...prev, ...data.matches]);
     } catch {
-      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       inFlightRef.current = false;
       if (reqId === requestIdRef.current) setLoadingMore(false);
@@ -680,7 +680,7 @@ export default function SuspenseWorkspace() {
       setMatches(all);
       setSelected(new Set(all.filter((m) => m.suspenseKind !== "DIFFERENCE").flatMap(toUnifiedLines).map((l) => l.key)));
     } catch {
-      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       inFlightRef.current = false;
       setSelectingAll(false);
@@ -720,13 +720,13 @@ export default function SuspenseWorkspace() {
         revertedKeys.forEach((k) => next.delete(k));
         return next;
       });
-      setToast(`ดึงกลับไป Reconcile สำเร็จ ${confirmLines.length} รายการ`);
+      setToast(`คืนรายการเพื่อจับคู่ใหม่ สำเร็จ ${confirmLines.length} รายการ`);
       setConfirmLines(null);
       // โหลดหน้าแรกใหม่จาก server แทนการแก้ matches ในเครื่องเอง — กัน offset เพี้ยนกับ total ที่เซิร์ฟเวอร์นับไว้
       // (รายการที่ดึงกลับไปแล้วอาจอยู่ในหน้าที่ยังไม่โหลดมาก็ได้ ไม่ใช่แค่ในชุดที่แสดงอยู่)
       setReloadToken((t) => t + 1);
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBusy(false);
     }
@@ -748,9 +748,9 @@ export default function SuspenseWorkspace() {
 
   return (
     <div className="flex-1 min-w-0 p-4 sm:p-6 pb-24">
-      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">Suspense</h1>
+      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">รายการพัก</h1>
       <p className="text-sm text-gray-500 mb-5">
-        รวมรายการที่พักทั้งแถวและส่วนต่างจากคู่ที่ยอด Bank/BC ไม่เท่ากัน แยกยอดรับและจ่ายให้ตรวจสอบได้ทันที
+        ตรวจสอบรายการที่พักไว้และส่วนต่างจากการจับคู่ยอดธนาคารกับ BC365 พร้อมแยกยอดเงินเข้าและเงินออก
       </p>
 
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
@@ -786,7 +786,7 @@ export default function SuspenseWorkspace() {
             <div className="min-w-0">
               <h2 className="text-sm font-semibold text-slate-900">สรุปพักโอนตามบัญชี</h2>
               <p className="mt-0.5 truncate text-xs text-slate-500">
-                {reconcileSession?.accountName ?? reconcileSession?.bankAccountNo ?? "เลือกบัญชีที่หน้า Reconcile ก่อน"}
+                {reconcileSession?.accountName ?? reconcileSession?.bankAccountNo ?? "เลือกบัญชีที่หน้ากระทบยอด ก่อน"}
                 {reconcileSession && ` · ${reconcileSession.periodStart} – ${reconcileSession.periodEnd}`}
               </p>
             </div>
@@ -800,7 +800,7 @@ export default function SuspenseWorkspace() {
               </span>
             )}
             {!summaryOpen && balanceLoading && <span className="text-slate-400">กำลังคำนวณ...</span>}
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">Bank เทียบ BC365 รายวัน</span>
+            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">ธนาคารเทียบ BC365 รายวัน</span>
           </span>
         </button>
 
@@ -814,7 +814,7 @@ export default function SuspenseWorkspace() {
         ) : balanceError ? (
           <p className="px-4 py-5 text-sm text-rose-600">{balanceError}</p>
         ) : !balance ? (
-          <p className="px-4 py-5 text-sm text-slate-500">เลือกบัญชีและช่วงวันที่ในหน้า Reconcile ก่อน ระบบจึงจะสรุปแบบกระดาษบัญชีให้ได้</p>
+          <p className="px-4 py-5 text-sm text-slate-500">เลือกบัญชีและช่วงวันที่ในหน้ากระทบยอด ก่อน ระบบจึงจะสรุปแบบกระดาษบัญชีให้ได้</p>
         ) : (
           <>
             <div className="grid gap-px bg-slate-100 sm:grid-cols-2 xl:grid-cols-4">
@@ -848,7 +848,7 @@ export default function SuspenseWorkspace() {
               <div className="mb-2 flex items-center justify-between gap-3">
                 <div>
                   <h3 className="text-xs font-semibold text-slate-700">ผลต่างรายวันที่ต้องตรวจสอบ</h3>
-                  <p className="text-[11px] text-slate-400">แสดงเฉพาะวันที่ยอดรับหรือยอดจ่ายของ Bank กับ BC ไม่ตรงกัน</p>
+                  <p className="text-[11px] text-slate-400">แสดงเฉพาะวันที่ยอดรับหรือยอดจ่ายของ ธนาคารกับ BC365 ไม่ตรงกัน</p>
                 </div>
                 <span className="text-xs text-slate-400">{dailyDifferences.length} วัน</span>
               </div>
@@ -857,12 +857,12 @@ export default function SuspenseWorkspace() {
                   <thead className="sticky top-0 bg-slate-50 text-slate-500">
                     <tr>
                       <th className="px-3 py-2 text-left font-medium">วันที่</th>
-                      <th className="px-3 py-2 text-right font-medium">Bank IN</th>
-                      <th className="px-3 py-2 text-right font-medium">BC IN</th>
-                      <th className="px-3 py-2 text-right font-medium">พัก IN</th>
-                      <th className="px-3 py-2 text-right font-medium">Bank OUT</th>
-                      <th className="px-3 py-2 text-right font-medium">BC OUT</th>
-                      <th className="px-3 py-2 text-right font-medium">พัก OUT</th>
+                      <th className="px-3 py-2 text-right font-medium">ธนาคาร: เงินเข้า</th>
+                      <th className="px-3 py-2 text-right font-medium">BC365: เงินเข้า</th>
+                      <th className="px-3 py-2 text-right font-medium">ผลต่างเงินเข้า</th>
+                      <th className="px-3 py-2 text-right font-medium">ธนาคาร: เงินออก</th>
+                      <th className="px-3 py-2 text-right font-medium">BC365: เงินออก</th>
+                      <th className="px-3 py-2 text-right font-medium">ผลต่างเงินออก</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -894,7 +894,7 @@ export default function SuspenseWorkspace() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
         <div>
           <h2 className="text-sm font-semibold text-slate-800">รายการพักโอนที่บันทึกไว้</h2>
-          <p className="text-[11px] text-slate-400">พักทั้งรายการ {queueSummary.lineCount} Match · พักส่วนต่าง {queueSummary.differenceCount} Match</p>
+          <p className="text-[11px] text-slate-400">พักทั้งรายการ {queueSummary.lineCount} Match · พักส่วนต่าง {queueSummary.differenceCount} ชุดการบันทึก</p>
         </div>
         <p className="text-xs text-slate-500 tabular-nums">
           IN {formatAmount(queueSummary.incoming)} · OUT {formatAmount(queueSummary.outgoing)}
@@ -1049,14 +1049,14 @@ export default function SuspenseWorkspace() {
                 onClick={() => setSelected(new Set())}
                 className="text-xs text-gray-300 hover:text-white px-2 py-1.5 transition-colors"
               >
-                ล้างเลือก
+                ล้างการเลือก
               </button>
               <button
                 onClick={openConfirmForSelection}
                 className="flex items-center gap-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 active:scale-95 px-4 py-2 rounded-full transition-all"
               >
                 <Undo2 size={14} />
-                ดึงกลับไป Reconcile
+                คืนรายการเพื่อจับคู่ใหม่
               </button>
             </motion.div>
           )}

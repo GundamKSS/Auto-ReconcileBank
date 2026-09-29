@@ -96,7 +96,7 @@ export default function LineItemsView({
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
             <Lock size={12} className="shrink-0" />
-            อ่านอย่างเดียว — แก้ไข เพิ่ม หรือลบทีละรายการไม่ได้ ถ้าไฟล์ผิดให้ลบทั้งไฟล์แล้วนำเข้าใหม่
+            หน้านี้ใช้ดูข้อมูลเท่านั้น หากข้อมูลไม่ถูกต้อง ให้ลบไฟล์และนำเข้าไฟล์ที่แก้ไขแล้ว ไม่สามารถแก้ไขหรือลบทีละรายการได้
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -177,9 +177,9 @@ export default function LineItemsView({
             className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 min-w-[120px]"
           >
             <option value="">ทั้งหมด</option>
-            <option value="UNMATCHED">UNMATCHED</option>
-            <option value="MATCHED">MATCHED</option>
-            <option value="SUSPENSE">SUSPENSE</option>
+            <option value="UNMATCHED">รอจับคู่</option>
+            <option value="MATCHED">จับคู่แล้ว</option>
+            <option value="SUSPENSE">พักรายการ</option>
           </select>
         </div>
         {hasActiveFilters && (

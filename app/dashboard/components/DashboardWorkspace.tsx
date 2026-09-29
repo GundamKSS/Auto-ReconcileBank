@@ -147,7 +147,7 @@ export default function DashboardWorkspace() {
         setUpdatedAt(new Date());
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
-          setError('เชื่อมต่อ server ไม่ได้');
+          setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ');
           setData(null);
         }
       } finally {
@@ -179,7 +179,7 @@ export default function DashboardWorkspace() {
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-slate-900">สรุปประจำเดือน</h1>
             <p className="mt-1 text-[15px] text-slate-500">
-              {monthLabel(month)} · {sideLabel(prefs.side)} · เกณฑ์วันที่{prefs.basis === 'BANK' ? 'ฝั่ง Bank Statement' : 'ฝั่ง BC365'}
+              {monthLabel(month)} · {sideLabel(prefs.side)} · เกณฑ์วันที่{prefs.basis === 'BANK' ? 'ฝั่งธนาคาร' : 'ฝั่ง BC365'}
               {prefs.bankCode !== 'ALL' ? ` · ${bankLabel(prefs.bankCode)}` : ''}
             </p>
           </div>
@@ -263,7 +263,7 @@ export default function DashboardWorkspace() {
                   prefs.basis === b ? 'bg-slate-900 text-white' : 'text-slate-500 hover:text-slate-700'
                 }`}
               >
-                {b === 'BANK' ? 'วันที่ Bank' : 'วันที่ BC'}
+                {b === 'BANK' ? 'วันที่รายการธนาคาร' : 'วันที่ BC'}
               </button>
             ))}
           </div>
@@ -361,7 +361,7 @@ export default function DashboardWorkspace() {
             )}
 
             {show('status') && (
-              <Card className={SPAN.status} title="สัดส่วนสถานะ" subtitle="นับเป็นบรรทัด ทั้งฝั่ง Bank และ BC">
+              <Card className={SPAN.status} title="สัดส่วนสถานะ" subtitle="นับเป็นบรรทัด ทั้งฝั่งธนาคารและ BC">
                 <StatusDonut data={data} />
               </Card>
             )}
@@ -373,7 +373,7 @@ export default function DashboardWorkspace() {
             )}
 
             {show('aging') && (
-              <Card className={SPAN.aging} title="อายุรายการค้าง" subtitle="ยังไม่จับคู่ และพักไว้">
+              <Card className={SPAN.aging} title="อายุรายการค้าง" subtitle="รอจับคู่ และพักไว้">
                 <AgingPanel data={data} />
               </Card>
             )}
@@ -382,7 +382,7 @@ export default function DashboardWorkspace() {
               <Card
                 className={SPAN.outstanding}
                 title="รายการค้างยอดสูง"
-                subtitle="เรียงตามจำนวนเงิน — ไล่เคลียร์จากตัวที่กระทบมากที่สุดก่อน"
+                subtitle="เรียงตามจำนวนเงินจากมากไปน้อย เพื่อช่วยจัดลำดับการตรวจสอบ"
               >
                 <OutstandingList data={data} />
               </Card>

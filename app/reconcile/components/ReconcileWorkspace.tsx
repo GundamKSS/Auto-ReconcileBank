@@ -49,7 +49,7 @@ export default function ReconcileWorkspace() {
           <button
             onClick={toggleMobileOpen}
             className="p-1.5 text-gray-400 hover:text-gray-600 shrink-0 lg:hidden"
-            aria-label="Toggle sidebar"
+            aria-label="เปิดหรือปิดเมนู"
           >
             <PanelLeft size={18} />
           </button>
@@ -62,7 +62,7 @@ export default function ReconcileWorkspace() {
             onClick={openNewReconciliation}
             className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0 whitespace-nowrap"
           >
-            <Plus size={16} /> New reconciliation
+            <Plus size={16} /> เริ่มกระทบยอดใหม่
           </button>
         </div>
       )}

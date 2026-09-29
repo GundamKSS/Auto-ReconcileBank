@@ -58,7 +58,7 @@ export default function MasterBankStatement() {
         id !== null && !(data.imports as ImportBatch[]).some((b) => b.ImportId === id) ? null : id
       );
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setLoading(false);
     }
@@ -115,7 +115,7 @@ export default function MasterBankStatement() {
       setNotice(`ลบไฟล์ "${target.FileName}" แล้ว — ดูผู้ลบ วันเวลา และเหตุผลได้ที่แท็บ "ประวัติการลบ"`);
       await loadBatches();
     } catch {
-      setDeleteError("เชื่อมต่อ server ไม่ได้");
+      setDeleteError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setDeleting(false);
     }
@@ -127,7 +127,7 @@ export default function MasterBankStatement() {
         <button
           onClick={toggleMobileOpen}
           className="mt-1 text-slate-500 hover:text-slate-700 lg:hidden"
-          aria-label="Toggle sidebar"
+          aria-label="เปิดหรือปิดเมนู"
         >
           <Menu size={22} />
         </button>
@@ -136,9 +136,9 @@ export default function MasterBankStatement() {
             <Database size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Master Data · Bank Statement</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการธนาคาร</h1>
             <p className="mt-1 text-[15px] text-slate-500">
-              ไฟล์ Bank Statement ที่นำเข้าไว้ — ดูรายการได้ ลบได้ทีละทั้งไฟล์เท่านั้น และทุกการลบเก็บประวัติไว้
+              ตรวจสอบไฟล์รายการเดินบัญชีธนาคารที่นำเข้าไว้ สามารถลบได้ทั้งไฟล์ โดยระบบจะเก็บประวัติการลบทุกครั้ง
             </p>
           </div>
         </div>

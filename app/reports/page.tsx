@@ -2,8 +2,8 @@ import MainContent from "../../components/MainContent";
 import ReportWorkspace from "./components/ReportWorkspace";
 
 export const metadata = {
-  title: "Reports",
-  description: "สรุปการกระทบยอดประจำเดือน พร้อม export เป็น Excel",
+  title: "รายงาน",
+  description: "สรุปผลการกระทบยอดประจำเดือนและดาวน์โหลดรายงาน Excel",
 };
 
 export default function ReportsPage() {

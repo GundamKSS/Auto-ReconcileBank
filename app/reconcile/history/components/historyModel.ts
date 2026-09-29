@@ -113,7 +113,7 @@ export type MatchTypeMeta = {
 
 export const MATCH_TYPE_META: Record<MatchTypeValue, MatchTypeMeta> = {
   MATCHED: {
-    label: "จับคู่ Bank ↔ BC",
+    label: "จับคู่ธนาคารกับ BC365",
     hint: "มีทั้งสองฝั่ง",
     chipClass: "bg-emerald-100 text-emerald-700",
     tabClass: "border-emerald-600 text-emerald-700",
@@ -121,23 +121,23 @@ export const MATCH_TYPE_META: Record<MatchTypeValue, MatchTypeMeta> = {
     revertable: true,
   },
   OFFSET: {
-    label: "หักล้างกันเอง",
-    hint: "BC ล้วน สุทธิ 0",
+    label: "หักล้างรายการ BC365",
+    hint: "เฉพาะ BC365 ยอดสุทธิเป็นศูนย์",
     chipClass: "bg-teal-100 text-teal-700",
     tabClass: "border-teal-600 text-teal-700",
     hasBankSide: false,
     revertable: true,
   },
   SUSPENSE: {
-    label: "พักโอน",
-    hint: "ย้ายเข้าบัญชีพัก",
+    label: "พักรายการ",
+    hint: "รอจับคู่ภายหลัง",
     chipClass: "bg-amber-100 text-amber-700",
     tabClass: "border-amber-500 text-amber-700",
     hasBankSide: false,
     revertable: false,
   },
   EXCLUDED: {
-    label: "ปรับปรุงพักโอน",
+    label: "JV ปรับปรุง",
     hint: "JV ไม่นำมาจับคู่",
     chipClass: "bg-slate-200 text-slate-700",
     tabClass: "border-slate-600 text-slate-700",

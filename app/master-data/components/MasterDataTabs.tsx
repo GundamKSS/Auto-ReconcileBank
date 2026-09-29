@@ -9,8 +9,8 @@ import { STICKY_VARS, useStickyHeight } from "./useSticky";
 // สลับระหว่างข้อมูลต้นทางสองฝั่งของการกระทบยอด — เมนู Master Data ใน sidebar มีอันเดียว (guardPath '/master-data')
 // จึงต้องมีแท็บในหน้าให้ไปอีกฝั่งได้
 const TABS = [
-  { href: "/master-data/bank-statement", label: "Bank Statement", hint: "ไฟล์จากธนาคาร", icon: FileSpreadsheet },
-  { href: "/master-data/gl", label: "GL", hint: "BC365", icon: BookOpen },
+  { href: "/master-data/bank-statement", label: "รายการธนาคาร", hint: "ไฟล์ที่นำเข้า", icon: FileSpreadsheet },
+  { href: "/master-data/gl", label: "รายการบัญชี", hint: "BC365", icon: BookOpen },
 ] as const;
 
 export default function MasterDataTabs() {

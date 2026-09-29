@@ -108,7 +108,7 @@ export default function DayTable({
               </th>
             ))}
             <th className="px-3 py-3 text-right">สุทธิ</th>
-            {showUnmatched && <th className="px-3 py-3 text-center">ยังไม่จับคู่</th>}
+            {showUnmatched && <th className="px-3 py-3 text-center">รอจับคู่</th>}
           </tr>
         }
       >

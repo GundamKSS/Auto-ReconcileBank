@@ -283,7 +283,7 @@ function DirectionBadge({ direction }: { direction: Direction }) {
       }`}
     >
       {isIn ? <ArrowDownLeft size={12} /> : <ArrowUpRight size={12} />}
-      {direction}
+      {isIn ? "เงินเข้า" : "เงินออก"}
     </span>
   );
 }
@@ -304,7 +304,7 @@ function FilterTabs({ value, onChange }: { value: Direction; onChange: (v: Direc
               : "text-gray-400 hover:text-gray-600"
           }`}
         >
-          {opt}
+          {opt === "IN" ? "เงินเข้า" : "เงินออก"}
         </button>
       ))}
     </div>
@@ -379,7 +379,7 @@ function CircleCheckbox({
         className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition-all duration-150 active:scale-90 ${
           checked || indeterminate ? `${activeColor} scale-100` : "border-gray-300 bg-white hover:border-gray-400"
         }`}
-        aria-label="select"
+        aria-label="เลือกรายการ"
       >
         {checked && (
           <Check
@@ -489,7 +489,7 @@ function DateGroupRow({
             <span className="text-[11px] text-gray-400">{items.length} รายการ</span>
             {matchReady && (
               <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
-                MATCH READY
+                ยอดรวมตรงกัน
               </span>
             )}
             {someSelected && (
@@ -544,7 +544,7 @@ function DateGroupRow({
                       {rawCluster !== undefined && lumpClusterIds.has(rawCluster) && (
                         <span
                           className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700"
-                          title="กลุ่มรวมยอด (1:N / N:1) — ยอดอาจตรงกันโดยบังเอิญ ควรตรวจก่อนกด Match"
+                          title="กลุ่มรวมยอด (1:N / N:1) — ยอดอาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"
                         >
                           รวมยอด
                         </span>
@@ -659,7 +659,7 @@ function Panel({
         >
           <h2 className="whitespace-nowrap text-[15px] font-semibold text-gray-900">{title}</h2>
           <span className="whitespace-nowrap text-xs text-gray-400">
-            {selectedInDirection} selected · {filtered.length} pending
+            เลือกแล้ว {selectedInDirection} · รอจับคู่ {filtered.length}
           </span>
           <p
             className={`whitespace-nowrap text-[11px] font-medium tracking-wide text-gray-400 ${
@@ -679,11 +679,11 @@ function Panel({
               <button
                 onClick={onSync}
                 disabled={syncDisabled}
-                title="ดึงรายการ GL ล่าสุด 40 วันจาก Business Central (BC365) มาอัปเดต — ใช้หลังบัญชีแก้ไขข้อมูลใน ERP เสร็จแล้ว"
+                title="อัปเดตรายการบัญชี 40 วันล่าสุดจาก BC365 ใช้หลังจากแก้ไขข้อมูลใน BC365 แล้ว"
                 className="flex items-center gap-1.5 text-xs font-medium text-gray-600 border border-gray-200 px-2.5 py-1.5 rounded-full hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />
-                {syncing ? "กำลังซิงค์..." : "ซิงค์จาก BC365"}
+                {syncing ? "กำลังดึงข้อมูล..." : "ดึงข้อมูลใหม่จาก BC365"}
               </button>
             )}
             {extraActions}
@@ -705,7 +705,7 @@ function Panel({
           </div>
         )}
         {!loading && byDate.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-gray-400">ไม่มีรายการค้างจับคู่ในช่วงที่เลือก</div>
+          <div className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบรายการรอจับคู่ตามเงื่อนไขที่เลือก</div>
         )}
         {!loading &&
           byDate.map(([date, items]) => (
@@ -860,7 +860,7 @@ export default function ActiveWorkspace({
     : !session.bankAccountNo
       ? `งานเดิมนี้ยังไม่ได้ระบุเลขบัญชีของ ${session.bankCode}`
       : unassignedBankLines > 0
-        ? `มี ${unassignedBankLines} รายการ Bank ที่ยังไม่ได้ระบุบัญชี`
+        ? `มี ${unassignedBankLines} รายการธนาคาร ที่ยังไม่ได้ระบุบัญชี`
         : null;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1020,7 +1020,7 @@ export default function ActiveWorkspace({
       setClusterOf(newClusterOf);
       setDataVersion((v) => v + 1);
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setLoading(false);
     }
@@ -1102,7 +1102,7 @@ export default function ActiveWorkspace({
       }
       setBalanceData(data);
     } catch {
-      setBalanceError("เชื่อมต่อ server ไม่ได้");
+      setBalanceError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBalanceLoading(false);
     }
@@ -1132,7 +1132,7 @@ export default function ActiveWorkspace({
       await loadBalance();
       return null;
     } catch {
-      return "เชื่อมต่อ server ไม่ได้";
+      return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ";
     }
   }
 
@@ -1149,7 +1149,7 @@ export default function ActiveWorkspace({
       await loadData(readWorkspaceDraft(draftKey));
       return null;
     } catch {
-      return "เชื่อมต่อ server ไม่ได้";
+      return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ";
     }
   }
 
@@ -1547,7 +1547,7 @@ export default function ActiveWorkspace({
       });
       const data = await res.json();
       if (!res.ok) {
-        const message = data.error || "Match ไม่สำเร็จ";
+        const message = data.error || "จับคู่ไม่สำเร็จ";
         setError(message);
         keepResultVisible = true;
         setMatchActivity((current) =>
@@ -1569,13 +1569,13 @@ export default function ActiveWorkspace({
       setToast({
         title: "จับคู่สำเร็จ",
         message: remark
-          ? `จับคู่สำเร็จ (MatchId ${data.matchId}) · พักโอนส่วนต่าง ${Number(data.suspenseDifference ?? data.difference ?? 0) < 0 ? "−" : "+"}${formatAmount(Math.abs(Number(data.suspenseDifference ?? data.difference ?? 0)))} บาท`
+          ? `จับคู่สำเร็จ (เลขอ้างอิง ${data.matchId}) · พักส่วนต่างไว้ ${Number(data.suspenseDifference ?? data.difference ?? 0) < 0 ? "−" : "+"}${formatAmount(Math.abs(Number(data.suspenseDifference ?? data.difference ?? 0)))} บาท`
           : groups.length === 1
-            ? `จับคู่สำเร็จ (MatchId ${data.matchId}) ยอด ${formatAmount(bankTotal)} บาท`
-            : `จับคู่สำเร็จ ${groups.length} กลุ่มย่อย ภายใต้ MatchId ${data.matchId}`,
+            ? `จับคู่สำเร็จ (เลขอ้างอิง ${data.matchId}) ยอด ${formatAmount(bankTotal)} บาท`
+            : `จับคู่สำเร็จ ${groups.length} กลุ่ม (เลขอ้างอิง ${data.matchId})`,
       });
     } catch {
-      const message = "เชื่อมต่อ server ไม่ได้";
+      const message = "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ";
       setError(message);
       keepResultVisible = true;
       setMatchActivity((current) =>
@@ -1610,16 +1610,16 @@ export default function ActiveWorkspace({
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "ย้ายเข้าบัญชีพักไม่สำเร็จ");
+        setError(data.error || "พักรายการไม่สำเร็จ");
         return;
       }
       setToast({
-        title: "ย้ายเข้าบัญชีพักสำเร็จ",
-        message: `ย้ายเข้าบัญชีพักโอนแล้ว (MatchId ${data.matchId}, ${groups.length} กลุ่มย่อย)`,
+        title: "พักรายการไว้แล้ว",
+        message: `รอจับคู่กับธนาคารภายหลัง · คืนรายการได้ที่หน้ารายการพัก (เลขอ้างอิง ${data.matchId}, ${groups.length} กลุ่ม)`,
       });
       await loadData();
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBusy(false);
     }
@@ -1650,12 +1650,12 @@ export default function ActiveWorkspace({
       }
       setRemarkModal(null);
       setToast({
-        title: "บันทึกเป็น JV ปรับปรุงพักโอนแล้ว",
-        message: `GL ${selectedGlItems.length} รายการ (MatchId ${data.matchId}) — ดูยอดพักโอนได้ที่ป้ายด้านบน`,
+        title: "บันทึกเป็น JV ปรับปรุงแล้ว",
+        message: `ระบุรายการ BC365 ${selectedGlItems.length} รายการเป็น JV ปรับปรุง และอัปเดตยอดพักโอนแล้ว (เลขอ้างอิง ${data.matchId})`,
       });
       await loadData(readWorkspaceDraft(draftKey));
     } catch {
-      setRemarkError("เชื่อมต่อ server ไม่ได้");
+      setRemarkError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBusy(false);
     }
@@ -1706,21 +1706,21 @@ export default function ActiveWorkspace({
       });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "จับชนไม่สำเร็จ");
+        setError(data.error || "บันทึกรายการหักล้างไม่สำเร็จ");
         return;
       }
       setOffsetConfirmOpen(false);
       const rows = groups.reduce((sum, g) => sum + g.length, 0);
       setToast({
-        title: "จับชนสำเร็จ",
+        title: "บันทึกรายการหักล้างแล้ว",
         message:
           groups.length === 1
-            ? `หักล้าง GL ${rows} รายการ (MatchId ${data.matchId})`
-            : `หักล้าง GL ${rows} รายการ ${groups.length} กลุ่ม (MatchId ${data.matchId})`,
+            ? `หักล้าง BC365 ${rows} รายการ (เลขอ้างอิง ${data.matchId})`
+            : `หักล้าง BC365 ${rows} รายการ ${groups.length} กลุ่ม (เลขอ้างอิง ${data.matchId})`,
       });
       await loadData();
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBusy(false);
     }
@@ -1741,7 +1741,7 @@ export default function ActiveWorkspace({
   function handleAssistantClose(matchedPairs: number) {
     setAssistantOpen(false);
     if (matchedPairs === 0) return;
-    setToast({ title: "จับคู่สำเร็จ", message: `ผู้ช่วยหาคู่จับคู่ข้ามวันแล้ว ${matchedPairs} คู่` });
+    setToast({ title: "จับคู่สำเร็จ", message: `ผู้ช่วยจับคู่จับคู่ข้ามวันแล้ว ${matchedPairs} คู่` });
     loadData();
   }
 
@@ -1764,13 +1764,13 @@ export default function ActiveWorkspace({
       const res = await fetch("/api/reconcile/sync-gl", { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "ซิงค์ข้อมูลจาก BC365 ไม่สำเร็จ");
+        setError(data.error || "ดึงข้อมูลจาก BC365 ไม่สำเร็จ");
         return;
       }
       await loadData();
-      setToast({ title: "ซิงค์ข้อมูลสำเร็จ", message: "ดึงรายการ GL ล่าสุดจาก BC365 มาอัปเดตแล้ว" });
+      setToast({ title: "ดึงข้อมูลใหม่แล้ว", message: "อัปเดตรายการบัญชีล่าสุดจาก BC365 เรียบร้อย" });
     } catch {
-      setError("เชื่อมต่อ BC365 sync service ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อบริการดึงข้อมูล BC365 ได้");
     } finally {
       setSyncingGl(false);
     }
@@ -1873,7 +1873,7 @@ export default function ActiveWorkspace({
                     </p>
                   ) : (
                     <p className="mt-0.5 text-[11px] text-slate-400">
-                      Bank {matchActivity.bankRows} <span className="mx-1 text-slate-300">·</span> GL {matchActivity.glRows}
+                      ธนาคาร {matchActivity.bankRows} <span className="mx-1 text-slate-300">·</span> BC365 {matchActivity.glRows}
                     </p>
                   )}
                 </div>
@@ -1997,7 +1997,7 @@ export default function ActiveWorkspace({
           <div className="min-w-0 flex-1 px-1 lg:max-w-[calc(50%_-_104px)]">
             <div className="flex items-center gap-2">
               <span className="h-2 w-2 shrink-0 rounded-full bg-blue-500 shadow-[0_0_0_4px_rgba(59,130,246,0.10)]" />
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Reconcile</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">กระทบยอด</p>
             </div>
             <p className="mt-0.5 truncate text-xs font-semibold text-slate-700" title={accountFullLabel}>
               {accountShortLabel}
@@ -2031,17 +2031,17 @@ export default function ActiveWorkspace({
                 onClick={handleResetWorkspace}
                 disabled={loading || busy || syncingGl}
                 className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                title="โหลดข้อมูลใหม่"
+                title="โหลดรายการล่าสุดและล้างการเลือกทั้งหมด โดยใช้บัญชีและช่วงวันที่เดิม"
               >
                 <RotateCcw size={14} />
-                <span className="hidden 2xl:inline">รีเซ็ต</span>
+                <span className="hidden 2xl:inline">โหลดข้อมูลใหม่</span>
               </button>
               <button
                 type="button"
                 onClick={() => setAssistantOpen(true)}
                 disabled={loading || busy || syncingGl}
                 className="relative overflow-hidden rounded-xl p-[1.5px] disabled:opacity-50"
-                title="เปิดผู้ช่วยหาคู่"
+                title="ค้นหาคู่แนะนำ รวมถึงรายการต่างวันที่ กรุณาตรวจสอบก่อนยืนยันจับคู่"
               >
                 <span
                   aria-hidden
@@ -2064,12 +2064,12 @@ export default function ActiveWorkspace({
                 }`}
                 title={
                   linkDates
-                    ? "ลิงก์วันที่เปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งเป็นอิสระต่อกัน"
-                    : "ลิงก์วันที่ปิดอยู่ — กดเพื่อให้ทั้ง 2 ฝั่งขยายและเลื่อนพร้อมกัน"
+                    ? "เปิดอยู่ — สองตารางกางวันเดียวกันและเลื่อนตามกัน กดเพื่อให้แยกกัน"
+                    : "ปิดอยู่ — สองตารางเลื่อนแยกกัน กดเพื่อให้เลื่อนตามกัน"
                 }
               >
                 <Link2 size={14} />
-                <span className="hidden 2xl:inline">ลิงก์วันที่</span>
+                <span className="hidden 2xl:inline">เลื่อนตามกัน</span>
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
                     linkDates ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
@@ -2094,9 +2094,9 @@ export default function ActiveWorkspace({
       <div className="relative px-4 pb-4 sm:px-6 lg:min-h-0 lg:flex-1 lg:overflow-hidden lg:pt-2">
         <div className="relative grid grid-cols-1 gap-4 lg:h-full lg:grid-cols-2 lg:gap-0 lg:overflow-hidden lg:rounded-2xl lg:border lg:border-slate-200 lg:bg-white lg:shadow-[0_8px_28px_rgba(15,23,42,0.06)]">
           <Panel
-            title="Bank statement"
+            title="รายการเดินบัญชีธนาคาร"
             notchSide="right"
-            totalLabel="BANK TOTAL"
+            totalLabel="ยอดรอจับคู่"
             allItems={bankLines}
             groups={bankGroups}
             groupTab="ALL"
@@ -2130,9 +2130,9 @@ export default function ActiveWorkspace({
           />
 
           <Panel
-            title="General Ledger (BC365)"
+            title="รายการบัญชี BC365"
             notchSide="left"
-            totalLabel="GL TOTAL"
+            totalLabel="ยอดรอจับคู่"
             allItems={glLines}
             groups={glGroups}
             groupTab={glGroupTab}
@@ -2159,7 +2159,7 @@ export default function ActiveWorkspace({
                 onClick={toggleRemainingGl}
                 disabled={loading || busy || syncingGl || remainingGlIds.length === 0}
                 aria-pressed={remainingGlSelected}
-                title="เลือก/ยกเลิก GL ทั้งหมดในแท็บนี้ที่ระบบหาคู่ไม่เจอ — ใช้ตอนจับคู่ครบแล้วจะพักที่เหลือทีเดียว"
+                title="เลือกรายการ BC365 ที่ไม่มีคู่แนะนำในแท็บนี้ เพื่อพักหลายรายการพร้อมกัน กดอีกครั้งเพื่อยกเลิกการเลือก"
                 className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   remainingGlSelected
                     ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -2167,7 +2167,7 @@ export default function ActiveWorkspace({
                 }`}
               >
                 <ListChecks size={12} />
-                ที่ไม่มีคู่ ({remainingGlIds.length})
+                {remainingGlSelected ? "ยกเลิกการเลือกทั้งหมด" : "เลือกทั้งหมดที่ไม่มีคู่"} ({remainingGlIds.length})
               </button>
             }
             scrollRef={glScrollRef}
@@ -2179,13 +2179,17 @@ export default function ActiveWorkspace({
       <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-2 sm:px-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-6 flex-wrap">
+            {/* เดิมเป็นเลข 3 ตัวลอยๆ ไม่มีป้ายบอกว่าเลขไหนคืออะไร */}
             <div>
+              <p className="text-[10px] font-medium text-gray-400">ยอดธนาคารที่เลือก</p>
               <p className="text-base font-semibold text-gray-900">{formatAmount(bankTotal)}</p>
             </div>
             <div>
+              <p className="text-[10px] font-medium text-gray-400">ยอด BC365 ที่เลือก</p>
               <p className="text-base font-semibold text-gray-900">{formatAmount(glTotal)}</p>
             </div>
             <div>
+              <p className="text-[10px] font-medium text-gray-400">{amountMatches ? "ยอดเท่ากัน" : "ยอดต่างกัน"}</p>
               <p className={`text-base font-semibold ${amountMatches ? "text-green-600" : "text-red-600"}`}>
                 {formatAmount(difference)}
               </p>
@@ -2201,23 +2205,23 @@ export default function ActiveWorkspace({
 
           <div className="flex items-center gap-2 flex-wrap">
             <ClusterKindToggle
-              label="1:1"
+              label="ยอดตรงกันพอดี"
               count={clusterKinds.oneToOne.count}
               checked={isKindSelected(clusterKinds.oneToOne)}
               tone="green"
-              title="เลือก/ยกเลิกทั้งหมด — กลุ่มที่ Bank 1 รายการยอดตรงกับ GL 1 รายการในวันเดียวกัน"
+              title="เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ธนาคาร 1 รายการ ยอดตรงกับ BC365 1 รายการ ในวันเดียวกัน"
               onClick={() => toggleKind(clusterKinds.oneToOne)}
             />
             <ClusterKindToggle
-              label="รวมยอด 1:N·N:1"
+              label="ต้องรวมหลายรายการ"
               count={clusterKinds.lumpSum.count}
               checked={isKindSelected(clusterKinds.lumpSum)}
               tone="amber"
-              title="เลือก/ยกเลิกทั้งหมด — กลุ่มที่ต้องรวมหลายรายการให้ยอดเท่ากัน ยอดอาจตรงกันโดยบังเอิญ ควรตรวจก่อนกด Match"
+              title="เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ต้องรวมหลายรายการเข้าด้วยกันยอดจึงเท่า อาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"
               onClick={() => toggleKind(clusterKinds.lumpSum)}
             />
             <button onClick={handleClear} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 px-3 py-2">
-              <X size={14} /> Clear
+              <X size={14} /> ล้างการเลือก
             </button>
             <button
               onClick={() => {
@@ -2225,10 +2229,10 @@ export default function ActiveWorkspace({
                 setOffsetConfirmOpen(true);
               }}
               disabled={loading || busy || syncingGl || glLinesRaw.length === 0}
-              title="เปิดหน้าต่างจับชน — เลือก GL ขาเข้ากับขาออกที่ล้างกันเองได้ทั้งสองฝั่งในที่เดียว"
+              title="รายการ BC365 เงินเข้ากับเงินออกที่ล้างกันเอง ไม่มีคู่ในธนาคาร — เปิดหน้าต่างเลือกได้ทั้งสองฝั่งในที่เดียว"
               className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              <Scale size={14} /> จับชน IN↔OUT
+              <Scale size={14} /> หักล้างรายการ BC365
               {offsetSelection.length > 0 && (
                 <span className="tabular-nums text-xs">
                   ({offsetCounts.inCount}:{offsetCounts.outCount})
@@ -2241,17 +2245,18 @@ export default function ActiveWorkspace({
                 setRemarkModal("exclude");
               }}
               disabled={selectedGlItems.length === 0 || busy || syncingGl}
-              title="JV ปรับปรุงพักโอนใน BC (เช่น JVMUAY2609016) — ไม่นำมาจับคู่กับ Bank แต่ใช้ปิดยอดพักโอน"
+              title="ใช้กับ JV ปรับปรุงที่บันทึกใน BC365 แล้ว รายการที่เลือกจะไม่นำไปจับคู่กับธนาคาร และจะใช้คำนวณยอดพักโอน"
               className="flex items-center gap-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
             >
-              <Ban size={14} /> ปรับปรุงพักโอน
+              <Ban size={14} /> ระบุเป็น JV ปรับปรุง
             </button>
             <button
               onClick={() => setConfirmSuspenseOpen(true)}
               disabled={!canMoveToSuspense || busy || syncingGl}
+              title="พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
               className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
             >
-              Move to suspense
+              พักรายการ
             </button>
             <button
               onClick={handleMatchClick}
@@ -2259,15 +2264,15 @@ export default function ActiveWorkspace({
               title={
                 matchPlan.problem ??
                 (matchPlan.needsRemark
-                  ? "ยอดสองฝั่งไม่เท่ากัน — ระบบจะพักโอนเฉพาะส่วนต่างและให้ระบุหมายเหตุ"
+                  ? "ยอดทั้งสองฝั่งไม่เท่ากัน ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง โดยต้องระบุหมายเหตุ"
                   : matchPlan.groups.length > 1
-                    ? `จะบันทึกเป็น ${matchPlan.groups.length} กลุ่มย่อย`
+                    ? `จะบันทึกแยกเป็น ${matchPlan.groups.length} กลุ่ม (แยกตามวันที่)`
                     : undefined)
               }
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-              {matchPlan.needsRemark ? "Match + พักส่วนต่าง" : "Match"} {selectedBankItems.length}:{selectedGlItems.length}
+              {matchPlan.needsRemark ? "จับคู่และพักส่วนต่าง" : "จับคู่"} {selectedBankItems.length}:{selectedGlItems.length}
             </button>
           </div>
         </div>

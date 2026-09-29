@@ -9,12 +9,12 @@ export function SourceTag({ source }: { source: 'BANK' | 'GL' }) {
   const isBank = source === 'BANK';
   return (
     <span
-      title={isBank ? 'Bank Statement' : 'BC365'}
+      title={isBank ? 'รายการเดินบัญชีธนาคาร' : 'รายการบัญชี BC365'}
       className={`inline-flex items-center whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold normal-case tracking-normal ${
         isBank ? 'bg-sky-100 text-sky-700' : 'bg-violet-100 text-violet-700'
       }`}
     >
-      {isBank ? 'Bank' : 'BC'}
+      {isBank ? 'ธนาคาร' : 'BC365'}
     </span>
   );
 }

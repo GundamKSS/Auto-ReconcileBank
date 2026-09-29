@@ -52,7 +52,7 @@ export default function DeleteImportModal({
                 ยืนยันลบไฟล์ Bank Statement
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                ลบทั้งไฟล์ — ทุกรายการในไฟล์นี้จะหายจากหน้า Reconcile, Reports และ Dashboard ทันที
+                ลบทั้งไฟล์ — ทุกรายการในไฟล์นี้จะหายจากหน้ากระทบยอด รายงาน และภาพรวม ทันที
               </p>
             </div>
           </div>
@@ -82,7 +82,7 @@ export default function DeleteImportModal({
           </div>
 
           <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-            ข้อมูลเดิมยังเก็บไว้ในฐานข้อมูลเพื่อตรวจสอบย้อนหลัง และนำเข้าไฟล์ที่ถูกต้อง (หรือไฟล์เดิม) ใหม่ได้ที่หน้า Import
+            ข้อมูลเดิมยังเก็บไว้ในฐานข้อมูลเพื่อตรวจสอบย้อนหลัง และนำเข้าไฟล์ที่ถูกต้อง (หรือไฟล์เดิม) ใหม่ได้ที่หน้านำเข้าข้อมูล
           </p>
 
           <label htmlFor="delete-import-reason" className="block text-xs font-medium text-gray-600 mb-1.5">
@@ -95,7 +95,7 @@ export default function DeleteImportModal({
             disabled={busy}
             maxLength={MAX_REASON_LENGTH}
             rows={3}
-            placeholder="เช่น นำเข้าไฟล์ผิดเดือน, ไฟล์จากธนาคารไม่ครบ, วันที่ในไฟล์เพี้ยน ฯลฯ"
+            placeholder="เช่น นำเข้าไฟล์ผิดเดือน ข้อมูลไม่ครบ หรือวันที่ในไฟล์ไม่ถูกต้อง"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none transition-colors focus:border-blue-400 focus:outline-none disabled:opacity-50"
           />
           <div className="flex justify-between gap-3 text-[11px] text-gray-400 mt-1">

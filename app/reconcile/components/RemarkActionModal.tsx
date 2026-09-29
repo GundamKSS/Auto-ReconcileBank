@@ -76,12 +76,12 @@ export default function RemarkActionModal({
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
             <h2 id="remark-action-title" className="text-base font-semibold text-gray-900">
-              {isMatch ? "จับคู่และพักโอนส่วนต่าง" : "JV ปรับปรุงพักโอน"}
+              {isMatch ? "จับคู่และพักส่วนต่าง" : "ระบุเป็น JV ปรับปรุง"}
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               {isMatch
-                ? "ระบบจะจับคู่รายการต้นทางตามจริง และพักเฉพาะส่วนต่างไว้กับ MatchId นี้โดยอัตโนมัติ"
-                : "ไม่นำมาจับคู่กับ Bank — ใช้ปิดยอดพักโอน (Bank − GL ก่อนปรับปรุง) ยกเลิกได้ที่หน้าสรุปยอดคงเหลือ"}
+                ? "ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง พร้อมบันทึกหมายเหตุเพื่อใช้ตรวจสอบภายหลัง"
+                : "ใช้กับ JV ที่บันทึกใน BC365 แล้ว ระบบจะไม่นำรายการนี้ไปจับคู่กับธนาคาร แต่จะนำยอดไปคำนวณยอดพักโอน สามารถยกเลิกได้ในหน้าสรุปยอดคงเหลือ"}
             </p>
           </div>
           <button
@@ -107,7 +107,7 @@ export default function RemarkActionModal({
             <tbody className="divide-y divide-gray-100">
               {lines.map((l) => (
                 <tr key={l.id}>
-                  {isMatch && <td className="py-2 text-gray-500">{l.side}</td>}
+                  {isMatch && <td className="py-2 text-gray-500">{l.side === "Bank" ? "ธนาคาร" : "BC365"}</td>}
                   <td className="py-2 text-gray-500 whitespace-nowrap">{formatDMY(l.date)}</td>
                   <td className="py-2 text-gray-700 max-w-[200px] truncate" title={l.ref}>
                     {l.ref}
@@ -124,27 +124,27 @@ export default function RemarkActionModal({
             {isMatch ? (
               <>
                 <span>
-                  Bank <b className="text-gray-900 tabular-nums">{formatAmount(bankTotal)}</b>
+                  ธนาคาร <b className="text-gray-900 tabular-nums">{formatAmount(bankTotal)}</b>
                 </span>
                 <span>
-                  GL <b className="text-gray-900 tabular-nums">{formatAmount(glTotal)}</b>
+                  BC365 <b className="text-gray-900 tabular-nums">{formatAmount(glTotal)}</b>
                 </span>
                 <span>
-                  พักโอนส่วนต่าง{" "}
+                  พักส่วนต่างไว้{" "}
                   <b className="text-rose-700 tabular-nums">
-                    {diff > 0 ? "+" : diff < 0 ? "−" : ""}{formatAmount(Math.abs(diff))} ({diff > 0 ? "Bank มากกว่า" : "GL มากกว่า"})
+                    {diff > 0 ? "+" : diff < 0 ? "−" : ""}{formatAmount(Math.abs(diff))} ({diff > 0 ? "ยอดธนาคารสูงกว่า" : "ยอด BC365 สูงกว่า"})
                   </b>
                 </span>
               </>
             ) : (
               <span>
-                GL {lines.length} รายการ ยอดรวม <b className="text-gray-900 tabular-nums">{formatAmount(glTotal)}</b>
+                BC365 {lines.length} รายการ ยอดรวม <b className="text-gray-900 tabular-nums">{formatAmount(glTotal)}</b>
               </span>
             )}
           </div>
 
           <label htmlFor="remark-input" className="block text-xs font-medium text-gray-600 mb-1">
-            หมายเหตุ (บังคับ)
+            หมายเหตุ (จำเป็น)
           </label>
           <textarea
             id="remark-input"
@@ -157,7 +157,7 @@ export default function RemarkActionModal({
             placeholder={
               isMatch
                 ? "เช่น ธนาคารรวมยอด QR ทั้งวัน อีก 1,000 ยังไม่ทราบผู้โอน"
-                : "เช่น JV ปรับปรุงพักโอนสิ้นเดือน ส.ค."
+                : "เช่น JV ปรับปรุงยอดพักโอนสิ้นเดือน ส.ค."
             }
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-blue-400 focus:outline-none resize-none bg-white"
           />
@@ -180,7 +180,7 @@ export default function RemarkActionModal({
               }`}
             >
               {busy && <Loader2 size={14} className="animate-spin" />}
-              {isMatch ? "ยืนยันและพักส่วนต่าง" : "ยืนยันปรับปรุงพักโอน"}
+              {isMatch ? "ยืนยันจับคู่และพักส่วนต่าง" : "ยืนยันเป็น JV ปรับปรุง"}
             </button>
           </div>
         </div>

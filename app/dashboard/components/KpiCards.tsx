@@ -83,7 +83,7 @@ export default function KpiCards({ data }: { data: DashboardData }) {
         <StatCard
           title="ค้างอยู่"
           value={formatCount(outstandingLines)}
-          sub={`ยังไม่จับคู่ ${formatCount(unmatched.lines)} · พักไว้ ${formatCount(suspense.lines)}`}
+          sub={`รอจับคู่ ${formatCount(unmatched.lines)} · พักไว้ ${formatCount(suspense.lines)}`}
           delta={relDelta(outstandingLines, prev?.outstanding)}
           higherIsBetter={false}
           tone={outstandingLines > 0 ? 'bad' : 'default'}

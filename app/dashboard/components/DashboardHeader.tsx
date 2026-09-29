@@ -26,9 +26,9 @@ export default function DashboardHeader({
         </button>
 
         <div className="flex items-center gap-3 text-[17px]">
-          <span className="hidden text-slate-500 sm:inline">Home</span>
+          <span className="hidden text-slate-500 sm:inline">หน้าหลัก</span>
           <span className="hidden text-slate-300 sm:inline">/</span>
-          <span className="font-semibold text-slate-900">Dashboard</span>
+          <span className="font-semibold text-slate-900">ภาพรวม</span>
         </div>
       </div>
 

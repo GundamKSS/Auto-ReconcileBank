@@ -66,9 +66,9 @@ export default function UnsuspendConfirmModal({
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">ยืนยันดึงกลับไป Reconcile</h2>
+            <h2 className="text-base font-semibold text-gray-900">ยืนยันคืนรายการเพื่อจับคู่ใหม่</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {lines.length} รายการ · {matchCount} match — จะคืนสถานะเป็น UNMATCHED แล้วนำไปจับคู่ใหม่ได้ในหน้า Reconcile
+              {lines.length} รายการ · {matchCount} ชุดการบันทึก — จะคืนสถานะเป็น “รอจับคู่” แล้วนำไปจับคู่ใหม่ได้ในหน้ากระทบยอด
             </p>
           </div>
           <button
@@ -133,7 +133,7 @@ export default function UnsuspendConfirmModal({
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-50 disabled:active:scale-100"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-              ยืนยันดึงกลับ
+              ยืนยันคืนรายการ
             </button>
           </div>
         </div>

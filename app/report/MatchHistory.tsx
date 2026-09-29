@@ -90,7 +90,7 @@ function SubGroupBlock({
           กลุ่ม {num}
         </span>
         <span className="text-xs text-gray-500">
-          {bankLines.length} bank : {glLines.length} GL
+          {bankLines.length} bank : {glLines.length} BC365
         </span>
         {!balanced && <span className="text-[11px] text-red-500 font-medium">ยอดไม่ตรง!</span>}
       </div>
@@ -145,7 +145,7 @@ function MatchCard({ match }: { match: MatchRecord }) {
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-0.5">
-            <span className="text-sm font-medium text-gray-900">Match #{match.matchId}</span>
+            <span className="text-sm font-medium text-gray-900">เลขอ้างอิง #{match.matchId}</span>
             <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
               {match.bankCode}
             </span>
@@ -161,14 +161,14 @@ function MatchCard({ match }: { match: MatchRecord }) {
             </span>
           </div>
           <p className="text-xs text-gray-400">
-            {formatDateTime(match.createdAt)} · Bank {match.bankLines.length} รายการ · GL {match.glLines.length}{" "}
+            {formatDateTime(match.createdAt)} · ธนาคาร {match.bankLines.length} รายการ · BC365 {match.glLines.length}{" "}
             รายการ
           </p>
         </div>
         <div className="text-right shrink-0">
           <p className="text-sm font-semibold text-gray-900 tabular-nums">{formatAmount(bankTotal)}</p>
           {Math.abs(bankTotal - glTotal) >= 0.005 && (
-            <p className="text-[11px] text-red-500">GL {formatAmount(glTotal)}</p>
+            <p className="text-[11px] text-red-500">BC365 {formatAmount(glTotal)}</p>
           )}
         </div>
       </button>
@@ -209,7 +209,7 @@ export default function MatchHistory() {
         }
         setMatches(data.matches);
       } catch {
-        setError("เชื่อมต่อ server ไม่ได้");
+        setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
       } finally {
         setLoading(false);
       }
@@ -222,9 +222,9 @@ export default function MatchHistory() {
 
   return (
     <div className="flex-1 min-w-0 p-4 sm:p-6">
-      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">ประวัติการจับคู่ (Match History)</h1>
+      <h1 className="text-xl sm:text-2xl font-bold text-gray-900 mb-1">ประวัติการจับคู่</h1>
       <p className="text-sm text-gray-500 mb-5">
-        ย้อนดูได้ว่า Match แต่ละครั้งจับคู่รายการไหนกับรายการไหนบ้าง แยกตามกลุ่มย่อย (Num) ในแต่ละ MatchId
+        ตรวจสอบรายการที่จับคู่ไว้ในแต่ละครั้ง โดยแยกแสดงตามกลุ่มย่อยและเลขอ้างอิงการจับคู่
       </p>
 
       {error && <p className="text-sm text-red-600 mb-4">{error}</p>}

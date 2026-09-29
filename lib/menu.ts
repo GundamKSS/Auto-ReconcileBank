@@ -29,44 +29,44 @@ export type MenuItem = {
 
 export const menuItems: MenuItem[] = [
   {
-    name: 'Dashboard',
+    name: 'ภาพรวม',
     href: '/dashboard',
     icon: LayoutDashboard,
     auth: VIEWER_ROLES,
   },
   {
-    name: 'Import',
+    name: 'นำเข้าข้อมูล',
     href: '/import',
     icon: Upload,
     auth: RECONCILE_ROLES,
   },
   {
-    name: 'Reconcile',
+    name: 'กระทบยอด',
     href: '/reconcile',
     icon: GitCompareArrows,
     auth: RECONCILE_ROLES,
   },
   {
-    name: 'Match History',
+    name: 'ประวัติการจับคู่',
     href: '/reconcile/history',
     icon: History,
     auth: RECONCILE_ROLES,
   },
   {
-    name: 'Suspense',
+    name: 'รายการพัก',
     href: '/suspense',
     icon: WalletCards,
     auth: RECONCILE_ROLES,
   },
   {
-    name: 'Master Data',
+    name: 'จัดการข้อมูล',
     href: '/master-data/bank-statement',
     icon: Database,
     auth: RECONCILE_ROLES,
     guardPath: '/master-data',
   },
   {
-    name: 'Reports',
+    name: 'รายงาน',
     href: '/reports',
     icon: BarChart3,
     auth: VIEWER_ROLES,

@@ -207,7 +207,7 @@ function MatchCard({
           />
           <div className="min-w-0 flex-1">
             <div className="mb-0.5 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-gray-900">Match #{match.matchId}</span>
+              <span className="text-sm font-medium text-gray-900">เลขอ้างอิง #{match.matchId}</span>
               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
                 {match.bankCode}
               </span>
@@ -274,22 +274,22 @@ function MatchCard({
               className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-600 hover:text-white"
               title={
                 match.matchType === "OFFSET"
-                  ? "ส่งรายการ BC กลับไปเลือกใหม่ที่หน้า Reconcile"
-                  : "ส่งรายการใน Match นี้กลับไปเลือกและจับคู่ใหม่ที่หน้า Reconcile"
+                  ? "ส่งรายการ BC กลับไปเลือกใหม่ที่หน้ากระทบยอด"
+                  : "ส่งรายการใน Match นี้กลับไปเลือกและจับคู่ใหม่ที่หน้ากระทบยอด"
               }
             >
               <Undo2 size={13} />
-              {activeGroups.length > 1 ? "ส่งกลับทั้งหมด" : "ส่งกลับ Reconcile"}
+              {activeGroups.length > 1 ? "ส่งกลับทั้งหมด" : "คืนรายการเพื่อจับคู่ใหม่"}
             </button>
           ) : (
             !fullyReversed && (
               <a
                 href="/suspense"
                 className="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:border-amber-500 hover:bg-amber-50"
-                title="รายการพักโอนดึงกลับได้ที่หน้าพักโอน ซึ่งเลือกได้ทีละบรรทัดและทำเป็นชุด"
+                title="รายการพักโอนดึงกลับได้ที่หน้ารายการพัก ซึ่งเลือกได้ทีละบรรทัดและทำเป็นชุด"
               >
                 <ExternalLink size={13} />
-                หน้าพักโอน
+                หน้ารายการพัก
               </a>
             )
           )}
@@ -430,7 +430,7 @@ export default function MatchHistoryWorkspace() {
         if (data.typeCounts) setTypeCounts(data.typeCounts);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
-          setError("เชื่อมต่อ server ไม่ได้");
+          setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
           setMatches([]);
           setTotal(0);
         }
@@ -464,7 +464,7 @@ export default function MatchHistoryWorkspace() {
       }
       setMatches((prev) => [...prev, ...data.matches]);
     } catch {
-      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       inFlightRef.current = false;
       if (reqId === requestIdRef.current) setLoadingMore(false);
@@ -658,10 +658,10 @@ export default function MatchHistoryWorkspace() {
       const groupCount = typeof data.groupCount === "number" ? data.groupCount : pendingUnmatch.length;
       setToast(
         pendingVariant === "offset"
-          ? `ยกเลิกหักล้างกันเองสำเร็จ ${groupCount} กลุ่ม — รายการ BC กลับไปอยู่หน้า Reconcile แล้ว`
+          ? `ยกเลิกหักล้างกันเองสำเร็จ ${groupCount} กลุ่ม — รายการ BC กลับไปอยู่หน้ากระทบยอด แล้ว`
           : groupCount > 1
-            ? `ยกเลิกสำเร็จ ${groupCount} กลุ่มย่อย จาก ${targetsByMatchId.size} Match — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น UNMATCHED แล้ว`
-            : `ยกเลิก Match #${pendingUnmatch[0].matchId} กลุ่ม ${pendingUnmatch[0].num} สำเร็จ — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น UNMATCHED แล้ว`
+            ? `ยกเลิกสำเร็จ ${groupCount} กลุ่มย่อย จาก ${targetsByMatchId.size} Match — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น “รอจับคู่” แล้ว`
+            : `ยกเลิก Match #${pendingUnmatch[0].matchId} กลุ่ม ${pendingUnmatch[0].num} สำเร็จ — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น “รอจับคู่” แล้ว`
       );
       const unmatchedKeys = new Set(pendingUnmatch.map((t) => t.key));
       setSelectedKeys((prev) => {
@@ -672,7 +672,7 @@ export default function MatchHistoryWorkspace() {
       setPendingUnmatch([]);
       setReloadToken((v) => v + 1);
     } catch {
-      setUnmatchError("เชื่อมต่อ server ไม่ได้");
+      setUnmatchError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setUnmatchBusy(false);
     }
@@ -717,13 +717,13 @@ export default function MatchHistoryWorkspace() {
             >
               <span className="text-sm font-medium">เลือกแล้ว {selectedGroups.length} กลุ่ม</span>
               <button onClick={() => setSelectedKeys(new Set())} className="text-xs text-gray-300 hover:text-white px-2">
-                ล้าง
+                ล้างการเลือก
               </button>
               <button
                 onClick={() => requestUnmatch(selectedGroups)}
                 className="flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 active:scale-95 px-4 py-2 rounded-full transition-all"
               >
-                <Undo2 size={13} /> ส่งกลับไป Reconcile
+                <Undo2 size={13} /> คืนรายการเพื่อจับคู่ใหม่
               </button>
             </motion.div>
           )}
@@ -733,8 +733,8 @@ export default function MatchHistoryWorkspace() {
       <div className="mb-5">
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">ประวัติการจับคู่</h1>
         <p className="mt-1 text-sm text-gray-500">
-          ทุกอย่างที่เคยบันทึกจากหน้า Reconcile — จับคู่ Bank กับ BC, หักล้างกันเอง, พักโอน และ JV ปรับปรุง
-          คลี่ดูได้เป็นสองฝั่งเหมือนตอนจับคู่
+          ตรวจสอบประวัติการจับคู่ การหักล้างรายการ BC365 รายการพัก และ JV ปรับปรุง
+          เลือกแต่ละกลุ่มเพื่อดูรายละเอียด หรือคืนรายการเพื่อจับคู่ใหม่
         </p>
       </div>
 
@@ -799,7 +799,7 @@ export default function MatchHistoryWorkspace() {
                       aria-pressed={dateBasis === value}
                       title={
                         disabled
-                          ? "ประเภทที่เลือกไม่มีบรรทัดฝั่ง Bank จึงไม่มีวันที่ statement ให้อ้างอิง"
+                          ? "ประเภทที่เลือกไม่มีบรรทัดฝั่งธนาคารจึงไม่มีวันที่ statement ให้อ้างอิง"
                           : undefined
                       }
                       className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
@@ -867,7 +867,7 @@ export default function MatchHistoryWorkspace() {
 
             {sideApplies && (
               <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-gray-500">ทิศทางฝั่ง Bank</label>
+                <label className="text-[11px] font-medium text-gray-500">ทิศทางฝั่งธนาคาร</label>
                 <div className="flex rounded-xl border border-gray-200 bg-white p-1">
                   {SIDE_TABS.map((tab) => {
                     const count = sideCounts?.[tab.value] ?? null;
@@ -899,7 +899,7 @@ export default function MatchHistoryWorkspace() {
 
           {typeFilter === "ALL" && dateBasis === "BANK" && (
             <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] text-amber-800">
-              กำลังกรองด้วยวันที่ Statement — รายการที่ไม่มีฝั่ง Bank (หักล้างกันเอง, พักโอน, JV ปรับปรุง) จะไม่แสดง
+              กำลังกรองด้วยวันที่ Statement — รายการที่ไม่มีฝั่งธนาคาร(หักล้างกันเอง, พักโอน, JV ปรับปรุง) จะไม่แสดง
               เลือก &quot;BC365&quot; เพื่อดูครบทุกประเภท
             </p>
           )}
@@ -956,7 +956,7 @@ export default function MatchHistoryWorkspace() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <span>
-            พบ <strong className="font-semibold text-gray-900">{total.toLocaleString()}</strong> Match
+            พบ <strong className="font-semibold text-gray-900">{total.toLocaleString()}</strong> ชุดการบันทึก
           </span>
           {query && (
             <span className="inline-flex max-w-[320px] items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">

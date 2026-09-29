@@ -51,7 +51,7 @@ export function useOffsetList<T>(url: string | null, itemsKey: string) {
         setFirstPage(data);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
-          setError("เชื่อมต่อ server ไม่ได้");
+          setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
           setItems([]);
           setTotal(0);
           setFirstPage(null);
@@ -85,7 +85,7 @@ export function useOffsetList<T>(url: string | null, itemsKey: string) {
       }
       setItems((prev) => [...prev, ...((data[itemsKey] ?? []) as T[])]);
     } catch {
-      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       inFlightRef.current = false;
       if (reqId === requestIdRef.current) setLoadingMore(false);

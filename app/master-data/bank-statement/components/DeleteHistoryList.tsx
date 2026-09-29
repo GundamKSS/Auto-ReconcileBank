@@ -51,7 +51,7 @@ export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
         setTotal(data.total ?? data.deletions.length);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
-          setError("เชื่อมต่อ server ไม่ได้");
+          setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
           setDeletions([]);
           setTotal(0);
         }
@@ -84,7 +84,7 @@ export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
       }
       setDeletions((prev) => [...prev, ...data.deletions]);
     } catch {
-      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       inFlightRef.current = false;
       if (reqId === requestIdRef.current) setLoadingMore(false);

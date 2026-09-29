@@ -70,12 +70,12 @@ export type DashboardData = {
 export type WidgetId = 'kpi' | 'trend' | 'daily' | 'status' | 'bank' | 'aging' | 'outstanding';
 
 export const WIDGETS: { id: WidgetId; label: string; hint: string }[] = [
-  { id: 'kpi', label: 'การ์ดสรุปหลัก', hint: 'ยอดรวม อัตรากระทบยอด ผลต่าง' },
+  { id: 'kpi', label: 'สรุปยอดและสถานะ', hint: 'ยอดรวม อัตรากระทบยอด ผลต่าง' },
   { id: 'trend', label: 'แนวโน้มย้อนหลัง', hint: 'เทียบอัตรากระทบยอดหลายเดือน' },
   { id: 'daily', label: 'ความเคลื่อนไหวรายวัน', hint: 'จำนวนบรรทัดแต่ละวันในเดือน' },
-  { id: 'status', label: 'สัดส่วนสถานะ', hint: 'จับคู่แล้ว / พักไว้ / ยังไม่จับคู่' },
+  { id: 'status', label: 'สัดส่วนสถานะ', hint: 'จับคู่แล้ว / พักรายการ / รอจับคู่' },
   { id: 'bank', label: 'แยกตามธนาคาร', hint: 'ยอดและผลต่างรายธนาคาร' },
-  { id: 'aging', label: 'อายุรายการค้าง', hint: 'ค้างมานานแค่ไหนแล้ว' },
+  { id: 'aging', label: 'อายุรายการค้าง', hint: 'ระยะเวลาที่รายการยังค้างอยู่' },
   { id: 'outstanding', label: 'รายการค้างยอดสูง', hint: '12 รายการแรกเรียงตามจำนวนเงิน' },
 ];
 
@@ -83,8 +83,8 @@ export const DEFAULT_WIDGETS: WidgetId[] = ['kpi', 'trend', 'daily', 'status', '
 
 export const STATUS_LABEL: Record<StatusKey, string> = {
   MATCHED: 'จับคู่แล้ว',
-  SUSPENSE: 'พักไว้',
-  UNMATCHED: 'ยังไม่จับคู่',
+  SUSPENSE: 'พักรายการ',
+  UNMATCHED: 'รอจับคู่',
 };
 
 export const STATUS_COLOR: Record<StatusKey, string> = {

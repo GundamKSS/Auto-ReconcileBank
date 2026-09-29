@@ -2,8 +2,8 @@ import MainContent from "../../../components/MainContent";
 import MasterGl from "./components/MasterGl";
 
 export const metadata = {
-  title: "Master Data · GL",
-  description: "รายการ GL (BC365) ของบัญชีธนาคาร",
+  title: "จัดการข้อมูล · รายการบัญชี BC365",
+  description: "ตรวจสอบรายการบัญชีธนาคารจาก BC365",
 };
 
 export default function MasterGlPage() {

@@ -93,27 +93,27 @@ export default function BalanceModal({
     ? [
         {
           label: "ผลต่างยอดยกมาต้นงวด",
-          hint: "ยอดที่ค้างมาจากงวดก่อน (Bank ยกมา − GL ยกมา)",
+          hint: "ผลต่างจากงวดก่อน (ยอดยกมาธนาคาร − ยอดยกมา BC365)",
           value: data.breakdown.openingDifference,
         },
         {
-          label: `Bank ยังไม่จับคู่ (${data.breakdown.bankUnmatched.count} รายการ)`,
+          label: `ธนาคารรอจับคู่ (${data.breakdown.bankUnmatched.count} รายการ)`,
           hint: "เงินเข้า/ออกในธนาคารที่ยังไม่มีรายการใน BC เช่น เงินโอนที่ยังไม่ทราบผู้โอน",
           value: data.breakdown.bankUnmatched.net,
         },
         {
-          label: `GL ยังไม่จับคู่ (${data.breakdown.glUnmatched.count} รายการ)`,
+          label: `BC365 รอจับคู่ (${data.breakdown.glUnmatched.count} รายการ)`,
           hint: "รายการใน BC ที่ยังไม่ได้จับคู่ ไม่ได้พัก",
           value: -data.breakdown.glUnmatched.net,
         },
         {
-          label: `GL พักไว้ (${data.breakdown.glSuspense.count} รายการ)`,
-          hint: "ย้ายเข้าบัญชีพักแล้ว",
+          label: `BC365 พักรายการ (${data.breakdown.glSuspense.count} รายการ)`,
+          hint: "พักรายการเพื่อรอจับคู่ภายหลัง",
           value: -data.breakdown.glSuspense.net,
         },
         {
           label: `พักโอนส่วนต่างอัตโนมัติ (${data.differenceMatches.length} คู่)`,
-          hint: "ผลต่างของคู่ที่ยอด Bank และ BC ไม่เท่ากัน",
+          hint: "ส่วนต่างที่พักไว้จากการจับคู่ยอดธนาคารกับ BC365 ที่ไม่เท่ากัน",
           value: data.breakdown.suspenseDifference,
         },
         {
@@ -147,7 +147,7 @@ export default function BalanceModal({
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="min-w-0">
             <h2 id="balance-title" className="text-base font-semibold text-gray-900">
-              ยอดคงเหลือ Bank เทียบ GL
+              เปรียบเทียบยอดคงเหลือธนาคารกับ BC365
             </h2>
             <p className="text-xs text-gray-500 mt-0.5 truncate">
               {accountLabel}
@@ -187,15 +187,14 @@ export default function BalanceModal({
             <>
               {!data.extrasReady && (
                 <Notice>
-                  ยังบันทึกยอดยกมา GL ไม่ได้ — ต้องรัน <span className="font-mono">sql/007_match_remark_opening_balance.sql</span>{" "}
-                  กับฐานข้อมูลก่อน
+                  ระบบยังไม่พร้อมบันทึกยอดยกมา BC365 กรุณาติดต่อผู้ดูแลระบบเพื่อเปิดใช้งาน
                 </Notice>
               )}
-              {data.bank.lineCount === 0 && <Notice>ไม่มีรายการ Bank statement ในช่วงวันที่นี้ — ยังไม่ได้นำเข้าไฟล์?</Notice>}
+              {data.bank.lineCount === 0 && <Notice>ไม่พบรายการธนาคารในช่วงวันที่นี้ กรุณาตรวจสอบช่วงวันที่และไฟล์ที่นำเข้า</Notice>}
               {data.bank.lineCount > 0 && !data.bank.chainOk && (
                 <Notice>
                   ยอดคงเหลือในไฟล์ statement ต่อกันไม่ครบทุกบรรทัด (ไฟล์อาจขาดบางรายการ หรือธนาคารไม่ส่งยอดคงเหลือมา) —
-                  ยอดยกมาฝั่ง Bank อาจไม่ถูกต้อง
+                  ยอดยกมาฝั่งธนาคารอาจไม่ถูกต้อง
                 </Notice>
               )}
 
@@ -203,7 +202,7 @@ export default function BalanceModal({
                 <>
                   <div className="grid gap-3 md:grid-cols-3">
                     <SideCard
-                      title="Bank statement"
+                      title="รายการธนาคาร"
                       opening={data.bank.opening}
                       totalIn={data.bank.totalIn}
                       totalOut={data.bank.totalOut}
@@ -211,7 +210,7 @@ export default function BalanceModal({
                       openingNote="คำนวณจากยอดคงเหลือในไฟล์"
                     />
                     <SideCard
-                      title="GL (BC365) ก่อนปรับปรุง"
+                      title="BC365 ก่อนปรับปรุง"
                       opening={data.gl.opening}
                       totalIn={data.gl.totalIn}
                       totalOut={data.gl.totalOut}
@@ -229,8 +228,8 @@ export default function BalanceModal({
                               setEditingOpening(true);
                             }}
                             className="text-gray-400 hover:text-blue-600"
-                            title="แก้ไขยอดยกมา GL"
-                            aria-label="แก้ไขยอดยกมา GL"
+                            title="แก้ไขยอดยกมา BC365"
+                            aria-label="แก้ไขยอดยกมา BC365"
                           >
                             <Pencil size={12} />
                           </button>
@@ -240,7 +239,7 @@ export default function BalanceModal({
                       {data.extrasReady && showOpeningInput && (
                         <div className="mt-2">
                           <p className="mb-1 text-[11px] text-gray-500">
-                            ยอดยกมา GL ณ ต้นวันที่ {formatDMY(data.period.from)} (ยอดคงเหลือใน BC สิ้นวันก่อนหน้า)
+                            ยอดยกมา BC365 ณ ต้นวันที่ {formatDMY(data.period.from)} (ยอดคงเหลือใน BC สิ้นวันก่อนหน้า)
                           </p>
                           <OpeningBalanceInput
                             value={openingText}
@@ -263,9 +262,9 @@ export default function BalanceModal({
                             : "border-amber-200 bg-amber-50"
                       }`}
                     >
-                      <p className="text-xs font-semibold text-gray-500">ยอดพักโอน (Bank − GL ก่อนปรับปรุง)</p>
+                      <p className="text-xs font-semibold text-gray-500">ยอดพักโอน (ธนาคาร − BC365 ก่อนปรับปรุง)</p>
                       {data.difference === null ? (
-                        <p className="mt-2 text-sm text-gray-500">กรอกยอดยกมา GL ก่อน จึงจะคำนวณยอดพักโอนได้</p>
+                        <p className="mt-2 text-sm text-gray-500">กรอกยอดยกมา BC365 ก่อน จึงจะคำนวณยอดพักโอนได้</p>
                       ) : (
                         <>
                           <p className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
@@ -277,23 +276,23 @@ export default function BalanceModal({
                               <dd className="tabular-nums text-gray-900">{formatSigned(data.adjustment.net)}</dd>
                             </div>
                             <div className="flex justify-between gap-2">
-                              <dt className="text-gray-500">GL หลังปรับปรุง</dt>
+                              <dt className="text-gray-500">BC365 หลังปรับปรุง</dt>
                               <dd className="tabular-nums text-gray-900">{amountOrDash(data.adjustment.glClosingAfter)}</dd>
                             </div>
                           </dl>
                           {settled ? (
                             <p className="mt-2 flex items-center gap-1.5 text-sm font-semibold text-emerald-700">
                               <CheckCircle2 size={16} />
-                              {hasSuspense ? "ปรับปรุงครบ GL เท่ากับ Bank" : "ยอดคงเหลือเท่ากัน ไม่มียอดพักโอน"}
+                              {hasSuspense ? "ปรับปรุงครบแล้ว ยอด BC365 เท่ากับธนาคาร" : "ยอดคงเหลือเท่ากัน ไม่มียอดพักโอน"}
                             </p>
                           ) : data.adjustment.count === 0 ? (
                             <p className="mt-2 text-xs text-amber-800">
-                              ต้องบันทึก JV ปรับปรุงพักโอน {formatAmount(Math.abs(data.difference))} ใน BC แล้วซิงค์
-                              จากนั้นติ๊ก JV นั้นในตาราง GL กดปุ่ม &quot;ปรับปรุงพักโอน&quot;
+                              ยอดพักโอนที่ยังไม่มี JV รองรับ {formatAmount(Math.abs(data.difference))} บาท หากต้องการปรับปรุง
+                              ให้ตรวจสอบและบันทึก JV ใน BC365 แล้วดึงข้อมูลใหม่ จากนั้นเลือกรายการและกด &quot;ระบุเป็น JV ปรับปรุง&quot;
                             </p>
                           ) : (
                             <p className="mt-2 text-xs font-medium text-rose-700">
-                              JV ปรับปรุงยังไม่เท่ายอดพักโอน ขาดอีก {formatSigned(remaining as number)}
+                              JV ปรับปรุงยังไม่เท่ากับยอดพักโอน ผลต่างคงเหลือ {formatSigned(remaining as number)}
                             </p>
                           )}
                         </>
@@ -337,7 +336,7 @@ export default function BalanceModal({
                             <div className="min-w-0">
                               <p className="text-gray-800">{m.remark}</p>
                               <p className="text-[11px] text-gray-400">
-                                MatchId {m.matchId} · Bank {formatAmount(m.bankAmount)} / GL {formatAmount(m.glAmount)} ·{" "}
+                                เลขอ้างอิง {m.matchId} · ธนาคาร {formatAmount(m.bankAmount)} / BC365 {formatAmount(m.glAmount)} ·{" "}
                                 {m.createdBy}
                               </p>
                             </div>
@@ -496,10 +495,10 @@ function DailyTable({ data }: { data: BalanceData }) {
               วันที่
             </th>
             <th colSpan={3} className="border-b border-gray-100 py-1 text-center font-semibold text-gray-700">
-              Bank statement
+              รายการเดินบัญชีธนาคาร
             </th>
             <th colSpan={3} className="border-b border-gray-100 py-1 text-center font-semibold text-gray-700">
-              GL (BC365) ก่อนปรับปรุง
+              BC365 ก่อนปรับปรุง
             </th>
             <th rowSpan={2} className="border-b border-gray-200 py-2 pl-2 text-right font-medium">
               ผลต่างคงเหลือ
@@ -564,7 +563,7 @@ function DailyTable({ data }: { data: BalanceData }) {
             <tr className="border-t border-gray-200 font-semibold">
               <td className="py-1.5 pr-2 whitespace-nowrap text-gray-700">ยอดพักโอน</td>
               <td colSpan={6} className="px-2 text-right text-[11px] font-normal text-gray-500">
-                JV ปรับปรุงพักโอน {formatSigned(data.adjustment.net)} · GL หลังปรับปรุง{" "}
+                JV ปรับปรุงพักโอน {formatSigned(data.adjustment.net)} · BC365 หลังปรับปรุง{" "}
                 {amountOrDash(data.adjustment.glClosingAfter)}
               </td>
               <td className="pl-2 text-right tabular-nums text-gray-900">{formatSigned(data.difference)}</td>

@@ -1,13 +1,25 @@
 # Auto Reconcile Bank — Work Log สำหรับกรอก JIRA
 
 **Project:** Auto Reconcile Bank (Web App) — ระบบกระทบยอดธนาคาร (Bank Reconciliation) ระหว่าง Bank Statement กับ GL (BC365)
+**JIRA Epic:** ITS-2817 — Auto-reconcile Bank AR Phase I (Team: DEV) · Start 20 ก.ค. 2026 · Due 23 ก.ย. 2026
 **Tech Stack:** Next.js 16 (App Router) + React 19 + TypeScript, Tailwind CSS 4, framer-motion, recharts, SheetJS (xlsx), MS SQL Server (mssql), TRW Data Center API
 **Database:** Reconcile_Bank (MS SQL Server)
-**ระยะเวลา:** 20 ก.ค. 2026 – 25 ส.ค. 2026
+**ระยะเวลา:** 20 ก.ค. 2026 – ปัจจุบัน (Dev เสร็จแล้ว, อยู่ระหว่าง UAT)
+**อัปเดตล่าสุด:** 23 ก.ย. 2026
+
+## แผนที่ Work Item → JIRA Child Item
+| Work Item | JIRA | สถานะปัจจุบัน |
+|-----------|------|----------------|
+| 1. Get Requirement | ITS-2819 | Done |
+| 2. Analysis (Analyst) | ITS-2820 | Done |
+| 3. Design | ITS-2821 | Done |
+| 4. Dev | ITS-2822 | Done |
+| 5. UAT | ITS-2824 | In Progress |
+| 6. On Production | ITS-2825 | To Do |
 
 ---
 
-# WORK ITEM 1 — Get Requirement
+# WORK ITEM 1 — Get Requirement (ITS-2819) — ✅ Done
 **ระยะเวลา:** 20 – 27 ก.ค. 2026
 **Description:** เก็บความต้องการจากฝ่ายบัญชี/การเงิน เรื่องการกระทบยอดธนาคารกับ GL เพื่อทดแทนการทำมือด้วย Excel
 
@@ -22,7 +34,7 @@
 
 ---
 
-# WORK ITEM 2 — Analysis
+# WORK ITEM 2 — Analysis (ITS-2820) — ✅ Done
 **ระยะเวลา:** 28 ก.ค. – 3 ส.ค. 2026
 **Description:** วิเคราะห์ requirement เป็น functional spec, data flow และเลือกเทคโนโลยี
 
@@ -37,7 +49,7 @@
 
 ---
 
-# WORK ITEM 3 — Design
+# WORK ITEM 3 — Design (ITS-2821) — ✅ Done
 **ระยะเวลา:** 4 – 9 ส.ค. 2026
 **Description:** ออกแบบฐานข้อมูล, สถาปัตยกรรมระบบ, API และ UI/UX
 
@@ -53,8 +65,8 @@
 
 ---
 
-# WORK ITEM 4 — Dev
-**ระยะเวลา:** 10 – 25 ส.ค. 2026
+# WORK ITEM 4 — Dev (ITS-2822) — ✅ Done
+**ระยะเวลา:** 10 ส.ค. – 22 ก.ย. 2026 (ขยายจากแผนเดิม เพราะมีรอบปรับปรุงตาม feedback)
 **Description:** พัฒนาระบบตาม design แบ่งเป็นรอบ (iteration) ทีละโมดูล
 
 ### Subtasks
@@ -102,11 +114,25 @@
 30. พัฒนาระบบสิทธิ์เมนูตาม role (Admin / User / Dev) จาก session
 31. Unit test / self-test แต่ละโมดูล และแก้ bug ที่พบระหว่างพัฒนา
 
+**รอบเพิ่มเติม (ก.ย. 2026) — ปรับปรุงตาม feedback ระหว่างพัฒนา/พิสูจน์ยอดจริง**
+32. แยก action IN/OUT บนหน้า Reconcile, badge IN สีม่วง และ compact focus mode
+33. ตัดรายการที่ถูก reverse ออกจากสรุปการกระทบยอดใน Dashboard/Reports
+34. จำกัดสิทธิ์หน้า Reconcile / Match History / Suspense ให้เฉพาะ Admin/Dev
+35. ย้ายระบบ auth มาฝั่ง server (session/roles/logout) — ต้องตั้ง SESSION_SECRET บนเครื่อง deploy
+36. เพิ่มการลบไฟล์ Bank Statement ทั้งไฟล์แบบ soft delete (SQL 005) บนหน้า Master Data
+37. กระทบยอดแยกตาม "เลขบัญชี" ไม่ใช่แค่แยกตามธนาคาร (SQL 006)
+38. เปลี่ยน Suggest matches เป็น "ผู้ช่วยหาคู่" (rule-based) และปิดช่องโหว่ GL ถูกจับคู่ซ้ำ
+39. แก้การกดจับคู่ข้ามวันที่ (cross-day matching)
+40. เพิ่มการปรับยอด GL (GL adjustment) และรองรับรายการหักล้างกันเอง (MatchType OFFSET/REVERSAL)
+41. เพิ่มหน้า Master Data GL (อ่านอย่างเดียว) พร้อม JOIN mapping ตัดบัญชีที่ไม่ใช่ธนาคารออก
+42. ปรับหน้า Match History ให้ครบทุกประเภทการจับคู่ + กรองตามวันที่ GL + ค้นหากว้างขึ้น
+43. พิสูจน์ยอดคงเหลือ Bank = GL, remark การจับคู่ต่างยอด, ยอดพักโอน (SQL 007) และเพิ่มชุด unit test (vitest)
+
 ---
 
-# WORK ITEM 5 — UAT
-**ระยะเวลา:** 25 ส.ค. 2026 – ปัจจุบัน
-**Description:** ทดสอบระบบร่วมกับผู้ใช้งานจริง (ฝ่ายบัญชี) ด้วยข้อมูลจริง
+# WORK ITEM 5 — UAT (ITS-2824) — 🔵 In Progress
+**ระยะเวลา:** ก.ย. 2026 – ปัจจุบัน (อยู่ระหว่างดำเนินการ)
+**Description:** ทดสอบระบบร่วมกับผู้ใช้งานจริง (ฝ่ายบัญชี) ด้วยข้อมูลจริง — feedback บางส่วน (เช่น การพิสูจน์ยอด Bank=GL 17 ก.ย. และเคสกระดาษทำมือ BBL4633) ถูก loop กลับไปแก้ในรอบ Dev เพิ่มเติมแล้ว
 
 ### Subtasks
 1. เตรียม test environment และ test data (Bank Statement จริง 3 ธนาคาร + GL จริงจาก BC365)
@@ -122,9 +148,9 @@
 
 ---
 
-# WORK ITEM 6 — On Production
+# WORK ITEM 6 — On Production (ITS-2825) — ⚪ To Do
 **ระยะเวลา:** หลัง UAT sign-off
-**Description:** นำระบบขึ้นใช้งานจริงบน Windows Server พร้อมส่งมอบคู่มือ
+**Description:** นำระบบขึ้นใช้งานจริงบน Windows Server พร้อมส่งมอบคู่มือ (โครงสร้าง server/NSSM เตรียมไว้แล้ว รอ sign-off เพื่อ go-live เต็มรูปแบบ)
 
 ### Subtasks
 1. เตรียม production server (Windows Server) และติดตั้ง Node.js runtime
@@ -141,9 +167,11 @@
 ---
 
 ## สรุป Deliverables
-- เว็บแอป 7 หน้าจอหลัก: Login, Import, Master Data, Reconcile, Suspense, Reports, Dashboard
-- REST API 18 endpoints
+- เว็บแอปหน้าจอหลัก: Login, Import, Master Data (Bank Statement + GL), Reconcile, Suspense, Reports/Match History, Dashboard
+- REST API หลายกลุ่ม: auth, import, bank-statement, master, reconcile, history, reports, dashboard
 - Parser Bank Statement 3 ธนาคาร (KBANK, SCB, BBL) + BC365 GL sync
-- SQL migration/view 3 ไฟล์ + audit trail การ match/unmatch
+- SQL migration/view: 002–007 + vw_ReconciliationDetailReport (match reversal, soft delete, แยกเลขบัญชี, remark/opening balance) + audit trail การ match/unmatch
+- รองรับการจับคู่ many-to-many, ข้ามวัน, ผู้ช่วยหาคู่, รายการหักล้าง (OFFSET/REVERSAL), พิสูจน์ยอด Bank=GL
+- ชุด unit test (vitest) ครอบคลุม parser/บัญชี/บทบาท/session/การจับคู่
 - คู่มือผู้ใช้ภาษาไทย (HTML + PDF)
 - ระบบใช้งานจริงบน Windows Server (NSSM service, port 8080)

@@ -2,8 +2,8 @@ import MainContent from "../../../components/MainContent";
 import MasterBankStatement from "./components/MasterBankStatement";
 
 export const metadata = {
-  title: "Master Data · Bank Statement",
-  description: "จัดการข้อมูล Bank Statement ที่นำเข้าไว้",
+  title: "จัดการข้อมูล · รายการธนาคาร",
+  description: "ตรวจสอบและจัดการไฟล์รายการเดินบัญชีธนาคารที่นำเข้าไว้",
 };
 
 export default function MasterBankStatementPage() {

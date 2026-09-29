@@ -51,7 +51,7 @@ export default function BankBreakdown({ data }: { data: DashboardData }) {
                 สุทธิ <SourceTag source="GL" />
               </span>
             </th>
-            <th className="px-2 py-2 text-right">ผลต่าง Bank − BC</th>
+            <th className="px-2 py-2 text-right">ผลต่าง ธนาคาร − BC365</th>
           </tr>
         </thead>
 
@@ -68,7 +68,7 @@ export default function BankBreakdown({ data }: { data: DashboardData }) {
                   {formatCount(r.lines)}
                   {/* แยกให้เห็นว่าบรรทัดมาจากฝั่งไหน — ธนาคารที่มีแต่ฝั่ง BC จะได้ยอดสุทธิฝั่ง Bank 0 ซึ่งไม่ใช่ความผิดพลาด */}
                   <span className="block text-[11px] text-slate-400">
-                    Bank {formatCount(r.bankLines)} · BC {formatCount(r.glLines)}
+                    ธนาคาร {formatCount(r.bankLines)} · BC {formatCount(r.glLines)}
                   </span>
                 </td>
 

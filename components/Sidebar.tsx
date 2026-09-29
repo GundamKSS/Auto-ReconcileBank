@@ -172,7 +172,7 @@ export default function Sidebar() {
             href="/dashboard"
             onClick={(e) => handleNavigate(e, '/dashboard')}
             className="group flex items-center gap-3"
-            aria-label="Auto Reconcile Bank — กลับหน้า Dashboard"
+            aria-label="Auto Reconcile Bank — กลับหน้าภาพรวม"
           >
             <motion.img
               src="/logo.svg"
@@ -203,7 +203,7 @@ export default function Sidebar() {
               collapsed ? 'lg:hidden' : ''
             }`}
           >
-            Workspace
+            เมนูหลัก
           </p>
 
           <div className="space-y-2">
@@ -301,7 +301,7 @@ export default function Sidebar() {
               <button
                 onClick={handleLogout}
                 className="shrink-0 rounded-lg p-1.5 text-slate-500 transition-colors hover:bg-red-50 hover:text-red-500"
-                title="Logout"
+                title="ออกจากระบบ"
               >
                 <LogOut size={20} />
               </button>
@@ -315,7 +315,7 @@ export default function Sidebar() {
         <button
           onClick={toggleCollapsed}
           className="absolute -right-3 top-8 hidden h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:border-blue-200 hover:text-blue-600 lg:flex"
-          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'ขยายเมนู' : 'ย่อเมนู'}
         >
           {collapsed ? (
             <PanelLeftOpen size={16} />
@@ -328,7 +328,7 @@ export default function Sidebar() {
         <button
           onClick={() => setMobileOpen(false)}
           className="absolute -right-3 top-8 flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:text-blue-600 lg:hidden"
-          aria-label="Close sidebar"
+          aria-label="ปิดเมนู"
         >
           <PanelLeftClose size={16} />
         </button>

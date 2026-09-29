@@ -193,7 +193,7 @@ function LineRow({
             onChange={() => onToggleGroup(entry.num)}
             onClick={(event) => event.stopPropagation()}
             className="size-3.5 cursor-pointer rounded border-gray-300 text-blue-600 focus:ring-blue-400"
-            aria-label={`เลือกกลุ่ม ${entry.num} เพื่อส่งกลับไป Reconcile`}
+            aria-label={`เลือกกลุ่ม ${entry.num} เพื่อคืนรายการเพื่อจับคู่ใหม่`}
           />
         ) : (
           <span className={`size-1.5 rounded-full ${reversed ? "bg-gray-300" : color.dot}`} aria-hidden />
@@ -697,8 +697,8 @@ export default function MatchDetail({
               label={isSuspense ? "ยกไปพัก" : "ไม่จับคู่"}
               title={
                 isSuspense
-                  ? "ย้ายรายการ BC เข้าบัญชีพักโอน — ยังไม่มีคู่ฝั่ง Bank ในงวดนี้"
-                  : "JV ปรับปรุงพักโอน — ตั้งใจไม่นำมาจับคู่กับ Bank เลย"
+                  ? "ย้ายรายการ BC เข้าบัญชีพักโอน — ยังไม่มีคู่ฝั่งธนาคารในงวดนี้"
+                  : "JV ปรับปรุงพักโอน — ตั้งใจไม่นำมาจับคู่กับธนาคาร เลย"
               }
             />
           </Connector>
@@ -709,16 +709,16 @@ export default function MatchDetail({
               tone="amber"
               icon={<Wallet size={13} />}
               title="บัญชีพักโอน (Suspense)"
-              subtitle="รอจับคู่กับ Bank ในงวดถัดไป"
+              subtitle="รอจับคู่กับธนาคาร ในงวดถัดไป"
               inTotal={inTotal}
               outTotal={outTotal}
               netLabel="ยอดพักสุทธิ"
-              note="รายการฝั่งซ้ายถูกยกออกจากงวดนี้ไปพักไว้ก่อน จึงไม่มีฝั่ง Bank มาคู่ — ยอดสุทธินี้คือส่วนที่ทำให้ยอดคงเหลือ Bank กับ BC ต่างกัน"
+              note="รายการฝั่งซ้ายถูกยกออกจากงวดนี้ไปพักไว้ก่อน จึงไม่มีฝั่งธนาคารมาคู่ — ยอดสุทธินี้คือส่วนที่ทำให้ยอดคงเหลือ ธนาคารกับ BC365 ต่างกัน"
               footer={
                 <>
                   {" "}
                   <a href="/suspense" className="font-semibold underline underline-offset-2 hover:text-amber-950">
-                    ดึงกลับ/จัดการที่หน้าพักโอน
+                    ดึงกลับ/จัดการที่หน้ารายการพัก
                   </a>
                 </>
               }
@@ -727,7 +727,7 @@ export default function MatchDetail({
             <DestinationCard
               tone="slate"
               icon={<Ban size={13} />}
-              title="ไม่นำมาจับคู่กับ Bank"
+              title="ไม่นำมาจับคู่กับธนาคาร"
               subtitle="JV ปรับปรุงพักโอนใน BC"
               inTotal={inTotal}
               outTotal={outTotal}

@@ -12,14 +12,14 @@ const BANKS = [
 export default function BankTabs({ selected, onSelect }: { selected: string; onSelect: (code: string) => void }) {
   return (
     <div>
-      <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">Bank</p>
+      <p className="text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">ธนาคาร</p>
       <div className="flex flex-wrap gap-2">
         {BANKS.map((bank) => (
           <button
             key={bank.code}
             onClick={() => bank.enabled && onSelect(bank.code)}
             disabled={!bank.enabled}
-            title={!bank.enabled ? "ยังไม่รองรับ เร็วๆ นี้" : undefined}
+            title={!bank.enabled ? "ยังไม่รองรับธนาคารนี้" : undefined}
             className={`px-5 py-2 rounded-full text-sm font-medium transition-colors ${
               !bank.enabled
                 ? "bg-slate-50 text-slate-300 cursor-not-allowed"

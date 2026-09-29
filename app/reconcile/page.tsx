@@ -2,8 +2,8 @@ import MainContent from "../../components/MainContent";
 import ReconcileWorkspace from "./components/ReconcileWorkspace";
 
 export const metadata = {
-  title: "Reconcile",
-  description: "Match GL entries against bank statement lines",
+  title: "กระทบยอด",
+  description: "เปรียบเทียบและจับคู่รายการธนาคารกับรายการบัญชีใน BC365",
 };
 
 export default function ReconcilePage() {

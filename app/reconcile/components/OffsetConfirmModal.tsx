@@ -180,10 +180,10 @@ export default function OffsetConfirmModal({
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
             <h2 id="offset-confirm-title" className="text-base font-semibold text-gray-900">
-              จับชนขาเข้ากับขาออก (GL)
+              หักล้างเงินเข้ากับเงินออกใน BC365
             </h2>
             <p className="mt-0.5 text-xs text-gray-500">
-              รายการ BC ที่ล้างกันเองจนเหลือ 0 เช่น คีย์ผิดฝั่งแล้วคีย์ใหม่ — เลือกได้ทั้งสองฝั่งที่นี่ และพักไว้ได้หลายกลุ่มก่อนยืนยัน
+              เลือกรายการเงินเข้าและเงินออกใน BC365 ที่หักล้างกันจนสุทธิเป็นศูนย์ โดยไม่มีเงินผ่านธนาคาร สามารถจัดหลายกลุ่มก่อนยืนยันได้
             </p>
           </div>
           <button
@@ -247,13 +247,13 @@ export default function OffsetConfirmModal({
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="flex flex-wrap items-end gap-x-5 gap-y-1 text-xs">
               <span className="text-gray-500">
-                Total IN <b className="ml-1 tabular-nums text-gray-900">{formatAmount(totalIn)}</b>
+                รวมเงินเข้า <b className="ml-1 tabular-nums text-gray-900">{formatAmount(totalIn)}</b>
               </span>
               <span className="text-gray-500">
-                Total OUT <b className="ml-1 tabular-nums text-gray-900">{formatAmount(totalOut)}</b>
+                รวมเงินออก <b className="ml-1 tabular-nums text-gray-900">{formatAmount(totalOut)}</b>
               </span>
               <span className="text-gray-500">
-                Total diff{" "}
+                ผลต่างรวม{" "}
                 <b className={`ml-1 tabular-nums ${Math.abs(totalDiff) < 0.005 ? "text-teal-700" : "text-red-600"}`}>
                   {formatAmount(Math.abs(totalDiff))}
                 </b>
@@ -265,7 +265,7 @@ export default function OffsetConfirmModal({
               <button
                 onClick={addGroup}
                 disabled={!canAddGroup || busy}
-                title={canAddGroup ? "พักกลุ่มนี้ไว้แล้วเลือกกลุ่มถัดไป" : (groupProblem ?? undefined)}
+                title={canAddGroup ? "เก็บกลุ่มนี้เพื่อเลือกกลุ่มถัดไป" : (groupProblem ?? undefined)}
                 className="flex items-center gap-1 rounded-full border border-teal-200 bg-white px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Plus size={12} /> เพิ่มเป็นกลุ่ม
@@ -283,7 +283,7 @@ export default function OffsetConfirmModal({
                 className="flex items-center gap-1.5 rounded-full bg-teal-600 px-5 py-2 text-sm font-medium text-white transition-all hover:bg-teal-700 active:scale-95 disabled:opacity-40 disabled:active:scale-100"
               >
                 {busy ? <Loader2 size={14} className="animate-spin" /> : <Scale size={14} />}
-                ยืนยันจับชน {groupsToSave.length} กลุ่ม ({totalRows} รายการ)
+                ยืนยันหักล้าง {groupsToSave.length} กลุ่ม ({totalRows} รายการ)
               </button>
             </div>
           </div>

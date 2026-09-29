@@ -91,9 +91,9 @@ const SIDES: { value: Side; label: string; hint: string }[] = [
 
 const STATUSES: { value: StatusFilter; label: string }[] = [
   { value: "MATCHED", label: "จับคู่แล้ว" },
-  { value: "SUSPENSE", label: "พักไว้" },
-  { value: "EXCLUDED", label: "ปรับปรุงพักโอน" },
-  { value: "UNMATCHED", label: "ยังไม่จับคู่" },
+  { value: "SUSPENSE", label: "พักรายการ" },
+  { value: "EXCLUDED", label: "JV ปรับปรุง" },
+  { value: "UNMATCHED", label: "รอจับคู่" },
   { value: "ALL", label: "ทั้งหมด" },
 ];
 
@@ -107,10 +107,10 @@ const STATUS_BADGE: Record<StatusValue, string> = {
 
 const STATUS_LABEL: Record<StatusValue, string> = {
   MATCHED: "จับคู่แล้ว",
-  SUSPENSE: "พักไว้",
-  OFFSET: "หักล้างกันเอง",
-  EXCLUDED: "ปรับปรุงพักโอน",
-  UNMATCHED: "ยังไม่จับคู่",
+  SUSPENSE: "พักรายการ",
+  OFFSET: "หักล้างรายการ BC365",
+  EXCLUDED: "JV ปรับปรุง",
+  UNMATCHED: "รอจับคู่",
 };
 
 function pad2(n: number) {
@@ -334,7 +334,7 @@ export default function ReportWorkspace() {
         const data = await res.json();
         if (cancelled || reqId !== requestIdRef.current) return;
         if (!res.ok) {
-          setError(data.error || "โหลดรีพอร์ตไม่สำเร็จ");
+          setError(data.error || "โหลดรายงานไม่สำเร็จ");
           setRows([]);
           setTotal(0);
           setSummary(null);
@@ -347,7 +347,7 @@ export default function ReportWorkspace() {
         setSideCounts(data.sideCounts ?? null);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
-          setError("เชื่อมต่อ server ไม่ได้");
+          setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
           setRows([]);
           setTotal(0);
           setSummary(null);
@@ -381,7 +381,7 @@ export default function ReportWorkspace() {
       }
       setRows((prev) => [...prev, ...data.rows]);
     } catch {
-      if (reqId === requestIdRef.current) setError("เชื่อมต่อ server ไม่ได้");
+      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       inFlightRef.current = false;
       if (reqId === requestIdRef.current) setLoadingMore(false);
@@ -450,7 +450,7 @@ export default function ReportWorkspace() {
       a.remove();
       URL.revokeObjectURL(url);
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setExporting(false);
     }
@@ -481,12 +481,12 @@ export default function ReportWorkspace() {
           className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
         >
           {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
-          Export Excel ({side})
+          ดาวน์โหลด Excel ({side})
         </button>
       </div>
       <p className="text-sm text-gray-500 mb-5">
-        สรุปการกระทบยอดของ {monthLabel(from)} แยกฝั่ง AR (เงินเข้า) และ AP (เงินออก) — 1 แถวคือ 1 คู่ Bank–GL ในกลุ่มย่อยเดียวกัน
-        เลื่อนลงเพื่อโหลดเพิ่มครั้งละ 50 รายการ
+        สรุปผลการกระทบยอดของ {monthLabel(from)} แยกเป็นเงินเข้า (AR) และเงินออก (AP)
+        แสดงรายการธนาคารเทียบกับ BC365 ตามกลุ่มที่บันทึกไว้ และโหลดเพิ่มครั้งละ 50 รายการ
       </p>
 
       {/* ---------- แท็บ AR / AP ---------- */}
@@ -558,7 +558,7 @@ export default function ReportWorkspace() {
                 basis === "BANK" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              วันที่ Bank Statement
+              วันที่รายการธนาคาร
             </button>
             <button
               onClick={() => setBasis("GL")}
@@ -566,7 +566,7 @@ export default function ReportWorkspace() {
                 basis === "GL" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              วันที่ฝั่ง BC
+              วันที่รายการ BC365
             </button>
           </div>
         </div>
@@ -646,11 +646,10 @@ export default function ReportWorkspace() {
       </div>
 
       <p className="text-[11px] text-gray-400 -mt-3 mb-4">
-        เกณฑ์วันที่ใช้กับรายการที่จับคู่แล้ว โดยดูทั้งกลุ่มย่อย — ถ้าฝั่งที่เลือกมีบรรทัดอยู่ในช่วงวันที่ จะดึงคู่ของอีกฝั่งมาด้วยแม้จะข้ามเดือน
-        ถ้ากลุ่มไหนไม่มีบรรทัดฝั่งที่เลือกเลย (เช่นรายการพักไว้ที่มีแต่ฝั่ง BC) จะใช้วันที่ของอีกฝั่งแทน
-        ส่วนรายการที่ยังไม่จับคู่ไม่มีคู่ให้ยึด จึงกรองด้วยวันที่ของตัวเองเสมอ
-        กลุ่มที่เป็น 1:N หรือ N:1 จะแสดงหลายแถวติดกัน (แถบสีม่วงด้านซ้าย) และผลต่างคิดรวมทั้งกลุ่ม แสดงที่แถวสุดท้ายของกลุ่ม
-        รายการหักล้างกันเอง (BC กลับรายการ/แก้ด้วย JV จนสุทธิเป็น 0) มีทั้งขาเข้าและขาออกในกลุ่มเดียว จึงแสดงทั้งกลุ่มในฝั่งของใบเดิม
+        รายการที่จับคู่แล้วจะแสดงครบทั้งกลุ่มเมื่อฝั่งที่เลือกมีรายการอยู่ในช่วงวันที่ แม้คู่ของอีกรายการจะอยู่ต่างเดือน
+        หากไม่มีข้อมูลฝั่งที่เลือก เช่น รายการพักที่มีเฉพาะ BC365 ระบบจะใช้วันที่ของอีกฝั่ง ส่วนรายการรอจับคู่ใช้วันที่ของรายการนั้น
+        การจับคู่หลายรายการแสดงด้วยแถบสีม่วง และแสดงผลต่างรวมที่แถวสุดท้ายของกลุ่ม
+        รายการหักล้าง BC365 ที่สุทธิเป็นศูนย์จะแสดงเงินเข้าและเงินออกครบทั้งกลุ่ม ตามฝั่งของรายการเดิม
       </p>
 
       {/* ---------- การ์ดสรุป ---------- */}
@@ -671,7 +670,7 @@ export default function ReportWorkspace() {
           sub={t ? `${t.glLines.toLocaleString()} บรรทัด` : undefined}
         />
         <SummaryCard
-          label="ผลต่าง (Bank − BC)"
+          label="ผลต่าง (ธนาคาร − BC365)"
           value={t ? formatAmount(t.diff) : "…"}
           sub={t ? (Math.abs(t.diff) < 0.005 ? "ยอดตรงกัน" : "ยอดยังไม่ตรง") : undefined}
           tone={t ? (Math.abs(t.diff) < 0.005 ? "good" : "bad") : "default"}
@@ -702,24 +701,24 @@ export default function ReportWorkspace() {
                   สถานะ
                 </th>
                 <th colSpan={5} className="px-3 py-1.5 text-left text-xs font-semibold border-b border-gray-100 text-sky-700">
-                  ฝั่ง Bank Statement
+                  ฝั่งธนาคาร
                 </th>
                 <th colSpan={5} className="px-3 py-1.5 text-left text-xs font-semibold border-b border-l border-gray-100 text-violet-700">
                   ฝั่ง BC365 (GL)
                 </th>
                 <th rowSpan={2} className="px-3 py-2 text-right text-xs font-semibold whitespace-nowrap border-l border-gray-100">
                   ผลต่างของกลุ่ม
-                  <span className="block text-[10px] font-normal text-gray-400">Bank − BC</span>
+                  <span className="block text-[10px] font-normal text-gray-400">ธนาคาร − BC365</span>
                 </th>
               </tr>
               <tr className="text-[11px] font-medium">
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">วันที่</th>
                 <th className="px-3 py-1.5 text-left">รายละเอียด</th>
-                <th className="px-3 py-1.5 text-left whitespace-nowrap">Ref</th>
+                <th className="px-3 py-1.5 text-left whitespace-nowrap">เลขอ้างอิง</th>
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">ทิศทาง</th>
                 <th className="px-3 py-1.5 text-right whitespace-nowrap">จำนวนเงิน</th>
                 <th className="px-3 py-1.5 text-left whitespace-nowrap border-l border-gray-100">วันที่</th>
-                <th className="px-3 py-1.5 text-left whitespace-nowrap">Document No</th>
+                <th className="px-3 py-1.5 text-left whitespace-nowrap">เลขที่เอกสาร</th>
                 <th className="px-3 py-1.5 text-left">ชื่อบัญชี</th>
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">ทิศทาง</th>
                 <th className="px-3 py-1.5 text-right whitespace-nowrap">จำนวนเงิน</th>

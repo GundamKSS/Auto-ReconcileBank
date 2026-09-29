@@ -65,7 +65,7 @@ export default function ViewPicker({
               </button>
               <span className="text-slate-200">|</span>
               <button onClick={() => onChange([])} className="text-slate-400 hover:text-slate-600">
-                ล้าง
+                ล้างการเลือก
               </button>
             </div>
           </div>

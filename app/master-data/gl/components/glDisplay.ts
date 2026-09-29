@@ -39,10 +39,10 @@ export const STATUS_BADGE: Record<GlStatus, string> = {
 };
 export const STATUS_LABEL: Record<GlStatus, string> = {
   MATCHED: "จับคู่แล้ว",
-  SUSPENSE: "พักไว้",
-  OFFSET: "หักล้างกันเอง",
-  EXCLUDED: "ปรับปรุงพักโอน",
-  UNMATCHED: "ยังไม่จับคู่",
+  SUSPENSE: "พักรายการ",
+  OFFSET: "หักล้างรายการ BC365",
+  EXCLUDED: "JV ปรับปรุง",
+  UNMATCHED: "รอจับคู่",
 };
 
 export function sourceLabel(code: string | null) {

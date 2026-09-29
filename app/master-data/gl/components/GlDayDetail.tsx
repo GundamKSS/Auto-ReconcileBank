@@ -47,7 +47,7 @@ export default function GlDayDetail({
                   <td className="px-3 py-1.5">
                     <span className="font-medium text-gray-800">{e.documentNo || "-"}</span>
                     <span className="block text-[11px] tabular-nums text-gray-400">
-                      Entry {e.entryNo}
+                      เลขรายการ {e.entryNo}
                       {documentDate && documentDate !== day && ` · เอกสาร ${documentDate}`}
                     </span>
                   </td>
@@ -80,7 +80,7 @@ export default function GlDayDetail({
                       {STATUS_LABEL[e.status] ?? e.status}
                     </span>
                     {e.matchId !== null && (
-                      <span className="mt-0.5 block text-[10px] tabular-nums text-gray-400">Match #{e.matchId}</span>
+                      <span className="mt-0.5 block text-[10px] tabular-nums text-gray-400">เลขอ้างอิง #{e.matchId}</span>
                     )}
                   </td>
                 </tr>
@@ -90,7 +90,7 @@ export default function GlDayDetail({
         </table>
       )}
       {!loading && !error && items.length === 0 && (
-        <p className="px-3 py-3 text-center text-xs text-gray-400">ไม่พบรายการของวันนี้แล้ว — ข้อมูลอาจเพิ่งเปลี่ยน ลองรีเฟรชหน้า</p>
+        <p className="px-3 py-3 text-center text-xs text-gray-400">ไม่พบรายการในวันนี้ ข้อมูลอาจมีการเปลี่ยนแปลง กรุณาโหลดข้อมูลใหม่</p>
       )}
       <DetailFooter
         shown={items.length}

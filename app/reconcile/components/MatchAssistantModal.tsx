@@ -16,8 +16,8 @@ import AuraOrb, { AURA_GRADIENT } from "./AuraOrb";
 import AssistantSuggestionCard, { type CardStatus } from "./AssistantSuggestionCard";
 
 const SEARCH_STEPS = [
-  "รวบรวมรายการ Bank ที่ยังไม่มีคู่",
-  "สแกน GL ย้อนหน้า-หลัง",
+  "รวบรวมรายการธนาคาร ที่ยังไม่มีคู่",
+  "ค้นหารายการ BC365 ในช่วงวันที่ใกล้เคียง",
   "เทียบยอดเงินทีละรายการ",
   "ให้คะแนนความน่าจะเป็น",
 ];
@@ -148,7 +148,7 @@ export default function MatchAssistantModal({
         if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
         if (controller.signal.aborted) return;
         if (!res.ok) {
-          setError(data.error || "ผู้ช่วยหาคู่ทำงานไม่สำเร็จ");
+          setError(data.error || "ผู้ช่วยจับคู่ทำงานไม่สำเร็จ");
           setPhase("error");
           return;
         }
@@ -166,7 +166,7 @@ export default function MatchAssistantModal({
         setPhase("results");
       } catch {
         if (controller.signal.aborted) return;
-        setError("เชื่อมต่อ server ไม่ได้");
+        setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
         setPhase("error");
       }
     },
@@ -229,7 +229,7 @@ export default function MatchAssistantModal({
       });
       const data = await res.json();
       if (!res.ok) {
-        setCard(lineId, { status: "open", error: data.error || "Match ไม่สำเร็จ" });
+        setCard(lineId, { status: "open", error: data.error || "จับคู่ไม่สำเร็จ" });
         return;
       }
       setSelection((prev) => ({ ...prev, [lineId]: entryNo }));
@@ -242,7 +242,7 @@ export default function MatchAssistantModal({
       });
       setMatchedPairs((n) => n + 1);
     } catch {
-      setCard(lineId, { status: "open", error: "เชื่อมต่อ server ไม่ได้" });
+      setCard(lineId, { status: "open", error: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ" });
     }
   }
 
@@ -302,10 +302,10 @@ export default function MatchAssistantModal({
               <AuraOrb size="sm" active={searching} />
               <div className="min-w-0">
                 <h2 id="match-assistant-title" className="text-base font-semibold text-gray-900">
-                  ผู้ช่วยหาคู่
+                  ผู้ช่วยจับคู่
                 </h2>
                 <p className="text-xs text-gray-500">
-                  หาคู่ 1:1 และรวม Bank หลายรายการข้ามวันให้ยอดตรงกับ GL · {bankCode} {formatDMY(periodStart)} -{" "}
+                  แนะนำคู่แบบ 1 ต่อ 1 หรือรวมรายการธนาคารต่างวันที่ให้ตรงกับ BC365 · {bankCode} {formatDMY(periodStart)} -{" "}
                   {formatDMY(periodEnd)}
                 </p>
               </div>
@@ -414,8 +414,8 @@ export default function MatchAssistantModal({
                     <span>ต่ำ {levels.low}</span>
                   </p>
                   <p>
-                    Bank ฝั่ง {direction} ที่ยังไม่มีคู่ {result.scannedBank} รายการ · จับคู่วันเดียวกันได้ {result.explainedSameDay}{" "}
-                    (ตารางติ๊กให้แล้ว)
+                    รายการธนาคาร{direction === "IN" ? "เงินเข้า" : "เงินออก"}ที่ยังไม่มีคู่ {result.scannedBank} รายการ · พบคู่แนะนำวันเดียวกัน {result.explainedSameDay}{" "}
+                    (เลือกไว้ในตารางแล้ว ยังไม่บันทึกการจับคู่)
                   </p>
                 </div>
                 {visible.map((s, i) => {
@@ -447,7 +447,7 @@ export default function MatchAssistantModal({
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-white px-5 py-3">
             <p className="max-w-lg text-[11px] text-gray-400">
               แนะนำจากกติกา: ยอดเดี่ยวหรือยอดรวมตรงกันพอดี · ทิศทางเดียวกัน · วันที่ห่างไม่เกินช่วงที่เลือก — ระบบไม่บันทึกเอง
-              ตรวจรายละเอียดก่อนกด Match ทุกครั้ง
+              ตรวจรายละเอียดก่อนกดจับคู่ ทุกครั้ง
             </p>
             <div className="flex items-center gap-3">
               {matchedPairs > 0 && (

@@ -20,6 +20,11 @@ function amountOrDash(n: number | null) {
 }
 
 function StatusBadge({ status }: { status: Line["MatchStatus"] }) {
+  const labels: Record<Line["MatchStatus"], string> = {
+    UNMATCHED: "รอจับคู่",
+    MATCHED: "จับคู่แล้ว",
+    SUSPENSE: "พักรายการ",
+  };
   const map = {
     UNMATCHED: "bg-gray-100 text-gray-500",
     MATCHED: "bg-green-100 text-green-700",
@@ -27,7 +32,7 @@ function StatusBadge({ status }: { status: Line["MatchStatus"] }) {
   };
   return (
     <span className={`whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-semibold ${map[status] ?? map.UNMATCHED}`}>
-      {status}
+      {labels[status] ?? status}
     </span>
   );
 }
@@ -78,7 +83,7 @@ export default function BankDayDetail({ params, day }: { params: string; day: st
         </table>
       )}
       {!loading && !error && items.length === 0 && (
-        <p className="px-3 py-3 text-center text-xs text-gray-400">ไม่พบรายการของวันนี้แล้ว — ข้อมูลอาจเพิ่งเปลี่ยน ลองรีเฟรชหน้า</p>
+        <p className="px-3 py-3 text-center text-xs text-gray-400">ไม่พบรายการในวันนี้ ข้อมูลอาจมีการเปลี่ยนแปลง กรุณาโหลดข้อมูลใหม่</p>
       )}
       <DetailFooter
         shown={items.length}

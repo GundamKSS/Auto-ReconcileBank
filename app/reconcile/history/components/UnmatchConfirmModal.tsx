@@ -68,11 +68,11 @@ export default function UnmatchConfirmModal({
               <h2 className="text-base font-semibold text-gray-900">
                 {isOffset
                   ? isBulk
-                    ? `ส่ง ${targets.length} กลุ่มกลับไป Reconcile?`
-                    : "ส่งกลุ่มนี้กลับไป Reconcile?"
+                    ? `ส่ง ${targets.length} กลุ่มกลับไปหน้ากระทบยอด?`
+                    : "ส่งกลุ่มนี้กลับไปหน้ากระทบยอด?"
                   : isBulk
-                    ? `ส่ง ${targets.length} กลุ่มกลับไป Reconcile?`
-                    : "ส่งกลุ่มนี้กลับไป Reconcile?"}
+                    ? `ส่ง ${targets.length} กลุ่มกลับไปหน้ากระทบยอด?`
+                    : "ส่งกลุ่มนี้กลับไปหน้ากระทบยอด?"}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
                 {isOffset ? (
@@ -80,14 +80,14 @@ export default function UnmatchConfirmModal({
                     {isBulk
                       ? `กลุ่มที่เลือกทั้งหมดจาก ${matchCount} Match`
                       : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode}`}{" "}
-                    — รายการ BC จะกลับไปอยู่หน้า Reconcile (คู่กลับรายการใน BC กลับไปรอยืนยันในหน้าต่างหักล้างกันเอง)
+                    — รายการ BC จะกลับไปอยู่หน้ากระทบยอด (คู่กลับรายการใน BC กลับไปรอยืนยันในหน้าต่างหักล้างกันเอง)
                     และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้
                   </>
                 ) : (
                   <>
                     {isBulk
-                      ? `กลุ่มย่อยที่เลือกทั้งหมดจาก ${matchCount} Match จะกลับไปเป็น UNMATCHED และไปจับคู่ใหม่ได้ในหน้า Reconcile`
-                      : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode} — เฉพาะกลุ่มย่อยนี้จะกลับไปเป็น UNMATCHED และไปจับคู่ใหม่ได้ในหน้า Reconcile`}
+                      ? `กลุ่มย่อยที่เลือกทั้งหมดจาก ${matchCount} Match จะกลับไปเป็น “รอจับคู่” และไปจับคู่ใหม่ได้ในหน้ากระทบยอด`
+                      : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode} — เฉพาะกลุ่มย่อยนี้จะกลับไปเป็น “รอจับคู่” และไปจับคู่ใหม่ได้ในหน้ากระทบยอด`}
                     {" "}(กลุ่มย่อยอื่นใน Match เดียวกันยังจับคู่อยู่ตามเดิม และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้)
                   </>
                 )}
@@ -107,12 +107,12 @@ export default function UnmatchConfirmModal({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
             <div className="border border-gray-200 rounded-xl p-3">
               <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">
-                {isOffset ? "ขาเข้า (IN) รวม" : "Bank statement รวม"} · {formatAmount(bankTotal)}
+                {isOffset ? "ยอดเงินเข้ารวม" : "ยอดธนาคารรวม"} · {formatAmount(bankTotal)}
               </p>
             </div>
             <div className="border border-gray-200 rounded-xl p-3">
               <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide mb-1.5">
-                {isOffset ? "ขาออก (OUT) รวม" : "General Ledger รวม"} · {formatAmount(glTotal)}
+                {isOffset ? "ยอดเงินออกรวม" : "ยอด BC365 รวม"} · {formatAmount(glTotal)}
               </p>
             </div>
           </div>
@@ -140,7 +140,7 @@ export default function UnmatchConfirmModal({
             onChange={(e) => setReason(e.target.value)}
             disabled={busy}
             rows={3}
-            placeholder="เช่น จับคู่ผิดรายการ, ยอดไม่ตรงที่แท้จริง, จับคู่ผิดธนาคาร ฯลฯ"
+            placeholder="เช่น เลือกรายการผิด ยอดเงินไม่ตรง หรือเลือกบัญชีธนาคารผิด"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none transition-colors focus:border-blue-400 focus:outline-none disabled:opacity-50"
           />
           <p className="text-[11px] text-gray-400 mt-1">จำเป็นต้องระบุ — จะถูกบันทึกไว้ในประวัติพร้อมชื่อผู้ยกเลิกและเวลา</p>
@@ -152,7 +152,7 @@ export default function UnmatchConfirmModal({
             disabled={busy}
             className="text-sm text-gray-600 hover:bg-gray-100 active:scale-95 px-4 py-2 rounded-full transition-all disabled:opacity-40"
           >
-            ยังไม่ส่งกลับ
+            กลับไปตรวจสอบ
           </button>
           <button
             onClick={() => canConfirm && onConfirm(reason.trim())}
@@ -160,7 +160,7 @@ export default function UnmatchConfirmModal({
             className="flex items-center gap-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-50 disabled:active:scale-100"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-            {isBulk ? `ส่งกลับไป Reconcile (${targets.length})` : "ส่งกลับไป Reconcile"}
+            {isBulk ? `คืนรายการเพื่อจับคู่ใหม่ (${targets.length})` : "คืนรายการเพื่อจับคู่ใหม่"}
           </button>
         </div>
       </motion.div>

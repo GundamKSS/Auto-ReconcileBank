@@ -2,8 +2,8 @@ import MainContent from "../../../components/MainContent";
 import MatchHistoryWorkspace from "./components/MatchHistoryWorkspace";
 
 export const metadata = {
-  title: "Match History",
-  description: "ประวัติการจับคู่ทั้งหมด และยกเลิกการจับคู่ (Unmatch) กรณีแมชผิด",
+  title: "ประวัติการจับคู่",
+  description: "ตรวจสอบประวัติการจับคู่และคืนรายการเพื่อแก้ไขการจับคู่",
 };
 
 export default function ReconcileHistoryPage() {

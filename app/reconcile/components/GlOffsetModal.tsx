@@ -225,7 +225,7 @@ export default function GlOffsetModal({
       setConfirmed(data.groups);
       setConfirmedError("");
     } catch {
-      setConfirmedError("เชื่อมต่อ server ไม่ได้");
+      setConfirmedError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     }
   }, [bankCode, bankAccountNo, periodStart, periodEnd, glExtendDays]);
 
@@ -283,7 +283,7 @@ export default function GlOffsetModal({
       onChanged();
       void loadConfirmed();
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBusy(false);
     }
@@ -340,7 +340,7 @@ export default function GlOffsetModal({
       onChanged();
       void loadConfirmed();
     } catch {
-      setError("เชื่อมต่อ server ไม่ได้");
+      setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
     } finally {
       setBusy(false);
     }
@@ -444,10 +444,10 @@ export default function GlOffsetModal({
             </span>
             <div className="min-w-0">
               <h2 id="gl-offset-title" className="text-base font-semibold text-gray-900">
-                หักล้างกันเอง (ฝั่ง BC365)
+                หักล้างรายการ BC365
               </h2>
               <p className="text-xs text-gray-500">
-                รายการใน BC ที่ยกเลิกกันเองจนยอดสุทธิเป็น 0 ไม่มีเงินผ่านธนาคาร จึงไม่ต้องจับคู่กับ Bank Statement
+                รายการใน BC ที่ยกเลิกกันเองจนยอดสุทธิเป็น 0 ไม่มีเงินผ่านธนาคาร จึงไม่ต้องจับคู่กับธนาคาร Statement
               </p>
               <p className="mt-0.5 truncate text-[11px] text-gray-400" title={accountLabel}>
                 {accountLabel} · {formatDMY(periodStart)} - {formatDMY(periodEnd)}
@@ -495,15 +495,15 @@ export default function GlOffsetModal({
           {tab === "auto" && (
             <div className="flex flex-col gap-3">
               <p className="text-xs leading-relaxed text-gray-500">
-                ระบบจับคู่แถวที่ BC กลับรายการ (Source Code = REVERSAL) กับใบเดิมที่<b>เลขเอกสารเดียวกัน</b>
-                และยอดตรงข้ามกันพอดี — รายการเหล่านี้ถูกซ่อนจากตารางแล้ว กดยืนยันเพื่อบันทึกเก็บไว้ตรวจสอบย้อนหลัง
+                ระบบแนะนำคู่ระหว่างรายการกลับรายการใน BC365 กับรายการเดิมที่<b>เลขเอกสารเดียวกัน</b>
+                และยอดตรงข้ามกันพอดี รายการเหล่านี้ถูกซ่อนจากตารางหลัก กรุณาตรวจสอบและยืนยันเพื่อบันทึกประวัติ
               </p>
               {visiblePairs.length === 0 ? (
                 <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-center">
                   <CircleCheck size={28} className="text-teal-500" />
                   <p className="text-sm font-medium text-gray-700">ไม่มีรายการกลับรายการที่รอยืนยันในงวดนี้</p>
                   <p className="max-w-sm text-xs text-gray-400">
-                    ถ้าแก้รายการด้วย JV (เลขเอกสารคนละใบ) ระบบจะจับให้ไม่ได้ — ใช้แท็บ &ldquo;จับคู่เอง&rdquo;
+                    หากแก้ไขด้วย JV ที่ใช้เลขเอกสารต่างกัน ให้เลือกผ่านแท็บ &ldquo;จับคู่เอง&rdquo;
                   </p>
                 </div>
               ) : (
@@ -566,8 +566,8 @@ export default function GlOffsetModal({
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 <TriangleAlert size={14} className="mt-0.5 shrink-0" />
                 <span>
-                  ใช้กับรายการที่ยกเลิกกันเองใน BC โดยไม่ได้กด Reverse เช่น แก้ด้วย JV — ถ้ามีเงินผ่านธนาคารจริง
-                  ให้ปิดหน้าต่างนี้แล้วจับคู่กับ Bank ด้วยปุ่ม Match แทน ยอดขาเข้ากับขาออกที่เลือกต้องเท่ากันพอดี
+                  ใช้กับรายการหักล้างใน BC365 เช่น การแก้ไขด้วย JV โดยยอดเงินเข้าและเงินออกที่เลือกต้องเท่ากัน
+                  หากมีเงินผ่านธนาคารจริง ให้กลับไปจับคู่กับรายการธนาคารในหน้ากระทบยอด
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3">
@@ -615,7 +615,7 @@ export default function GlOffsetModal({
                   <div key={key} className="rounded-xl border border-gray-200 bg-white p-3">
                     <div className="mb-1 flex flex-wrap items-center gap-2">
                       <span className="text-sm font-medium text-gray-900">
-                        Match #{g.matchId} · กลุ่ม {g.num}
+                        เลขอ้างอิง #{g.matchId} · กลุ่ม {g.num}
                       </span>
                       <span
                         className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${

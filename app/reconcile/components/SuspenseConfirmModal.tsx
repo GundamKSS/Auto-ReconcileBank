@@ -56,10 +56,10 @@ export default function SuspenseConfirmModal({
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
             <h2 id="suspense-confirm-title" className="text-base font-semibold text-gray-900">
-              ยืนยันย้ายเข้าบัญชีพัก
+              ยืนยันพักรายการ
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              GL (BC365) {lines.length} รายการ · ฝั่ง {direction} — รายการ Bank ที่เลือกไว้จะไม่ถูกพัก
+              พักรายการ BC365 {lines.length} รายการ · {direction === "IN" ? "เงินเข้า" : "เงินออก"} เพื่อรอจับคู่ภายหลัง โดยไม่พักรายการธนาคารที่เลือกไว้
             </p>
           </div>
           <button
@@ -76,8 +76,8 @@ export default function SuspenseConfirmModal({
           <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <TriangleAlert size={14} className="mt-0.5 shrink-0" />
             <span>
-              มี <b>{autoMatchedCount}</b> รายการที่ระบบจับคู่กับ Bank ได้แล้ว (ติ๊กให้อัตโนมัติ) — ถ้าตั้งใจจับคู่
-              ให้กดยกเลิกแล้วใช้ปุ่ม Match แทน
+              มี <b>{autoMatchedCount}</b> รายการที่ระบบพบคู่แนะนำและเลือกไว้ให้อัตโนมัติ แต่ยังไม่ได้บันทึกการจับคู่
+              หากต้องการจับคู่ ให้กดยกเลิกเพื่อตรวจสอบ แล้วใช้ปุ่ม &quot;จับคู่&quot;
             </span>
           </div>
         )}
@@ -124,7 +124,7 @@ export default function SuspenseConfirmModal({
               className="flex items-center gap-1.5 text-sm font-medium text-white bg-amber-600 hover:bg-amber-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-50 disabled:active:scale-100"
             >
               {busy && <Loader2 size={14} className="animate-spin" />}
-              ยืนยันย้ายเข้าบัญชีพัก
+              ยืนยันพักรายการ
             </button>
           </div>
         </div>

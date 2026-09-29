@@ -153,11 +153,11 @@ export default function LoginPage() {
             </div>
 
             <h2 className="text-3xl font-bold tracking-[-0.03em] text-slate-900">
-              Sign in to your workspace
+              เข้าสู่ระบบกระทบยอดธนาคาร
             </h2>
 
             <p className="mt-2 text-[16px] text-slate-500">
-              Welcome back — enter your credentials to continue.
+              กรอกชื่อผู้ใช้และรหัสผ่านเพื่อเริ่มใช้งาน
             </p>
           </motion.div>
 
@@ -176,7 +176,7 @@ export default function LoginPage() {
                 htmlFor="username"
                 className="mb-2 block text-sm font-semibold text-slate-700"
               >
-                Username
+                ชื่อผู้ใช้
               </label>
 
               <div className="relative">
@@ -188,7 +188,7 @@ export default function LoginPage() {
                 <input
                   id="username"
                   type="text"
-                  placeholder="Username"
+                  placeholder="ชื่อผู้ใช้"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   required
@@ -204,7 +204,7 @@ export default function LoginPage() {
                   htmlFor="password"
                   className="text-sm font-semibold text-slate-700"
                 >
-                  Password
+                  รหัสผ่าน
                 </label>
 
                 {/* <button
@@ -234,6 +234,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
+                  aria-label={showPassword ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน'}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-slate-700"
                 >
                   {showPassword ? (
@@ -283,10 +284,10 @@ export default function LoginPage() {
               {isLoading ? (
                 <span className="flex items-center justify-center gap-3">
                   <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-                  Signing in...
+                  กำลังเข้าสู่ระบบ...
                 </span>
               ) : (
-                'Sign in'
+                'เข้าสู่ระบบ'
               )}
             </motion.button>
 

@@ -77,7 +77,7 @@ export default function BalanceBadge({
             <p className="mt-1 text-[11px] font-medium leading-none text-slate-400">ต้องเลือกบัญชี</p>
           ) : difference === null ? (
             <p className="mt-1 text-xs font-semibold leading-none text-blue-700">
-              {needsOpening ? "กรอกยอดยกมา GL" : "ดูรายละเอียด"}
+              {needsOpening ? "กรอกยอดยกมา BC365" : "ดูรายละเอียด"}
             </p>
           ) : Math.abs(difference) < BALANCED_TOLERANCE ? (
             <p className="mt-1 text-sm font-semibold leading-none text-emerald-700">ไม่มี · ยอดเท่ากัน</p>

@@ -26,7 +26,7 @@ export default function AgingPanel({ data }: { data: DashboardData }) {
   const totalRows = rows.reduce((a, r) => a + r.unmatchedRows + r.suspenseRows, 0);
 
   if (totalRows === 0) {
-    return <p className="py-6 text-center text-sm text-slate-400">ไม่มีรายการค้างในเดือนนี้ 🎉</p>;
+    return <p className="py-6 text-center text-sm text-slate-400">ไม่มีรายการค้างในเดือนนี้</p>;
   }
 
   return (

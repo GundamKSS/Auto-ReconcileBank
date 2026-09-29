@@ -228,7 +228,7 @@ export default function NewReconciliationModal({
     // บันทึกยอดยกมา GL ก่อนเข้างาน ถ้ากรอกไว้และต่างจากที่บันทึกไว้เดิม — ไม่กรอกก็เริ่มงานได้
     const amount = openingText.trim() === "" ? null : parseAmountInput(openingText);
     if (openingText.trim() !== "" && amount === null) {
-      setOpeningError("ยอดยกมา GL ต้องเป็นตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง");
+      setOpeningError("ยอดยกมา BC365 ต้องเป็นตัวเลข ทศนิยมไม่เกิน 2 ตำแหน่ง");
       return;
     }
     if (openingInfo?.extrasReady && bankAccountNo && amount !== null && amount !== openingInfo.glOpening) {
@@ -246,7 +246,7 @@ export default function NewReconciliationModal({
           return;
         }
       } catch {
-        setOpeningError("เชื่อมต่อ server ไม่ได้");
+        setOpeningError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
         return;
       } finally {
         setStarting(false);
@@ -285,7 +285,7 @@ export default function NewReconciliationModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="text-base font-semibold text-gray-900">New reconciliation</h2>
+          <h2 className="text-base font-semibold text-gray-900">{initialSession ? "แก้ไขเงื่อนไขการกระทบยอด" : "เริ่มกระทบยอดใหม่"}</h2>
           <button onClick={() => closeWith(onCancel)} className="text-gray-400 hover:text-gray-600 active:scale-90 transition-transform">
             <X size={18} />
           </button>
@@ -337,15 +337,14 @@ export default function NewReconciliationModal({
             )}
             {!loadingAccounts && accounts.length > 0 && !accountDimensionReady && (
               <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-                ระบบยังไม่ได้แยกข้อมูลตามเลขบัญชี — ต้องรัน{" "}
-                <span className="font-mono">sql/006_bank_statement_bank_account.sql</span> ก่อน
-                ระหว่างนี้หน้ากระทบยอดจะยังรวมทุกบัญชีของธนาคารเดียวกันไว้ด้วยกัน
+                ระบบยังไม่พร้อมแยกข้อมูลตามเลขบัญชี กรุณาติดต่อผู้ดูแลระบบ
+                ขณะนี้หน้ากระทบยอดจะแสดงรวมทุกบัญชีของธนาคารที่เลือก
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1.5">ไฟล์ Statement ที่นำเข้าไว้</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">ไฟล์รายการเดินบัญชีที่นำเข้าไว้</label>
             <select
               value={selectedImportId}
               onChange={(e) => handleImportChange(e.target.value)}
@@ -366,7 +365,7 @@ export default function NewReconciliationModal({
               </p>
             )}
             {!loadingImports && imports.length === 0 && (
-              <p className="text-xs text-gray-400 mt-1">ยังไม่มีไฟล์ที่ import ไว้สำหรับธนาคารนี้</p>
+              <p className="text-xs text-gray-400 mt-1">ยังไม่มีไฟล์ที่นำเข้าไว้สำหรับธนาคารนี้</p>
             )}
           </div>
 
@@ -408,7 +407,7 @@ export default function NewReconciliationModal({
           {openingInfo?.extrasReady && (
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1.5">
-                ยอดยกมา GL (BC365) ณ ต้นวันที่ {formatDMY(periodStart)}
+                ยอดยกมา BC365 ณ ต้นวันที่ {formatDMY(periodStart)}
               </label>
               <OpeningBalanceInput
                 value={openingText}
@@ -421,7 +420,7 @@ export default function NewReconciliationModal({
               />
               <p className="text-[11px] text-gray-400 mt-1">
                 กรอกครั้งเดียวต่องวด ใช้เทียบยอดคงเหลือกับธนาคาร
-                {openingInfo.bankOpening !== null && ` · ยอดยกมาฝั่ง Bank จากไฟล์ = ${formatAmount(openingInfo.bankOpening)}`}
+                {openingInfo.bankOpening !== null && ` · ยอดยกมาฝั่งธนาคารจากไฟล์ = ${formatAmount(openingInfo.bankOpening)}`}
               </p>
               {openingError && <p className="text-xs text-red-600 mt-1">{openingError}</p>}
             </div>
@@ -436,7 +435,7 @@ export default function NewReconciliationModal({
             />
             <span className="text-xs text-gray-600 leading-relaxed">
               ขยายวันที่ฝั่ง GL (BC365) ไปอีก 7 วันของเดือนถัดไป — ใช้ค้นหารายการบัญชีพักโอนที่บันทึกข้ามเดือน
-              (ฝั่ง Bank statement ยังใช้ช่วงวันที่เดิมไม่เปลี่ยน)
+              (ฝั่งธนาคารยังใช้ช่วงวันที่เดิมไม่เปลี่ยน)
             </span>
           </label>
         </div>
@@ -453,7 +452,7 @@ export default function NewReconciliationModal({
             disabled={!canStart || starting}
             className="text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100"
           >
-            Start Reconcile
+            {starting ? "กำลังเตรียมข้อมูล..." : initialSession ? "ใช้เงื่อนไขนี้" : "เริ่มกระทบยอด"}
           </button>
         </div>
       </div>

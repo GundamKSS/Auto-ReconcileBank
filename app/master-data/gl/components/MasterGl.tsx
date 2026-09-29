@@ -45,10 +45,10 @@ const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every
 
 const STATUS_TABS: { key: "" | Status; label: string }[] = [
   { key: "", label: "ทั้งหมด" },
-  { key: "UNMATCHED", label: "ยังไม่จับคู่" },
+  { key: "UNMATCHED", label: "รอจับคู่" },
   { key: "MATCHED", label: "จับคู่แล้ว" },
-  { key: "SUSPENSE", label: "พักไว้" },
-  { key: "EXCLUDED", label: "ปรับปรุงพักโอน" },
+  { key: "SUSPENSE", label: "พักรายการ" },
+  { key: "EXCLUDED", label: "JV ปรับปรุง" },
 ];
 
 // รายการ GL ของบัญชีธนาคาร (BankAccountLedgerEntries) — ฝั่งตรงข้ามของหน้า Master Data · Bank Statement
@@ -101,7 +101,7 @@ export default function MasterGl() {
         setBankCode((prev) => (list.some((a) => a.bankCode === prev) ? prev : firstBank));
         setBankAccountNo((prev) => (list.some((a) => a.bankAccountNo === prev) ? prev : ""));
       } catch {
-        if (!cancelled) setAccountsError("เชื่อมต่อ server ไม่ได้");
+        if (!cancelled) setAccountsError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
       } finally {
         if (!cancelled) setAccountsLoading(false);
       }
@@ -192,7 +192,7 @@ export default function MasterGl() {
         <button
           onClick={toggleMobileOpen}
           className="mt-1 text-slate-500 hover:text-slate-700 lg:hidden"
-          aria-label="Toggle sidebar"
+          aria-label="เปิดหรือปิดเมนู"
         >
           <Menu size={22} />
         </button>
@@ -201,9 +201,9 @@ export default function MasterGl() {
             <Database size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">Master Data · GL</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการบัญชี BC365</h1>
             <p className="mt-1 text-[15px] text-slate-500">
-              รายการรับ-จ่ายของบัญชีธนาคารฝั่ง BC365 — ดูได้อย่างเดียว ข้อมูลซิงค์มาจาก BC
+              ตรวจสอบรายการเงินเข้าและเงินออกของบัญชีธนาคารที่ดึงมาจาก BC365
             </p>
           </div>
         </div>
@@ -222,13 +222,13 @@ export default function MasterGl() {
           </div>
         ) : banks.length === 0 ? (
           !accountsError && (
-            <p className="py-16 text-center text-sm text-gray-400">ยังไม่มีบัญชีธนาคารที่ mapping ไว้ใน BankAccountMapping</p>
+            <p className="py-16 text-center text-sm text-gray-400">ยังไม่มีบัญชีธนาคารที่เชื่อมโยงกับ BC365 กรุณาติดต่อผู้ดูแลระบบ</p>
           )
         ) : (
           <>
             <div className="mb-2 flex flex-col gap-4 border-b border-gray-100 pb-5">
               <div>
-                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">Bank</p>
+                <p className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-400">ธนาคาร</p>
                 <div className="flex flex-wrap gap-2">
                   {banks.map((code) => (
                     <button
@@ -285,7 +285,7 @@ export default function MasterGl() {
 
               <p className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Lock size={12} className="shrink-0" />
-                อ่านอย่างเดียว — ถ้ารายการผิดต้องแก้ใน BC365 แล้วซิงค์ใหม่ (ปุ่มซิงค์อยู่ที่หน้า Import / Reconcile)
+                หน้านี้ใช้ดูข้อมูลเท่านั้น หากต้องการแก้ไข ให้ปรับข้อมูลใน BC365 แล้วดึงข้อมูลใหม่ที่หน้า “นำเข้าข้อมูล” หรือ “กระทบยอด”
               </p>
             </div>
 
@@ -447,7 +447,7 @@ export default function MasterGl() {
                     </button>
                   </>
                 ) : (
-                  "ยังไม่มีรายการ GL ของบัญชีนี้"
+                  "ยังไม่มีรายการบัญชี BC365 ของบัญชีนี้"
                 )
               }
               renderDetail={(day) => <GlDayDetail params={params ?? ""} day={day} showAccount={showAccountColumn} />}

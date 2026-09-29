@@ -5,8 +5,8 @@ import ImportFlow from "./components/ImportFlow";
 
 // 1. ตั้งค่า Metadata สำหรับชื่อแท็บ (ทำได้เฉพาะใน Server Component)
 export const metadata = {
-  title: "Import",
-  description: "Upload Excel files for Bank Statements and General Ledger",
+  title: "นำเข้าข้อมูล",
+  description: "นำเข้าไฟล์รายการเดินบัญชีธนาคาร หรือดึงข้อมูลบัญชีจาก BC365",
 };
 
 // 2. Main Component

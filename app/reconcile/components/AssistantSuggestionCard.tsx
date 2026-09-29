@@ -139,7 +139,7 @@ function BankGroupBox({ banks }: { banks: AssistantSuggestion["banks"] }) {
   return (
     <div className="min-w-0 rounded-xl border border-sky-100 bg-sky-50/50 px-3 py-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold tracking-wide text-sky-700">BANK STATEMENT</span>
+        <span className="text-[10px] font-semibold tracking-wide text-sky-700">รายการธนาคาร</span>
         <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">
           รวม {banks.length} รายการ
         </span>
@@ -162,7 +162,7 @@ function BankGroupBox({ banks }: { banks: AssistantSuggestion["banks"] }) {
         ))}
       </div>
       <div className="mt-1.5 flex items-center justify-between border-t border-sky-200/70 pt-2">
-        <span className="text-[10px] font-semibold text-sky-700">ยอดรวม BANK</span>
+        <span className="text-[10px] font-semibold text-sky-700">ยอดรวมธนาคาร</span>
         <span className="text-lg font-semibold tabular-nums text-gray-900">{formatAmount(total)}</span>
       </div>
     </div>
@@ -215,7 +215,7 @@ export default function AssistantSuggestionCard({
     return (
       <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-400">
         <span className="truncate">
-          ข้ามแล้ว · Bank {banks.length > 1 ? `${banks.length} รายการ · รวม ${formatAmount(banks.reduce((s, b) => s + b.amount, 0))}` : `${formatDMY(bank.date)} · ${formatAmount(bank.amount)}`}
+          ข้ามแล้ว · ธนาคาร {banks.length > 1 ? `${banks.length} รายการ · รวม ${formatAmount(banks.reduce((s, b) => s + b.amount, 0))}` : `${formatDMY(bank.date)} · ${formatAmount(bank.amount)}`}
         </span>
         <button
           onClick={onUndoSkip}
@@ -231,7 +231,7 @@ export default function AssistantSuggestionCard({
     return (
       <div className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-4 py-2.5 text-xs text-gray-400">
         <span className="truncate">
-          ใช้ไม่ได้แล้ว · Bank ในกลุ่มนี้ถูกจับคู่จากคำแนะนำใบอื่นแล้ว
+          คำแนะนำนี้ใช้ไม่ได้แล้ว เนื่องจากรายการธนาคารในกลุ่มถูกจับคู่แล้ว
         </span>
         <CheckCircle2 size={14} className="shrink-0 text-green-500" />
       </div>
@@ -325,7 +325,7 @@ export default function AssistantSuggestionCard({
           />
         ) : (
           <div className="flex items-center justify-center rounded-xl border border-dashed border-gray-200 px-3 py-4 text-center text-xs text-gray-400">
-            GL ที่เป็นไปได้ถูกจับคู่กับรายการอื่นในรอบนี้แล้ว
+            รายการ BC365 ที่เคยแนะนำถูกจับคู่กับรายการอื่นในรอบนี้แล้ว
           </div>
         )}
       </div>
@@ -345,7 +345,7 @@ export default function AssistantSuggestionCard({
             className="flex items-center gap-1 text-xs font-medium text-violet-700 hover:text-violet-900"
           >
             <ChevronDown size={14} className={`transition-transform ${showAlternatives ? "rotate-180" : ""}`} />
-            เลือก GL ยอดเท่ากันตัวอื่น ({available.length})
+            เลือกรายการ BC365 อื่นที่ยอดเท่ากัน ({available.length})
           </button>
           {showAlternatives && (
             <div className="mt-2 flex flex-col gap-1">
@@ -396,7 +396,7 @@ export default function AssistantSuggestionCard({
             className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 active:scale-95 px-4 py-2 rounded-full transition-all disabled:opacity-40 disabled:active:scale-100"
           >
             {status === "matching" ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-            Match คู่นี้
+            ยืนยันจับคู่
           </button>
         )}
       </div>

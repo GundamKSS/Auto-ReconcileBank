@@ -2,7 +2,7 @@ import MainContent from '@/components/MainContent';
 import DashboardWorkspace from './components/DashboardWorkspace';
 
 export const metadata = {
-  title: 'Dashboard',
+  title: 'ภาพรวม',
   description: 'สรุปการกระทบยอดรายเดือน เลือกได้ว่าจะแสดงส่วนไหนบ้าง',
 };
 
