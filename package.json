@@ -14,7 +14,7 @@
     "bcryptjs": "^3.0.3",
     "framer-motion": "^12.42.2",
     "lucide-react": "^1.26.0",
-    "mssql": "^12.7.0",
+    "mssql": "^12.7.4",
     "next": "^16.3.2",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -30,9 +30,18 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.2",
+    "eslint-config-next": "^16.4.0",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3.2.7"
+    "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true,
+    "unrs-resolver@1.12.2": true
+  },
+  "overrides": {
+    "braces": "^3.0.3",
+    "sprintf-js": "^1.1.3"
   }
 }
