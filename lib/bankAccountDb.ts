@@ -121,3 +121,36 @@ export async function resolveBankAccount(bankAccountNo: string): Promise<BankAcc
     displayNo: extractDisplayNo(row.AccountName),
   };
 }
+
+export type AccountFilterResult =
+  | { ok: true; bankAccountNo: string | null; bankCode: string | null; ignoredReason: string | null }
+  | { ok: false; error: string };
+
+/**
+ * ตรวจค่า bankAccountNo ที่หน้า Reports/Dashboard ส่งมา ก่อนเอาไปใส่ในตัวกรองของรีพอร์ต
+ *
+ * - ไม่ได้ส่งมา = ไม่กรองตามบัญชี (ดูทั้งธนาคารเหมือนเดิม)
+ * - ยังไม่ได้รัน sql/006 = ไม่กรอง แต่บอกเหตุผลกลับไป ให้หน้าจอแจ้งผู้ใช้ได้ว่าทำไมยังแคบไม่ได้
+ *   (ดีกว่าปล่อยให้ query พังด้วย Invalid column name)
+ * - ส่งเลขบัญชีที่ไม่มีอยู่จริง = ตอบ 400 ไม่ใช่เงียบๆ คืนรายงานของทั้งธนาคาร
+ *   เพราะผู้ใช้จะเข้าใจว่านั่นคือยอดของบัญชีที่เลือก
+ *
+ * BankCode คืนมาจาก mapping เสมอ ไม่เชื่อค่าที่ client ส่ง — กันกรณีเลือกบัญชี BBL
+ * แต่ปุ่มธนาคารค้างอยู่ที่ SCB แล้วได้รายงานว่างโดยไม่รู้สาเหตุ
+ */
+export async function resolveAccountFilter(bankAccountNo: string | null): Promise<AccountFilterResult> {
+  if (!bankAccountNo) {
+    return { ok: true, bankAccountNo: null, bankCode: null, ignoredReason: null };
+  }
+
+  if (!(await bankAccountColumnsReady())) {
+    return { ok: true, bankAccountNo: null, bankCode: null, ignoredReason: MIGRATION_HINT };
+  }
+
+  const account = await resolveBankAccount(bankAccountNo);
+  if (!account) {
+    return { ok: false, error: `ไม่พบบัญชีธนาคาร ${bankAccountNo}` };
+  }
+
+  return { ok: true, bankAccountNo: account.bankAccountNo, bankCode: account.bankCode, ignoredReason: null };
+}

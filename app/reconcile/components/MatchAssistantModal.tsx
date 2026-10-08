@@ -15,6 +15,7 @@ import {
 import AuraOrb, { AURA_GRADIENT } from "./AuraOrb";
 import AssistantSuggestionCard, { type CardStatus } from "./AssistantSuggestionCard";
 
+import { formatAmount } from '../../../lib/formatAmount';
 const SEARCH_STEPS = [
   "รวบรวมรายการธนาคาร ที่ยังไม่มีคู่",
   "ค้นหารายการ BC365 ในช่วงวันที่ใกล้เคียง",
@@ -28,9 +29,6 @@ const RESEARCH_MS = 1200;
 
 type CardState = { status: CardStatus; matchId?: number; error?: string };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDMY(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;
@@ -89,6 +87,15 @@ function SearchingView({ step, windowDays, amount }: { step: number; windowDays:
 
 // ผู้ช่วยหาคู่ — popup หาคู่ Bank ↔ GL ที่ยอดตรงกันแต่ลงคนละวัน แล้วให้ผู้ใช้กด Match เองทีละคู่
 // ไม่บันทึกอะไรเองเด็ดขาด (requirements ข้อ 27) — กติกาการให้คะแนนอยู่ใน lib/matchAssistant.ts
+// คีย์ประจำคำแนะนำแต่ละใบ — ต้องรวม "ทุก" รายการธนาคารในกลุ่ม ไม่ใช่แค่รายการแรก
+// เพราะคำแนะนำแบบ 1:1 กับแบบรวมยอด N:1 ใช้รายการธนาคารตัวแรกร่วมกันได้
+// (เช่น ธนาคาร 2,500 จับเดี่ยวกับ GL 2,500 หรือจะรวมกับ 100 ไปจับ GL 2,600 ก็ได้)
+// ถ้าคีย์ด้วย banks[0].lineId ตัวเดียว สองใบนี้จะใช้สถานะก้อนเดียวกัน พอยืนยันใบหนึ่ง
+// อีกใบจะขึ้นว่า "จับคู่แล้ว" พร้อม MatchId เดียวกันทั้งที่ยังไม่ได้บันทึกอะไรเลย
+function suggestionKey(s: AssistantSuggestion) {
+  return `${s.kind}:${s.banks.map((bank) => bank.lineId).join("-")}`;
+}
+
 export default function MatchAssistantModal({
   bankCode,
   bankAccountNo,
@@ -115,8 +122,8 @@ export default function MatchAssistantModal({
   const [error, setError] = useState("");
   const [step, setStep] = useState(0);
   const [tick, setTick] = useState(0);
-  const [selection, setSelection] = useState<Record<number, number>>({});
-  const [cards, setCards] = useState<Record<number, CardState>>({});
+  const [selection, setSelection] = useState<Record<string, number>>({});
+  const [cards, setCards] = useState<Record<string, CardState>>({});
   const [consumedGl, setConsumedGl] = useState<Set<number>>(new Set());
   const [consumedBank, setConsumedBank] = useState<Set<number>>(new Set());
   const [matchedPairs, setMatchedPairs] = useState(0);
@@ -208,14 +215,14 @@ export default function MatchAssistantModal({
     runSearch(win, RESEARCH_MS);
   }
 
-  function setCard(lineId: number, state: CardState) {
-    setCards((prev) => ({ ...prev, [lineId]: state }));
+  function setCard(key: string, state: CardState) {
+    setCards((prev) => ({ ...prev, [key]: state }));
   }
 
   async function handleMatch(s: AssistantSuggestion, entryNo: number) {
     if (busy) return;
-    const lineId = s.banks[0].lineId;
-    setCard(lineId, { status: "matching" });
+    const key = suggestionKey(s);
+    setCard(key, { status: "matching" });
     try {
       const res = await fetch("/api/reconcile/match", {
         method: "POST",
@@ -229,11 +236,11 @@ export default function MatchAssistantModal({
       });
       const data = await res.json();
       if (!res.ok) {
-        setCard(lineId, { status: "open", error: data.error || "จับคู่ไม่สำเร็จ" });
+        setCard(key, { status: "open", error: data.error || "จับคู่ไม่สำเร็จ" });
         return;
       }
-      setSelection((prev) => ({ ...prev, [lineId]: entryNo }));
-      setCard(lineId, { status: "matched", matchId: data.matchId });
+      setSelection((prev) => ({ ...prev, [key]: entryNo }));
+      setCard(key, { status: "matched", matchId: data.matchId });
       setConsumedGl((prev) => new Set(prev).add(entryNo));
       setConsumedBank((prev) => {
         const next = new Set(prev);
@@ -242,7 +249,7 @@ export default function MatchAssistantModal({
       });
       setMatchedPairs((n) => n + 1);
     } catch {
-      setCard(lineId, { status: "open", error: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ" });
+      setCard(key, { status: "open", error: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ" });
     }
   }
 
@@ -419,11 +426,11 @@ export default function MatchAssistantModal({
                   </p>
                 </div>
                 {visible.map((s, i) => {
-                  const cardKey = s.banks[0].lineId;
+                  const cardKey = suggestionKey(s);
                   const card = cards[cardKey] ?? { status: "open" as const };
                   return (
                     <AssistantSuggestionCard
-                      key={`${s.kind}-${s.banks.map((bank) => bank.lineId).join("-")}`}
+                      key={cardKey}
                       suggestion={s}
                       index={i}
                       selectedEntryNo={selection[cardKey] ?? null}

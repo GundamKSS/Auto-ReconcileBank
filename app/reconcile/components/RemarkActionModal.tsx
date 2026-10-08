@@ -6,11 +6,9 @@ import { motion } from "framer-motion";
 import { Loader2, X } from "lucide-react";
 import { remarkProblem, REMARK_MAX_LENGTH } from "../../../lib/matchRemark";
 
+import { formatAmount } from '../../../lib/formatAmount';
 export type RemarkLine = { id: string; side: "Bank" | "GL"; date: string; ref: string; amount: number };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDMY(iso: string) {
   const [y, m, d] = new Date(iso).toISOString().slice(0, 10).split("-");
   return `${d}/${m}/${y}`;

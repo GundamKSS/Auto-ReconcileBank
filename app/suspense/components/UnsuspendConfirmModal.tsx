@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { ArrowDownLeft, ArrowUpRight, Loader2, Undo2, X } from "lucide-react";
 
+import { formatAmount } from '../../../lib/formatAmount';
 export type ConfirmLine = {
   key: string;
   matchId: number;
@@ -14,9 +15,6 @@ export type ConfirmLine = {
   amount: number;
 };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDate(iso: string) {
   return new Date(iso).toISOString().slice(0, 10);
 }
@@ -28,7 +26,7 @@ function SourceTag({ sourceType }: { sourceType: "BANK" | "GL" }) {
         sourceType === "BANK" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700"
       }`}
     >
-      {sourceType}
+      {sourceType === "BANK" ? "ธนาคาร" : "BC365"}
     </span>
   );
 }
@@ -61,18 +59,22 @@ export default function UnsuspendConfirmModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 6, transition: { duration: 0.15 } }}
         transition={{ type: "spring", stiffness: 420, damping: 26 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unsuspend-title"
         className="w-full max-w-lg bg-white/80 backdrop-blur-2xl backdrop-saturate-150 border border-white/70 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
           <div>
-            <h2 className="text-base font-semibold text-gray-900">ยืนยันคืนรายการเพื่อจับคู่ใหม่</h2>
+            <h2 id="unsuspend-title" className="text-base font-semibold text-gray-900">คืนรายการไปจับคู่?</h2>
             <p className="text-xs text-gray-400 mt-0.5">
-              {lines.length} รายการ · {matchCount} ชุดการบันทึก — จะคืนสถานะเป็น “รอจับคู่” แล้วนำไปจับคู่ใหม่ได้ในหน้ากระทบยอด
+              {lines.length} รายการ · {matchCount} ชุด จะกลับไป “รอจับคู่” ในหน้ากระทบยอด
             </p>
           </div>
           <button
             onClick={() => !busy && onCancel()}
+            aria-label="ปิด"
             disabled={busy}
             className="text-gray-400 hover:text-gray-600 active:scale-90 transition-transform disabled:opacity-40"
           >

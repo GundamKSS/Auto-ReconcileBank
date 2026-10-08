@@ -4,8 +4,9 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { AlertTriangle, Loader2, Undo2, X } from "lucide-react";
 
+import { formatAmount } from '../../../../lib/formatAmount';
 // สรุปแบบย่อของแต่ละ "กลุ่มย่อย (Num)" ที่เลือกไว้ — ไม่ลงรายละเอียดถึงระดับบรรทัด เพราะอาจเลือกมาทีละหลายสิบกลุ่ม
-// รายละเอียดเต็มดูได้จากการกด "คลี่" MatchCard ในหน้ารายการก่อนจะติ๊กเลือกอยู่แล้ว
+// รายละเอียดเต็มแสดงในตารางประวัติ ก่อนติ๊กเลือกส่งกลับ
 export type UnmatchTarget = {
   key: string;
   matchId: number;
@@ -18,10 +19,6 @@ export type UnmatchTarget = {
 };
 // variant "offset" = ยกเลิกหักล้างกันเอง: ไม่มีฝั่ง Bank — ใช้ bankTotal/glTotal เป็นยอดรวม "ขาเข้า/ขาออก" ของกลุ่มแทน
 export type UnmatchVariant = "match" | "offset";
-
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default function UnmatchConfirmModal({
   targets,
@@ -58,6 +55,9 @@ export default function UnmatchConfirmModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 6, transition: { duration: 0.15 } }}
         transition={{ type: "spring", stiffness: 420, damping: 26 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unmatch-title"
         className="w-full max-w-lg bg-white/80 backdrop-blur-2xl backdrop-saturate-150 border border-white/70 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]"
         onClick={(e) => e.stopPropagation()}
       >
@@ -65,37 +65,18 @@ export default function UnmatchConfirmModal({
           <div className="flex items-center gap-2">
             <AlertTriangle size={18} className="text-amber-500" />
             <div>
-              <h2 className="text-base font-semibold text-gray-900">
-                {isOffset
-                  ? isBulk
-                    ? `ส่ง ${targets.length} กลุ่มกลับไปหน้ากระทบยอด?`
-                    : "ส่งกลุ่มนี้กลับไปหน้ากระทบยอด?"
-                  : isBulk
-                    ? `ส่ง ${targets.length} กลุ่มกลับไปหน้ากระทบยอด?`
-                    : "ส่งกลุ่มนี้กลับไปหน้ากระทบยอด?"}
+              <h2 id="unmatch-title" className="text-base font-semibold text-gray-900">
+                {isBulk ? `ส่งกลับ ${targets.length} แถว?` : "ส่งรายการกลับ?"}
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                {isOffset ? (
-                  <>
-                    {isBulk
-                      ? `กลุ่มที่เลือกทั้งหมดจาก ${matchCount} Match`
-                      : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode}`}{" "}
-                    — รายการ BC จะกลับไปอยู่หน้ากระทบยอด (คู่กลับรายการใน BC กลับไปรอยืนยันในหน้าต่างหักล้างกันเอง)
-                    และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้
-                  </>
-                ) : (
-                  <>
-                    {isBulk
-                      ? `กลุ่มย่อยที่เลือกทั้งหมดจาก ${matchCount} Match จะกลับไปเป็น “รอจับคู่” และไปจับคู่ใหม่ได้ในหน้ากระทบยอด`
-                      : `Match #${targets[0]?.matchId} กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode} — เฉพาะกลุ่มย่อยนี้จะกลับไปเป็น “รอจับคู่” และไปจับคู่ใหม่ได้ในหน้ากระทบยอด`}
-                    {" "}(กลุ่มย่อยอื่นใน Match เดียวกันยังจับคู่อยู่ตามเดิม และประวัติเดิมยังเก็บไว้ตรวจสอบย้อนหลังได้)
-                  </>
-                )}
+                {isBulk ? `${targets.length} แถว จาก ${matchCount} ชุด` : `#${targets[0]?.matchId} · กลุ่ม ${targets[0]?.num} · ${targets[0]?.bankCode}`}
+                <span className="mt-1 block">{isOffset ? "รายการ BC365 จะกลับไปรอเลือกในหน้ากระทบยอด" : "แถวที่เลือกจะกลับไปรอจับคู่ในหน้ากระทบยอด"} ประวัติเดิมยังเก็บไว้</span>
               </p>
             </div>
           </div>
           <button
             onClick={() => !busy && onCancel()}
+            aria-label="ปิดหน้าต่างส่งกลับ"
             disabled={busy}
             className="text-gray-400 hover:text-gray-600 active:scale-90 transition-transform disabled:opacity-40 shrink-0"
           >
@@ -131,11 +112,12 @@ export default function UnmatchConfirmModal({
             ))}
           </div>
 
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+          <label htmlFor="unmatch-reason" className="block text-xs font-medium text-gray-600 mb-1.5">
             เหตุผลที่ส่งกลับ <span className="text-red-500">*</span>
             {isBulk && <span className="text-gray-400 font-normal"> (ใช้ร่วมกันทุกกลุ่มย่อยที่เลือก)</span>}
           </label>
           <textarea
+            id="unmatch-reason"
             value={reason}
             onChange={(e) => setReason(e.target.value)}
             disabled={busy}
@@ -143,7 +125,7 @@ export default function UnmatchConfirmModal({
             placeholder="เช่น เลือกรายการผิด ยอดเงินไม่ตรง หรือเลือกบัญชีธนาคารผิด"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none transition-colors focus:border-blue-400 focus:outline-none disabled:opacity-50"
           />
-          <p className="text-[11px] text-gray-400 mt-1">จำเป็นต้องระบุ — จะถูกบันทึกไว้ในประวัติพร้อมชื่อผู้ยกเลิกและเวลา</p>
+          <p className="text-[11px] text-gray-400 mt-1">เหตุผลจะบันทึกไว้ในประวัติ</p>
         </div>
 
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100 shrink-0 bg-gray-50/60 rounded-b-2xl">
@@ -160,7 +142,7 @@ export default function UnmatchConfirmModal({
             className="flex items-center gap-1.5 text-sm font-medium text-white bg-red-600 hover:bg-red-700 active:scale-95 px-5 py-2 rounded-full transition-all disabled:opacity-50 disabled:active:scale-100"
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Undo2 size={14} />}
-            {isBulk ? `คืนรายการเพื่อจับคู่ใหม่ (${targets.length})` : "คืนรายการเพื่อจับคู่ใหม่"}
+            {isBulk ? `ยืนยันส่งกลับ (${targets.length})` : "ยืนยันส่งกลับ"}
           </button>
         </div>
       </motion.div>

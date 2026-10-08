@@ -33,6 +33,15 @@ export type SummaryBucket = {
   diff: number;
 };
 
+export type PendingImportBank = { bankCode: string; glLines: number; glNet: number };
+
+/** แยก "ผลต่างที่ต้องตามจริง" ออกจาก "ธนาคารที่ยังไม่ได้นำเข้า statement ของงวดนี้" */
+export type Coverage = {
+  reconcilableDiff: number;
+  pendingImport: PendingImportBank[];
+  pendingImportNet: number;
+};
+
 export type DashboardData = {
   month: string;
   from: string;
@@ -44,6 +53,8 @@ export type DashboardData = {
   side: Side;
   /** จำนวนบรรทัดของแต่ละฝั่ง ไม่ขึ้นกับฝั่งที่เลือก — ใช้เป็นป้ายบนแท็บ */
   sideCounts: { AR: number; AP: number };
+  /** ไม่มีใน response เวอร์ชันเก่า — หน้าจอต้องถอยไปใช้ผลต่างรวมได้ */
+  coverage?: Coverage;
   summary: {
     total: number;
     buckets: SummaryBucket[];

@@ -1,11 +1,8 @@
 "use client";
+import { formatAmount } from '../../../lib/formatAmount';
 
 // ผลต่างที่ถือว่า "เท่ากัน" — ครึ่งสตางค์ ให้ตรงกับเกณฑ์ฝั่ง server (app/api/reconcile/balance/route.ts)
 const BALANCED_TOLERANCE = 0.005;
-
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 /**
  * ป้ายยอดพักโอน = Bank ปลายงวด − GL ก่อนปรับปรุง (ไม่รวม JV ปรับปรุงพักโอน) ของทั้งงวด (แทนป้าย Difference เดิมที่เทียบแค่ยอดค้างจับคู่ของแท็บ IN/OUT)

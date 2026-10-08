@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, ChevronDown, Loader2, ArrowDownLeft, ArrowUpRight } from "lucide-react";
 
+import { formatAmount } from '../../lib/formatAmount';
 type LineItem = {
   num: number;
   date: string;
@@ -40,9 +41,6 @@ const GROUP_BADGE_COLORS = [
   "bg-indigo-100 text-indigo-700",
 ];
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDateTime(iso: string) {
   return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
 }

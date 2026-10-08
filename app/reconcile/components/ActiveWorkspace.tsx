@@ -32,6 +32,7 @@ import OffsetConfirmModal from "./OffsetConfirmModal";
 import type { BalanceData } from "./balanceTypes";
 import { AURA_GRADIENT } from "./AuraOrb";
 
+import { formatAmount } from '../../../lib/formatAmount';
 type Direction = "IN" | "OUT";
 
 // ผลต่างที่ยอมรับได้ตอนเทียบยอด Bank กับ GL — ครึ่งสตางค์ ต้องตรงกับเกณฑ์ฝั่ง server
@@ -136,9 +137,6 @@ function readWorkspaceDraft(key: string): WorkspaceDraft | null {
   }
 }
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDate(iso: string) {
   return new Date(iso).toISOString().slice(0, 10);
 }
@@ -1259,7 +1257,6 @@ export default function ActiveWorkspace({
 
   const matchReadyDates = matchReadyDatesByDirection[directionFilter];
 
-
   // เลขกลุ่ม "กลุ่ม N" ที่โชว์บนจอต้องคำนวณครั้งเดียวใช้ร่วมกันทั้งฝั่ง bank และ GL ของวันเดียวกัน
   // ไล่จาก bankLines พอ เพราะทุก cluster ที่ computeReadyIds สร้างมีฝั่ง bank อย่างน้อย 1 รายการเสมอ
   // (ดู recordCluster ใน computeReadyIds — เรียกพร้อม bankIds/glIds ทั้งคู่ทุกครั้ง)
@@ -2177,33 +2174,38 @@ export default function ActiveWorkspace({
       </div>
 
       <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-2 sm:px-6">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-6 flex-wrap">
+        {/* ยอดและปุ่มอยู่คนละแถวเสมอ เพื่อไม่ให้ตารางหด/ขยายเมื่อยอดหรือจำนวนที่เลือกเปลี่ยน */}
+        <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-3 gap-4 lg:grid-cols-[repeat(3,minmax(0,12rem))_minmax(0,1fr)]">
             {/* เดิมเป็นเลข 3 ตัวลอยๆ ไม่มีป้ายบอกว่าเลขไหนคืออะไร */}
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-medium text-gray-400">ยอดธนาคารที่เลือก</p>
-              <p className="text-base font-semibold text-gray-900">{formatAmount(bankTotal)}</p>
+              <p title={formatAmount(bankTotal)} className="truncate text-sm font-semibold tabular-nums text-gray-900 sm:text-base">{formatAmount(bankTotal)}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-medium text-gray-400">ยอด BC365 ที่เลือก</p>
-              <p className="text-base font-semibold text-gray-900">{formatAmount(glTotal)}</p>
+              <p title={formatAmount(glTotal)} className="truncate text-sm font-semibold tabular-nums text-gray-900 sm:text-base">{formatAmount(glTotal)}</p>
             </div>
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-medium text-gray-400">{amountMatches ? "ยอดเท่ากัน" : "ยอดต่างกัน"}</p>
-              <p className={`text-base font-semibold ${amountMatches ? "text-green-600" : "text-red-600"}`}>
+              <p title={formatAmount(difference)} className={`truncate text-sm font-semibold tabular-nums sm:text-base ${amountMatches ? "text-green-600" : "text-red-600"}`}>
                 {formatAmount(difference)}
               </p>
             </div>
 
             {/* บอกตรงๆ ว่าทำไมปุ่ม Match ยังกดไม่ได้ — เดิมปุ่มเทาเฉยๆ โดยไม่มีคำอธิบาย */}
-            {matchPlan.problem && (
-              <p className="max-w-md text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5">
-                {matchPlan.problem}
-              </p>
-            )}
+            <div className="col-span-3 flex h-10 min-w-0 items-center lg:col-span-1">
+              {matchPlan.problem && (
+                <p title={matchPlan.problem} className="line-clamp-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                  {matchPlan.problem}
+                </p>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* กันปุ่มขึ้นบรรทัดใหม่เมื่อจำนวนเปลี่ยน จอแคบเลื่อนแถบปุ่มได้โดยความสูงคงเดิม */}
+          <div className="h-14 overflow-x-auto">
+            <div className="flex h-10 min-w-max items-center gap-2">
             <ClusterKindToggle
               label="ยอดตรงกันพอดี"
               count={clusterKinds.oneToOne.count}
@@ -2233,11 +2235,9 @@ export default function ActiveWorkspace({
               className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Scale size={14} /> หักล้างรายการ BC365
-              {offsetSelection.length > 0 && (
-                <span className="tabular-nums text-xs">
-                  ({offsetCounts.inCount}:{offsetCounts.outCount})
-                </span>
-              )}
+              <span aria-hidden={offsetSelection.length === 0} className={`inline-block w-[11ch] text-right text-xs tabular-nums ${offsetSelection.length === 0 ? "invisible" : ""}`}>
+                ({offsetCounts.inCount}:{offsetCounts.outCount})
+              </span>
             </button>
             <button
               onClick={() => {
@@ -2269,11 +2269,12 @@ export default function ActiveWorkspace({
                     ? `จะบันทึกแยกเป็น ${matchPlan.groups.length} กลุ่ม (แยกตามวันที่)`
                     : undefined)
               }
-              className="flex items-center gap-1.5 text-sm font-medium text-white bg-blue-600 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-700"
+              className="flex w-64 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-blue-600 px-4 py-2 text-sm font-medium tabular-nums text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
               {matchPlan.needsRemark ? "จับคู่และพักส่วนต่าง" : "จับคู่"} {selectedBankItems.length}:{selectedGlItems.length}
             </button>
+            </div>
           </div>
         </div>
       </div>

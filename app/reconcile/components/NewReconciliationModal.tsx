@@ -6,6 +6,7 @@ import { ReconcileSession, BankStatementImportSummary } from "./types";
 import { BankAccountOption, fullAccountLabel } from "../../../lib/bankAccounts";
 import OpeningBalanceInput, { parseAmountInput } from "./OpeningBalanceInput";
 
+import { formatAmount } from '../../../lib/formatAmount';
 const BANKS = [
   { code: "BBL", label: "ธนาคารกรุงเทพ (BBL)" },
   { code: "KBANK", label: "ธนาคารกสิกรไทย (KBank)" },
@@ -19,9 +20,6 @@ const ANIM_MS = 180;
 
 function toDateInputValue(iso: string) {
   return iso ? iso.slice(0, 10) : "";
-}
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function formatDMY(iso: string) {
   const [y, m, d] = iso.slice(0, 10).split("-");

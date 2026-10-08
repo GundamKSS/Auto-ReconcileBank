@@ -4,11 +4,9 @@ import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { Loader2, TriangleAlert, X } from "lucide-react";
 
+import { formatAmount } from '../../../lib/formatAmount';
 type SuspenseLine = { id: string; date: string; ref: string; amount: number };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDMY(iso: string) {
   const [y, m, d] = new Date(iso).toISOString().slice(0, 10).split("-");
   return `${d}/${m}/${y}`;

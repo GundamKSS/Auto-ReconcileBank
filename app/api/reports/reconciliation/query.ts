@@ -39,6 +39,12 @@ export type ReportFilters = {
   /** ไม่ใส่ = AR; มีผลเฉพาะ query ที่สร้างด้วย buildReportCte แบบไม่ใช่ allSides */
   side?: ReportSide;
   bankCode: string | null;
+  /**
+   * กรองลงถึงระดับ "บัญชีธนาคาร" — หน้ากระทบยอดทำงานทีละบัญชี รายงานจึงต้องแคบได้เท่ากัน
+   * ไม่งั้นรายงานของธนาคารหนึ่งจะมีบัญชีอื่นที่ยังไม่ได้กระทบยอดปนมาด้วย
+   * ใช้ได้เฉพาะเมื่อรัน sql/006 แล้ว (route เป็นคนเช็คด้วย bankAccountColumnsReady)
+   */
+  bankAccountNo: string | null;
   q: string | null;
   /**
    * ตัดกลุ่มหักล้างกันเอง (OFFSET) และไม่นำมาจับคู่ (EXCLUDED) ออกตอนดูสถานะ ALL — Dashboard ใช้ เพราะนับทุกสถานะที่ไม่ใช่
@@ -76,6 +82,7 @@ export function parseFilters(params: URLSearchParams): ReportPageFilters {
   const rawTo = params.get('to');
   const rawStatus = (params.get('status') ?? 'MATCHED').toUpperCase();
   const bankCode = params.get('bankCode');
+  const bankAccountNo = params.get('bankAccountNo');
   const q = params.get('q')?.trim();
 
   return {
@@ -87,6 +94,7 @@ export function parseFilters(params: URLSearchParams): ReportPageFilters {
       : 'MATCHED',
     side: params.get('side')?.toUpperCase() === 'AP' ? 'AP' : 'AR',
     bankCode: bankCode && bankCode !== 'ALL' ? bankCode : null,
+    bankAccountNo: bankAccountNo && bankAccountNo !== 'ALL' ? bankAccountNo : null,
     q: q ? q : null,
   };
 }
@@ -96,6 +104,7 @@ export function bindFilters(request: sql.Request, f: ReportFilters) {
   request.input('to', sql.Date, new Date(`${f.to}T00:00:00Z`));
   request.input('direction', sql.VarChar(3), SIDE_DIRECTION[f.side ?? 'AR']);
   if (f.bankCode) request.input('bankCode', sql.NVarChar, f.bankCode);
+  if (f.bankAccountNo) request.input('bankAccountNo', sql.NVarChar, f.bankAccountNo);
   if (f.q) request.input('q', sql.NVarChar, `%${f.q}%`);
   if (isMatchTypeStatus(f.status)) {
     request.input('matchType', sql.NVarChar, f.status);
@@ -161,7 +170,11 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
     : f.excludeOffset
       ? "AND rm.MatchType NOT IN ('OFFSET', 'EXCLUDED')"
       : '';
-  const matchBankFilter = f.bankCode ? 'AND rm.BankCode = @bankCode' : '';
+  const matchBankFilter = [
+    f.bankCode ? 'AND rm.BankCode = @bankCode' : '',
+    // หัวบันทึกเก็บเลขบัญชีไว้ตั้งแต่ sql/006 — กรองที่หัวทีเดียวพอ ไม่ต้องไล่กรองรายบรรทัด
+    f.bankAccountNo ? 'AND rm.BankAccountNo = @bankAccountNo' : '',
+  ].join(' ');
   const dateFilter = groupDateFilter(f.basis);
   const effDate = f.basis === 'BANK' ? 'COALESCE(b.TranDate, g.Posting_Date)' : 'COALESCE(g.Posting_Date, b.TranDate)';
 
@@ -310,6 +323,7 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
     FROM BankStatementLine bsl
     WHERE bsl.TranDate >= @from AND bsl.TranDate <= @to
       ${f.bankCode ? 'AND bsl.BankCode = @bankCode' : ''}
+      ${f.bankAccountNo ? 'AND bsl.BankAccountNo = @bankAccountNo' : ''}
       /* ไฟล์ที่ลบในหน้า Master Data เก็บบรรทัดไว้เป็น MatchStatus = 'DELETED' (soft delete) — ไม่ใช่รายการค้าง */
       AND bsl.MatchStatus <> 'DELETED'
       AND NOT EXISTS (
@@ -355,6 +369,7 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
     WHERE m.BankCode IS NOT NULL
       AND e.Posting_Date >= @from AND e.Posting_Date <= @to
       ${f.bankCode ? 'AND m.BankCode = @bankCode' : ''}
+      ${f.bankAccountNo ? 'AND e.Bank_Account_No = @bankAccountNo' : ''}
       AND NOT EXISTS (
         SELECT 1 FROM ReconciliationMatchLine u_rml
         JOIN ReconciliationMatch u_rm ON u_rm.MatchId = u_rml.MatchId AND u_rm.Status = 'ACTIVE'

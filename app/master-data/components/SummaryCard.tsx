@@ -2,10 +2,7 @@
 
 import type { ReactNode } from "react";
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
+import { formatAmount } from '../../../lib/formatAmount';
 // การ์ดสรุปยอดด้านบนตาราง ใช้ร่วมกันทั้งหน้า Master Data · Bank Statement และ GL
 // สีเงินเข้า/ออกตรงกับคอลัมน์ยอดในตาราง: เข้า = teal, ออก = red
 export default function SummaryCard({

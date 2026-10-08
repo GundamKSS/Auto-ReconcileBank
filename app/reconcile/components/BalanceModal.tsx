@@ -7,11 +7,9 @@ import { AlertTriangle, CheckCircle2, Loader2, Pencil, Undo2, X } from "lucide-r
 import type { BalanceData } from "./balanceTypes";
 import OpeningBalanceInput, { parseAmountInput } from "./OpeningBalanceInput";
 
+import { formatAmount } from '../../../lib/formatAmount';
 const EPS = 0.005;
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatSigned(n: number) {
   if (Math.abs(n) < EPS) return "0.00";
   return `${n > 0 ? "+" : "−"}${formatAmount(Math.abs(n))}`;

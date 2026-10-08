@@ -3,6 +3,7 @@ import * as XLSX from 'xlsx';
 import { getPool } from '../../../../../lib/db';
 import { requireRole } from '../../../../../lib/session';
 import { VIEWER_ROLES } from '../../../../../lib/roles';
+import { resolveAccountFilter } from '../../../../../lib/bankAccountDb';
 import {
   MAX_EXPORT_ROWS,
   ORDER_BY,
@@ -94,7 +95,12 @@ function applyMoneyFormat(ws: XLSX.WorkSheet, moneyCols: number[], firstDataRow:
   }
 }
 
-function buildWorkbook(filters: ReportPageFilters, rows: ReportRow[], summary: ReportSummary) {
+function buildWorkbook(
+  filters: ReportPageFilters,
+  rows: ReportRow[],
+  summary: ReportSummary,
+  accountLabel: string | null
+) {
   const wb = XLSX.utils.book_new();
 
   // ---------- ชีต Summary ----------
@@ -108,6 +114,7 @@ function buildWorkbook(filters: ReportPageFilters, rows: ReportRow[], summary: R
     ['เกณฑ์วันที่ที่ใช้กรอง', basisLabel],
     ['สถานะที่แสดง', STATUS_LABEL[filters.status] ?? filters.status],
     ['ธนาคาร', filters.bankCode ?? 'ทุกธนาคาร'],
+    ['บัญชีธนาคาร', accountLabel ?? 'ทุกบัญชีของธนาคารนี้'],
     ['คำค้นหา', filters.q ?? '-'],
     ['ออกรายงานเมื่อ', new Date().toISOString().slice(0, 19).replace('T', ' ')],
     ['จำนวนแถวทั้งหมด', summary.total],
@@ -235,6 +242,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'ช่วงวันที่ไม่ถูกต้อง (วันเริ่มต้นอยู่หลังวันสิ้นสุด)' }, { status: 400 });
     }
 
+    const account = await resolveAccountFilter(filters.bankAccountNo);
+    if (!account.ok) return NextResponse.json({ error: account.error }, { status: 400 });
+    filters.bankAccountNo = account.bankAccountNo;
+    if (account.bankCode) filters.bankCode = account.bankCode;
+
     const pool = await getPool();
 
     const summaryResult = await bindFilters(pool.request(), filters).query(`
@@ -260,10 +272,11 @@ export async function GET(req: NextRequest) {
     `);
     const rows = rowsResult.recordset.map(mapRow);
 
-    const wb = buildWorkbook(filters, rows, summary);
+    const wb = buildWorkbook(filters, rows, summary, filters.bankAccountNo);
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }) as Buffer;
 
-    const fileName = `reconciliation-report_${filters.side.toLowerCase()}_${filters.from}_${filters.to}_${filters.status.toLowerCase()}.xlsx`;
+    const accountPart = filters.bankAccountNo ? `_${filters.bankAccountNo}` : '';
+    const fileName = `reconciliation-report_${filters.side.toLowerCase()}${accountPart}_${filters.from}_${filters.to}_${filters.status.toLowerCase()}.xlsx`;
 
     return new Response(new Uint8Array(buf), {
       status: 200,

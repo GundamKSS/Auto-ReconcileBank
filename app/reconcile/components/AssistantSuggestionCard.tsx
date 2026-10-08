@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { formatAmount } from '../../../lib/formatAmount';
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -30,9 +31,6 @@ const LEVEL_STYLE: Record<ConfidenceLevel, { label: string; ring: string; text: 
   low: { label: "ความมั่นใจต่ำ", ring: "#9ca3af", text: "text-gray-500" },
 };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDMY(iso: string) {
   const [y, m, d] = iso.split("-");
   return `${d}/${m}/${y}`;

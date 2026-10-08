@@ -5,31 +5,24 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   ChevronRight,
   ChevronLeft,
-  CalendarRange,
-  SlidersHorizontal,
   Loader2,
   Undo2,
   CheckCircle2,
   Search,
-  ExternalLink,
   X,
 } from "lucide-react";
 import { getCurrentUsername } from "../../../../lib/currentUser";
 import { useSidebar } from "../../../../components/SidebarContext";
 import UnmatchConfirmModal, { UnmatchTarget } from "./UnmatchConfirmModal";
-import MatchDetail from "./MatchDetail";
+import HistoryTable, { HISTORY_TYPE_LABELS } from "./HistoryTable";
+import { useInitialPeriod } from '../../../../hooks/useInitialPeriod';
 import {
-  AMOUNT_TOLERANCE,
   MATCH_TYPE_META,
   MATCH_TYPE_ORDER,
   MatchRecord,
   MatchTypeValue,
   SubGroup,
-  formatAmount,
-  formatDateTime,
-  formatSigned,
   splitByDirection,
-  summarizeGroups,
   toSubGroups,
 } from "./historyModel";
 
@@ -54,16 +47,16 @@ type DateBasis = "BANK" | "GL" | "CREATED";
 type TypeFilter = "ALL" | MatchTypeValue;
 
 const SIDE_TABS: { value: Side; label: string }[] = [
-  { value: "AP", label: "AP · เงินออก" },
-  { value: "AR", label: "AR · เงินเข้า" },
-  { value: "ALL", label: "ทั้งสองฝั่ง" },
+  { value: "ALL", label: "ทั้งหมด" },
+  { value: "AR", label: "เงินเข้า" },
+  { value: "AP", label: "เงินออก" },
 ];
 
 const TYPE_TABS: { value: TypeFilter; label: string; hint: string; activeClass: string }[] = [
   { value: "ALL", label: "ทั้งหมด", hint: "ทุกประเภท", activeClass: "border-blue-600 text-blue-700" },
   ...MATCH_TYPE_ORDER.map((t) => ({
     value: t as TypeFilter,
-    label: MATCH_TYPE_META[t].label,
+    label: HISTORY_TYPE_LABELS[t],
     hint: MATCH_TYPE_META[t].hint,
     activeClass: MATCH_TYPE_META[t].tabClass,
   })),
@@ -103,223 +96,6 @@ function toUnmatchTarget(g: SubGroup, match: MatchRecord): UnmatchTarget {
 
 // ---------------------------------------------------------------------------
 
-function MatchCard({
-  match,
-  groups,
-  selectedKeys,
-  onToggleGroup,
-  onToggleAllGroups,
-  onRequestUnmatch,
-}: {
-  match: MatchRecord;
-  groups: SubGroup[];
-  selectedKeys: Set<string>;
-  onToggleGroup: (key: string) => void;
-  onToggleAllGroups: (groups: SubGroup[]) => void;
-  onRequestUnmatch: (groups: SubGroup[]) => void;
-}) {
-  const meta = MATCH_TYPE_META[match.matchType];
-  const [expanded, setExpanded] = useState(false);
-  const headerCheckboxRef = useRef<HTMLInputElement | null>(null);
-
-  const activeGroups = useMemo(() => groups.filter((g) => g.status === "ACTIVE"), [groups]);
-  const reversedCount = groups.length - activeGroups.length;
-  const fullyReversed = activeGroups.length === 0;
-  const selectable = meta.revertable && activeGroups.length > 0;
-  const selectedCount = selectable ? activeGroups.filter((g) => selectedKeys.has(g.key)).length : 0;
-  const allSelected = selectable && selectedCount === activeGroups.length;
-
-  // ติ๊กบางกลุ่ม = ช่องหัวการ์ดเป็นสถานะกลางๆ (indeterminate) — ตั้งผ่าน DOM ได้ทางเดียว
-  useEffect(() => {
-    if (headerCheckboxRef.current) {
-      headerCheckboxRef.current.indeterminate = selectedCount > 0 && !allSelected;
-    }
-  }, [selectedCount, allSelected]);
-
-  // สรุปบนหัวการ์ดจากกลุ่มที่ยังใช้งานอยู่ — ยกเลิกหมดแล้วค่อยสรุปจากทุกกลุ่ม ให้ยังรู้ว่าเคยเป็นรายการอะไร
-  const summaryGroups = fullyReversed ? groups : activeGroups;
-  const summary = summarizeGroups(summaryGroups);
-  const isMatched = match.matchType === "MATCHED";
-  const difference = isMatched ? summary.difference : 0;
-  const hasDifference = Math.abs(difference) >= AMOUNT_TOLERANCE;
-
-  // ยอดหลักมุมขวาของหัวการ์ดต่างกันตามประเภท — MATCHED ยึดยอดฝั่ง Bank ที่เหลือมีแต่ฝั่ง BC
-  // (ไม่ห่อ useMemo — React Compiler จัดให้เอง และ summary เป็น object ที่สร้างใหม่ทุก render อยู่แล้ว)
-  const offsetSplit = splitByDirection(summary.glLines);
-  const headlineAmount =
-    match.matchType === "MATCHED" ? summary.bankTotal : match.matchType === "OFFSET" ? offsetSplit.inTotal : summary.glTotal;
-  const headlineLabel =
-    match.matchType === "MATCHED"
-      ? hasDifference
-        ? `BC ${formatAmount(summary.glTotal)}`
-        : "ยอดที่จับคู่"
-      : match.matchType === "OFFSET"
-        ? "ยอดที่หักล้าง"
-        : match.matchType === "SUSPENSE"
-          ? "ยอดที่พักไว้"
-          : "ยอด JV";
-  const countText =
-    match.matchType === "MATCHED"
-      ? `Bank ${summary.bankLines.length} รายการ · BC ${summary.glLines.length} รายการ`
-      : match.matchType === "OFFSET"
-        ? `BC ${summary.glLines.length} รายการ (${offsetSplit.inLines.length} เข้า : ${offsetSplit.outLines.length} ออก)`
-        : `BC ${summary.glLines.length} รายการ`;
-
-  // เลขเอกสารฝั่ง BC ที่เห็นจากหัวการ์ด — รายการ BC ล้วนไม่มีรายละเอียดฝั่ง Bank ให้ดู จึงต้องบอกตรงนี้แทน
-  const docs = meta.hasBankSide
-    ? []
-    : Array.from(new Set(summary.glLines.map((l) => l.ref).filter((r): r is string => Boolean(r))));
-  const docLine =
-    docs.length === 0 ? "" : docs.slice(0, 4).join(" · ") + (docs.length > 4 ? ` และอีก ${docs.length - 4} ใบ` : "");
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: fullyReversed ? 0.7 : 1, y: 0 }}
-      transition={{ duration: 0.2 }}
-      className={`overflow-hidden rounded-2xl border bg-white transition-colors duration-200 ${
-        !fullyReversed && selectedCount > 0 ? "border-gray-900" : "border-gray-200"
-      }`}
-    >
-      {/* จอแคบ: ยอดกับปุ่มยกเลิกตกลงไปอยู่บรรทัดถัดไปทั้งก้อน — ไม่งั้นชื่อ/ชิปถูกบีบจนเหลือคอลัมน์ละ 1-2 ตัวอักษร */}
-      <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3">
-        <div className="flex w-5 shrink-0 items-center justify-center">
-          {selectable && (
-            <input
-              ref={headerCheckboxRef}
-              type="checkbox"
-              checked={allSelected}
-              onChange={() => onToggleAllGroups(activeGroups)}
-              className="h-4 w-4 cursor-pointer rounded border-gray-300 text-gray-900 focus:ring-gray-400"
-              aria-label={`เลือกทุกกลุ่มย่อยของ Match #${match.matchId}`}
-            />
-          )}
-        </div>
-
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          className="flex min-w-0 flex-1 basis-[min(100%,16rem)] items-center gap-3 text-left hover:opacity-70"
-          aria-expanded={expanded}
-        >
-          <ChevronRight
-            size={14}
-            className={`shrink-0 text-gray-400 transition-transform duration-200 ${expanded ? "rotate-90" : ""}`}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="mb-0.5 flex flex-wrap items-center gap-2">
-              <span className="text-sm font-medium text-gray-900">เลขอ้างอิง #{match.matchId}</span>
-              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-600">
-                {match.bankCode}
-              </span>
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${meta.chipClass}`}>
-                {meta.label}
-              </span>
-              {groups.length > 1 && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                  {groups.length} กลุ่มย่อย
-                </span>
-              )}
-              {hasDifference && (
-                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                  พักโอนส่วนต่าง {formatSigned(difference)}
-                </span>
-              )}
-              {fullyReversed ? (
-                <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-600">
-                  ยกเลิกแล้ว
-                </span>
-              ) : (
-                reversedCount > 0 && (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                    ยกเลิกบางส่วน {reversedCount}/{groups.length} กลุ่ม
-                  </span>
-                )
-              )}
-              {selectedCount > 0 && (
-                <span className="rounded-full bg-gray-900 px-2 py-0.5 text-[10px] font-semibold text-white">
-                  เลือกแล้ว {selectedCount}/{activeGroups.length} กลุ่ม
-                </span>
-              )}
-            </div>
-            {docLine && (
-              <p className="truncate text-xs text-gray-500" title={docLine}>
-                {docLine}
-              </p>
-            )}
-            <p className="text-xs text-gray-400">
-              {formatDateTime(match.createdAt)}
-              {match.createdBy ? ` · โดย ${match.createdBy}` : ""} · {countText}
-              {!expanded ? " · กดเพื่อคลี่ดูรายละเอียดสองฝั่ง" : ""}
-            </p>
-            {match.remark && <p className="mt-0.5 truncate text-xs text-amber-700">หมายเหตุ: {match.remark}</p>}
-            {fullyReversed && (
-              <p className="mt-0.5 text-xs text-red-500">
-                ยกเลิกโดย {match.reversedBy ?? groups[0]?.reversedBy ?? "ไม่ทราบผู้ยกเลิก"}
-                {match.reversedAt ? ` เมื่อ ${formatDateTime(match.reversedAt)}` : ""}
-                {match.reversedReason ? ` — เหตุผล: ${match.reversedReason}` : ""}
-              </p>
-            )}
-          </div>
-        </button>
-
-        <div className="ml-auto flex shrink-0 items-center gap-3">
-          <div className="text-right">
-            <p className="text-sm font-semibold tabular-nums text-gray-900">{formatAmount(headlineAmount)}</p>
-            <p className={`text-[11px] ${hasDifference ? "text-amber-700" : "text-gray-400"}`}>{headlineLabel}</p>
-          </div>
-
-          {selectable ? (
-            <button
-              onClick={() => onRequestUnmatch(activeGroups)}
-              className="flex shrink-0 items-center gap-1.5 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-600 hover:bg-red-600 hover:text-white"
-              title={
-                match.matchType === "OFFSET"
-                  ? "ส่งรายการ BC กลับไปเลือกใหม่ที่หน้ากระทบยอด"
-                  : "ส่งรายการใน Match นี้กลับไปเลือกและจับคู่ใหม่ที่หน้ากระทบยอด"
-              }
-            >
-              <Undo2 size={13} />
-              {activeGroups.length > 1 ? "ส่งกลับทั้งหมด" : "คืนรายการเพื่อจับคู่ใหม่"}
-            </button>
-          ) : (
-            !fullyReversed && (
-              <a
-                href="/suspense"
-                className="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-200 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:border-amber-500 hover:bg-amber-50"
-                title="รายการพักโอนดึงกลับได้ที่หน้ารายการพัก ซึ่งเลือกได้ทีละบรรทัดและทำเป็นชุด"
-              >
-                <ExternalLink size={13} />
-                หน้ารายการพัก
-              </a>
-            )
-          )}
-        </div>
-      </div>
-
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            key="detail"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            style={{ overflow: "hidden" }}
-          >
-            <MatchDetail
-              match={match}
-              groups={groups}
-              selectedKeys={selectedKeys}
-              onToggleGroup={onToggleGroup}
-              revertable={meta.revertable}
-            />
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
 function SuccessToast({ message, onClose }: { message: string; onClose: () => void }) {
   useEffect(() => {
     const t = setTimeout(onClose, 4000);
@@ -349,12 +125,10 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
 // ---------------------------------------------------------------------------
 
 export default function MatchHistoryWorkspace() {
-  // ค่าเริ่มต้นเป็น "เดือนก่อนหน้า" ไม่ใช่เดือนนี้ — งานปกติคือเดือนนี้นั่งกระทบยอด statement ของเดือนที่แล้ว
-  // ถ้าเปิดมาที่เดือนนี้จะเจอหน้าว่างเกือบทุกครั้ง
-  const initialRange = useMemo(() => {
-    const now = new Date();
-    return monthRange(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-  }, []);
+  // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรืองวดล่าสุดที่มีข้อมูลจริง
+  // (เดิมใช้ "เดือนก่อนหน้า" ซึ่งยังเดาผิดได้บ่อย เช่นมานั่งปิดงวดช้ากว่า 1 เดือน ก็เจอหน้าว่างอยู่ดี)
+  const initialPeriod = useInitialPeriod();
+  const initialRange = initialPeriod.range;
   // แถบสรุปที่เลือกลอยอยู่กึ่งกลาง "พื้นที่ตาราง" — บน desktop ต้องเผื่อความกว้าง sidebar เหมือน MainContent
   // ไม่งั้นจะเยื้องไปทางขวาเพราะ fixed อิงขอบจอ ไม่ใช่ขอบ content
   const { collapsed } = useSidebar();
@@ -366,8 +140,12 @@ export default function MatchHistoryWorkspace() {
   const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
   const [typeCounts, setTypeCounts] = useState<Record<TypeFilter, number> | null>(null);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
-  const [from, setFrom] = useState(initialRange.from);
-  const [to, setTo] = useState(initialRange.to);
+  // เก็บเฉพาะวันที่ที่ผู้ใช้เปลี่ยนเอง ส่วนค่าเริ่มต้นคำนวณจากงวดที่ resolve ได้ระหว่าง render
+  // (ไม่คัดลอกลง state ผ่าน effect เพราะทำให้เกิด render ซ้อนและยิง request ด้วยค่า default ทิ้งหนึ่งรอบ)
+  const [fromOverride, setFrom] = useState<string | null>(null);
+  const [toOverride, setTo] = useState<string | null>(null);
+  const from = fromOverride ?? initialRange.from;
+  const to = toOverride ?? initialRange.to;
   // ค่าเริ่มต้นเป็นวันที่ลงบัญชีใน BC365 — เป็นวันที่เดียวที่รายการทุกประเภทมีเหมือนกัน
   // (พักโอน/หักล้างกันเอง/JV ปรับปรุง ไม่มีบรรทัดฝั่ง Bank จึงไม่มีวันที่ statement ให้อ้างอิง)
   const [dateBasis, setDateBasis] = useState<DateBasis>("GL");
@@ -407,6 +185,9 @@ export default function MatchHistoryWorkspace() {
 
   // โหลดหน้าแรกใหม่ทุกครั้งที่ filter เปลี่ยน หรือหลังยกเลิกการจับคู่สำเร็จ (reloadToken)
   useEffect(() => {
+    // ยังไม่รู้ว่าจะเปิดมาที่งวดไหน — รอก่อน ไม่งั้นยิง API ด้วยงวดที่กำลังจะถูกแทนที่
+    if (!initialPeriod.ready) return;
+
     const reqId = ++requestIdRef.current;
     let cancelled = false;
 
@@ -444,7 +225,7 @@ export default function MatchHistoryWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [params, reloadToken]);
+  }, [params, initialPeriod.ready, reloadToken]);
 
   const hasMore = matches.length < total;
 
@@ -590,18 +371,6 @@ export default function MatchHistoryWorkspace() {
     });
   }
 
-  function toggleAllGroupsOfMatch(groups: SubGroup[]) {
-    setSelectedKeys((prev) => {
-      const next = new Set(prev);
-      const allSelected = groups.every((g) => next.has(g.key));
-      for (const g of groups) {
-        if (allSelected) next.delete(g.key);
-        else next.add(g.key);
-      }
-      return next;
-    });
-  }
-
   function toggleSelectAll() {
     setSelectedKeys((prev) => {
       const next = new Set(prev);
@@ -681,7 +450,7 @@ export default function MatchHistoryWorkspace() {
   const banks = ["ALL", ...bankCodes];
 
   return (
-    <div className="flex-1 min-w-0 p-4 sm:p-6">
+    <div className="flex-1 min-w-0 p-4 pb-24 sm:p-6 sm:pb-24">
       <AnimatePresence>{toast && <SuccessToast message={toast} onClose={() => setToast(null)} />}</AnimatePresence>
       {/* ต้องครอบ AnimatePresence ไม่งั้น exit animation ที่เขียนไว้ใน UnmatchConfirmModal จะไม่เคยเล่น — ปิดแล้วหายฉับ */}
       <AnimatePresence>
@@ -713,9 +482,9 @@ export default function MatchHistoryWorkspace() {
               animate={{ y: 0, opacity: 1 }}
               exit={{ y: 90, opacity: 0 }}
               transition={{ duration: 0.2, ease: "easeOut" }}
-              className="pointer-events-auto flex items-center gap-3 bg-gray-900 text-white rounded-full shadow-xl pl-5 pr-2 py-2"
+              className="pointer-events-auto flex flex-wrap justify-center items-center gap-3 bg-gray-900 text-white rounded-xl shadow-xl pl-5 pr-2 py-2"
             >
-              <span className="text-sm font-medium">เลือกแล้ว {selectedGroups.length} กลุ่ม</span>
+              <span className="text-sm font-medium">เลือก {selectedGroups.length} แถว</span>
               <button onClick={() => setSelectedKeys(new Set())} className="text-xs text-gray-300 hover:text-white px-2">
                 ล้างการเลือก
               </button>
@@ -723,7 +492,7 @@ export default function MatchHistoryWorkspace() {
                 onClick={() => requestUnmatch(selectedGroups)}
                 className="flex items-center gap-1.5 text-xs font-medium bg-red-600 hover:bg-red-500 active:scale-95 px-4 py-2 rounded-full transition-all"
               >
-                <Undo2 size={13} /> คืนรายการเพื่อจับคู่ใหม่
+                <Undo2 size={13} /> ส่งกลับที่เลือก
               </button>
             </motion.div>
           )}
@@ -732,223 +501,84 @@ export default function MatchHistoryWorkspace() {
 
       <div className="mb-5">
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">ประวัติการจับคู่</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          ตรวจสอบประวัติการจับคู่ การหักล้างรายการ BC365 รายการพัก และ JV ปรับปรุง
-          เลือกแต่ละกลุ่มเพื่อดูรายละเอียด หรือคืนรายการเพื่อจับคู่ใหม่
-        </p>
+        <p className="mt-1 text-sm text-slate-500">เทียบธนาคารกับ BC365 ได้ทีละแถว</p>
       </div>
 
-      <section className="mb-5 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-[0_8px_28px_rgba(15,23,42,0.05)]">
-        <div className="border-b border-gray-100 p-4">
-          <form onSubmit={submitSearch} className="flex flex-col gap-2 sm:flex-row">
-            <div className="relative min-w-0 flex-1">
-              <Search
-                size={17}
-                className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <input
-                type="search"
-                value={queryInput}
-                onChange={(event) => setQueryInput(event.target.value)}
-                placeholder="ค้นหายอดเงิน, Match ID, เลขเอกสาร, เลข Entry, เช็ค หรือรายละเอียด..."
-                className="h-11 w-full rounded-xl border border-gray-200 bg-gray-50/70 pl-10 pr-10 text-sm text-gray-800 outline-none transition focus:border-blue-300 focus:bg-white focus:ring-4 focus:ring-blue-50"
-                aria-label="ค้นหาประวัติการจับคู่ทั้งหมด"
-              />
-              {queryInput && (
-                <button
-                  type="button"
-                  onClick={clearSearch}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-400 hover:bg-gray-200 hover:text-gray-700"
-                  aria-label="ล้างคำค้นหา"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-            <button
-              type="submit"
-              className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 active:scale-[0.98]"
-            >
-              <Search size={15} /> ค้นหาทั้งหมด
-            </button>
-          </form>
-          <p className="mt-2 text-[11px] text-gray-400">
-            ค้นหาจากข้อมูลทั้งหมดในระบบ ไม่จำกัดเฉพาะรายการที่โหลดอยู่บนหน้าจอ
-          </p>
-        </div>
-
-        <div className="bg-gray-50/60 p-4">
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
-                <SlidersHorizontal size={12} /> อ้างอิงวันที่จาก
-              </label>
-              <div className="flex rounded-xl border border-gray-200 bg-white p-1">
-                {([
-                  ["BANK", "Statement"],
-                  ["GL", "BC365"],
-                  ["CREATED", "วันที่บันทึก"],
-                ] as const).map(([value, label]) => {
-                  const disabled = value === "BANK" && !bankDateApplies;
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => updateDateBasis(value)}
-                      aria-pressed={dateBasis === value}
-                      title={
-                        disabled
-                          ? "ประเภทที่เลือกไม่มีบรรทัดฝั่งธนาคารจึงไม่มีวันที่ statement ให้อ้างอิง"
-                          : undefined
-                      }
-                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                        dateBasis === value
-                          ? "bg-gray-900 text-white shadow-sm"
-                          : disabled
-                            ? "cursor-not-allowed text-gray-300"
-                            : "text-gray-500 hover:bg-gray-100"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-gray-500">ตั้งแต่วันที่</label>
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => updateFrom(e.target.value)}
-                className="h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-gray-500">ถึงวันที่</label>
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => updateTo(e.target.value)}
-                className="h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-sm text-gray-700"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="text-[11px] font-medium text-gray-500">เลื่อนช่วงเดือน</label>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => shiftMonth(-1)}
-                  title="เดือนก่อนหน้า"
-                  className="flex size-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
-                >
-                  <ChevronLeft size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={resetToThisMonth}
-                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-xs font-medium text-gray-600 hover:text-gray-900"
-                >
-                  <CalendarRange size={13} /> เดือนนี้
-                </button>
-                <button
-                  type="button"
-                  onClick={() => shiftMonth(1)}
-                  title="เดือนถัดไป"
-                  className="flex size-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
-                >
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-
-            {sideApplies && (
-              <div className="flex flex-col gap-1">
-                <label className="text-[11px] font-medium text-gray-500">ทิศทางฝั่งธนาคาร</label>
-                <div className="flex rounded-xl border border-gray-200 bg-white p-1">
-                  {SIDE_TABS.map((tab) => {
-                    const count = sideCounts?.[tab.value] ?? null;
-                    return (
-                      <button
-                        key={tab.value}
-                        type="button"
-                        onClick={() => updateSide(tab.value)}
-                        aria-pressed={side === tab.value}
-                        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors ${
-                          side === tab.value ? "bg-gray-900 text-white shadow-sm" : "text-gray-500 hover:bg-gray-100"
-                        }`}
-                      >
-                        {tab.label}
-                        <span
-                          className={`rounded-full px-1.5 text-[10px] font-medium tabular-nums ${
-                            side === tab.value ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
-                          }`}
-                        >
-                          {count === null ? "…" : count.toLocaleString()}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+      <section aria-label="ค้นหาและกรองประวัติ" className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <form onSubmit={submitSearch} className="mb-4 flex flex-wrap gap-2">
+          <div className="relative min-w-[200px] flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input type="search" value={queryInput} onChange={(event) => setQueryInput(event.target.value)} placeholder="ค้นหาเลขเอกสาร รายละเอียด หรือยอดเงิน" aria-label="ค้นหาประวัติการจับคู่ทั้งหมด" className="h-10 w-full rounded-lg border border-slate-200 bg-slate-50 pl-9 pr-9 text-sm text-slate-700 outline-none focus:border-blue-300 focus:ring-2 focus:ring-blue-100" />
+            {queryInput && <button type="button" onClick={clearSearch} aria-label="ล้างคำค้นหา" className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700"><X size={14} /></button>}
+          </div>
+          <button type="submit" className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white hover:bg-blue-700">ค้นหา</button>
+        </form>
+        <div className="flex flex-wrap items-end gap-3">
+          <div>
+            <label htmlFor="history-from" className="mb-1 block text-xs text-slate-500">ตั้งแต่</label>
+            <input id="history-from" type="date" value={from} max={to || undefined} onChange={(e) => updateFrom(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          </div>
+          <div>
+            <label htmlFor="history-to" className="mb-1 block text-xs text-slate-500">ถึง</label>
+            <input id="history-to" type="date" value={to} min={from || undefined} onChange={(e) => updateTo(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700" />
+          </div>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => shiftMonth(-1)} aria-label="เดือนก่อนหน้า" className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronLeft size={15} /></button>
+            <button type="button" onClick={resetToThisMonth} className="h-9 rounded-lg border border-slate-200 px-3 text-xs text-slate-600 hover:bg-slate-50">เดือนนี้</button>
+            <button type="button" onClick={() => shiftMonth(1)} aria-label="เดือนถัดไป" className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><ChevronRight size={15} /></button>
+          </div>
+          <div>
+            <label htmlFor="history-date-basis" className="mb-1 block text-xs text-slate-500">วันที่จาก</label>
+            <select id="history-date-basis" value={dateBasis} onChange={(e) => updateDateBasis(e.target.value as DateBasis)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">
+              <option value="GL">BC365</option><option value="BANK" disabled={!bankDateApplies}>ธนาคาร</option><option value="CREATED">วันที่บันทึก</option>
+            </select>
+          </div>
+          <div>
+            <label htmlFor="history-bank" className="mb-1 block text-xs text-slate-500">ธนาคาร</label>
+            <select id="history-bank" value={bankFilter} onChange={(e) => updateBankFilter(e.target.value)} className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm text-slate-700">{banks.map((b) => <option key={b} value={b}>{b === "ALL" ? "ทุกธนาคาร" : b}</option>)}</select>
           </div>
 
-          {typeFilter === "ALL" && dateBasis === "BANK" && (
-            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50/70 px-3 py-2 text-[11px] text-amber-800">
-              กำลังกรองด้วยวันที่ Statement — รายการที่ไม่มีฝั่งธนาคาร(หักล้างกันเอง, พักโอน, JV ปรับปรุง) จะไม่แสดง
-              เลือก &quot;BC365&quot; เพื่อดูครบทุกประเภท
-            </p>
-          )}
-
-          <div className="mt-4 flex items-center gap-2 overflow-x-auto border-t border-gray-200/80 pt-3">
-            <span className="shrink-0 text-[11px] font-semibold text-gray-400">ธนาคาร</span>
-            {banks.map((b) => (
-              <button
-                key={b}
-                type="button"
-                onClick={() => updateBankFilter(b)}
-                className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                  bankFilter === b ? "bg-blue-600 text-white" : "border border-gray-200 bg-white text-gray-500 hover:bg-gray-100"
-                }`}
-              >
-                {b === "ALL" ? "ทุกธนาคาร" : b}
-              </button>
-            ))}
-          </div>
         </div>
+        {typeFilter === "ALL" && dateBasis === "BANK" && <p className="mt-3 text-xs text-amber-700">วันที่ธนาคารแสดงเฉพาะรายการที่มีฝั่งธนาคาร เลือกวันที่ BC365 เพื่อดูทุกประเภท</p>}
+      </section>
 
-        <div className="flex items-center gap-1 overflow-x-auto border-t border-gray-100 px-3">
-          {TYPE_TABS.map((tab) => {
-            const active = typeFilter === tab.value;
-            const count = typeCounts?.[tab.value] ?? null;
+      {sideApplies && (
+        <div aria-label="กรองฝั่งธนาคาร" className="mb-4 grid grid-cols-3 gap-2">
+          {SIDE_TABS.map((tab) => {
+            const active = side === tab.value;
+            const count = sideCounts?.[tab.value] ?? null;
+            const activeClass = tab.value === "AR"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+              : tab.value === "AP"
+                ? "border-rose-300 bg-rose-50 text-rose-700"
+                : "border-blue-300 bg-blue-50 text-blue-700";
             return (
               <button
                 key={tab.value}
                 type="button"
-                onClick={() => updateTypeFilter(tab.value)}
+                onClick={() => updateSide(tab.value)}
                 aria-pressed={active}
-                className={`-mb-px inline-flex shrink-0 items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold transition-colors ${
-                  active ? tab.activeClass : "border-transparent text-gray-400 hover:text-gray-700"
+                className={`flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
+                  active ? activeClass : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
                 }`}
               >
                 {tab.label}
-                <span className="hidden text-xs font-normal sm:inline">{tab.hint}</span>
-                <span
-                  className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
-                    active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
-                  }`}
-                >
+                <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
+                  active ? "bg-gray-900/5 text-gray-700" : "bg-gray-100 text-gray-500"
+                }`}>
                   {count === null ? "…" : count.toLocaleString()}
                 </span>
               </button>
             );
           })}
         </div>
-      </section>
+      )}
+
+      <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200">
+        {TYPE_TABS.map((tab) => <button key={tab.value} type="button" onClick={() => updateTypeFilter(tab.value)} aria-pressed={typeFilter === tab.value} className={`inline-flex items-center gap-2 border-b-2 px-3 py-2.5 text-sm font-medium ${typeFilter === tab.value ? tab.activeClass : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+          {tab.label}<span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs tabular-nums text-slate-500">{typeCounts?.[tab.value]?.toLocaleString() ?? "…"}</span>
+        </button>)}
+      </div>
 
       {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
       {unmatchError && <p className="mb-4 text-sm text-red-600">{unmatchError}</p>}
@@ -956,7 +586,7 @@ export default function MatchHistoryWorkspace() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-gray-500">
           <span>
-            พบ <strong className="font-semibold text-gray-900">{total.toLocaleString()}</strong> ชุดการบันทึก
+            <strong className="font-semibold text-gray-900">{total.toLocaleString()}</strong> ชุด · {[...groupsByMatchId.values()].reduce((count, groups) => count + groups.length, 0).toLocaleString()} แถวที่แสดง
           </span>
           {query && (
             <span className="inline-flex max-w-[320px] items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
@@ -972,10 +602,10 @@ export default function MatchHistoryWorkspace() {
             type="checkbox"
             checked={allEligibleSelected}
             onChange={toggleSelectAll}
-            disabled={eligibleGroups.length === 0}
+            disabled={loading || eligibleGroups.length === 0}
             className="size-3.5 rounded border-gray-300"
           />
-          เลือกทุกกลุ่มที่ยกเลิกได้ ({eligibleGroups.length})
+          เลือกแถวที่ส่งกลับได้ ({eligibleGroups.length})
         </label>
       </div>
 
@@ -991,24 +621,7 @@ export default function MatchHistoryWorkspace() {
 
       {matches.length > 0 && (
         <>
-          {/* ตอนเปลี่ยนตัวกรอง/หลัง Unmatch ให้คงรายการเดิมไว้แบบจางๆ ระหว่างรอผลใหม่ แทนการล้างเป็น spinner ทั้งหน้า
-              ซึ่งทำให้ความสูงหน้ายุบลงชั่วครู่ แล้ว scroll กระโดดกลับขึ้นบน */}
-          <div
-            aria-busy={loading}
-            className={`flex flex-col gap-3 transition-opacity duration-200 ${loading ? "opacity-50 pointer-events-none" : ""}`}
-          >
-            {matches.map((m) => (
-              <MatchCard
-                key={m.matchId}
-                match={m}
-                groups={groupsByMatchId.get(m.matchId) ?? []}
-                selectedKeys={selectedKeys}
-                onToggleGroup={toggleGroup}
-                onToggleAllGroups={toggleAllGroupsOfMatch}
-                onRequestUnmatch={requestUnmatch}
-              />
-            ))}
-          </div>
+          <HistoryTable matches={matches} groupsByMatchId={groupsByMatchId} selectedKeys={selectedKeys} onToggleGroup={toggleGroup} onRequestUnmatch={requestUnmatch} loading={loading} onLoadMore={loadMore}>
 
           <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
             {loadingMore ? (
@@ -1026,6 +639,7 @@ export default function MatchHistoryWorkspace() {
               `ครบทั้งหมด ${total.toLocaleString()} รายการ`
             )}
           </div>
+          </HistoryTable>
         </>
       )}
     </div>

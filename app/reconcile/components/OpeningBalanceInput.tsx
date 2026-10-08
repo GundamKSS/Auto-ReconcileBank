@@ -3,10 +3,7 @@
 import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
+import { formatAmount } from '../../../lib/formatAmount';
 /** แปลงข้อความที่ผู้ใช้พิมพ์ (มีคอมมา/ลบนำหน้าได้) เป็นตัวเลข — คืน null ถ้าไม่ใช่ตัวเลข */
 export function parseAmountInput(raw: string): number | null {
   const cleaned = raw.replace(/,/g, "").trim();

@@ -1,6 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { formatAmountOrDash as formatAmount } from '../../../lib/formatAmount';
+import { fullAccountLabel, type BankAccountOption } from '../../../lib/bankAccounts';
+import { useInitialPeriod } from '../../../hooks/useInitialPeriod';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -13,6 +16,13 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react";
+
+type PendingImportBank = { bankCode: string; glLines: number; glNet: number };
+type Coverage = {
+  reconcilableDiff: number;
+  pendingImport: PendingImportBank[];
+  pendingImportNet: number;
+};
 
 type Direction = "IN" | "OUT";
 type StatusValue = "MATCHED" | "SUSPENSE" | "OFFSET" | "EXCLUDED" | "UNMATCHED";
@@ -124,10 +134,6 @@ function monthRange(anchor: Date) {
   const first = new Date(anchor.getFullYear(), anchor.getMonth(), 1);
   const last = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0);
   return { from: toIsoDate(first), to: toIsoDate(last) };
-}
-function formatAmount(n: number | null | undefined) {
-  if (n === null || n === undefined) return "-";
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function formatDay(iso: string | null) {
   if (!iso) return "-";
@@ -282,14 +288,24 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
 }
 
 export default function ReportWorkspace() {
-  const initialRange = useMemo(() => monthRange(new Date()), []);
+  // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรืองวดล่าสุดที่มีข้อมูล แทนเดือนปัจจุบันที่มักยังว่าง
+  const initialPeriod = useInitialPeriod();
+  const initialRange = initialPeriod.range;
 
   const [side, setSide] = useState<Side>("AR");
   const [status, setStatus] = useState<StatusFilter>("MATCHED");
   const [bankCode, setBankCode] = useState("ALL");
+  // หน้ากระทบยอดทำงานทีละบัญชี รายงานจึงต้องแคบได้ถึงระดับบัญชีเหมือนกัน
+  // ไม่งั้นรายงานของธนาคารหนึ่งจะมีบัญชีอื่นที่ยังไม่ได้กระทบยอดปนมาจนผลต่างไม่ใช่ของงานที่ทำ
+  const [bankAccountNo, setBankAccountNo] = useState("ALL");
+  const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
   const [basis, setBasis] = useState<DateBasis>("BANK");
-  const [from, setFrom] = useState(initialRange.from);
-  const [to, setTo] = useState(initialRange.to);
+  // เก็บเฉพาะวันที่ที่ผู้ใช้เปลี่ยนเอง ส่วนค่าเริ่มต้นคำนวณจากงวดที่ resolve ได้ระหว่าง render
+  // (ไม่คัดลอกลง state ผ่าน effect เพราะทำให้เกิด render ซ้อนและยิง request ด้วยค่า default ทิ้งหนึ่งรอบ)
+  const [fromOverride, setFrom] = useState<string | null>(null);
+  const [toOverride, setTo] = useState<string | null>(null);
+  const from = fromOverride ?? initialRange.from;
+  const to = toOverride ?? initialRange.to;
   const [searchInput, setSearchInput] = useState("");
   const [q, setQ] = useState("");
 
@@ -302,11 +318,37 @@ export default function ReportWorkspace() {
   const [exporting, setExporting] = useState(false);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
   const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
+  // ธนาคารที่ยังไม่ได้นำเข้า statement ต้องอ่านแยกจากผลต่างจริง ไม่ใช่รวมเป็นก้อนเดียว
+  const [coverage, setCoverage] = useState<Coverage | null>(null);
+
+  // ผลต่างที่ควรขึ้นพาดหัว = เฉพาะธนาคารที่นำเข้า statement แล้ว
+  // ถ้า API เวอร์ชันเก่ายังไม่ส่ง coverage มา ให้ถอยไปใช้ผลต่างรวมแบบเดิม
+  const shownDiff = coverage ? coverage.reconcilableDiff : (summary?.totals.diff ?? null);
+  const hasPendingImport = (coverage?.pendingImport.length ?? 0) > 0;
+
+  const accountOptions = useMemo(
+    () => (bankCode === "ALL" ? accounts : accounts.filter((a) => a.bankCode === bankCode)),
+    [accounts, bankCode]
+  );
 
   const requestIdRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
   const inFlightRef = useRef(false);
+
+  // รายชื่อบัญชีไม่ขึ้นกับตัวกรอง โหลดครั้งเดียวพอ
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/master/bank-accounts")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!cancelled && Array.isArray(d?.accounts)) setAccounts(d.accounts);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // หน่วงคำค้นก่อนยิง API ไม่ให้โหลดใหม่ทุกตัวอักษร
   useEffect(() => {
@@ -317,14 +359,18 @@ export default function ReportWorkspace() {
   const params = useMemo(() => {
     const p = new URLSearchParams({ side, from, to, basis, status });
     if (bankCode !== "ALL") p.set("bankCode", bankCode);
+    if (bankAccountNo !== "ALL") p.set("bankAccountNo", bankAccountNo);
     if (q) p.set("q", q);
     return p.toString();
-  }, [side, from, to, basis, status, bankCode, q]);
+  }, [side, from, to, basis, status, bankCode, bankAccountNo, q]);
 
   // โหลดหน้าแรกใหม่ทุกครั้งที่ filter เปลี่ยน (พร้อมยอดสรุปของทั้งชุด)
   useEffect(() => {
     const reqId = ++requestIdRef.current;
     let cancelled = false;
+
+    // ยังไม่รู้ว่าจะเปิดมาที่งวดไหน — รอก่อน ไม่งั้นยิง API ด้วยงวดที่กำลังจะถูกแทนที่
+    if (!initialPeriod.ready) return;
 
     async function loadFirstPage() {
       setLoading(true);
@@ -338,6 +384,7 @@ export default function ReportWorkspace() {
           setRows([]);
           setTotal(0);
           setSummary(null);
+          setCoverage(null);
           return;
         }
         setRows(data.rows);
@@ -345,6 +392,7 @@ export default function ReportWorkspace() {
         setSummary(data.summary ?? null);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
         setSideCounts(data.sideCounts ?? null);
+        setCoverage(data.coverage ?? null);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
           setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
@@ -361,7 +409,7 @@ export default function ReportWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [params]);
+  }, [params, initialPeriod.ready]);
 
   const hasMore = rows.length < total;
 
@@ -534,7 +582,15 @@ export default function ReportWorkspace() {
         {["ALL", ...bankCodes].map((code) => (
           <button
             key={code}
-            onClick={() => setBankCode(code)}
+            onClick={() => {
+              setBankCode(code);
+              // บัญชีที่เลือกค้างไว้อาจไม่ได้อยู่ในธนาคารใหม่ — ล้างทิ้งไม่ให้ได้รายงานว่างโดยไม่รู้สาเหตุ
+              setBankAccountNo((prev) =>
+                prev !== "ALL" && code !== "ALL" && accounts.find((a) => a.bankAccountNo === prev)?.bankCode !== code
+                  ? "ALL"
+                  : prev
+              );
+            }}
             className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
               bankCode === code ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
             }`}
@@ -547,6 +603,28 @@ export default function ReportWorkspace() {
       <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide pb-1.5">
           <SlidersHorizontal size={13} /> กรอง
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-[11px] font-medium text-gray-500">บัญชีธนาคาร</label>
+          <select
+            value={bankAccountNo}
+            onChange={(e) => {
+              const next = e.target.value;
+              setBankAccountNo(next);
+              // เลือกบัญชีแล้วให้ปุ่มธนาคารตามไปด้วย ตัวเลขบนจอจะได้ไม่ขัดกับปุ่มที่ไฮไลต์อยู่
+              const acc = accounts.find((a) => a.bankAccountNo === next);
+              if (acc?.bankCode) setBankCode(acc.bankCode);
+            }}
+            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 max-w-[270px]"
+          >
+            <option value="ALL">ทุกบัญชี{bankCode === "ALL" ? "" : `ของ ${BANK_LABEL[bankCode] ?? bankCode}`}</option>
+            {accountOptions.map((a) => (
+              <option key={a.bankAccountNo} value={a.bankAccountNo}>
+                {fullAccountLabel(a)}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="flex flex-col gap-1">
@@ -631,11 +709,12 @@ export default function ReportWorkspace() {
           </div>
         </div>
 
-        {(searchInput || bankCode !== "ALL" || status !== "MATCHED") && (
+        {(searchInput || bankCode !== "ALL" || bankAccountNo !== "ALL" || status !== "MATCHED") && (
           <button
             onClick={() => {
               setSearchInput("");
               setBankCode("ALL");
+              setBankAccountNo("ALL");
               setStatus("MATCHED");
             }}
             className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 pb-2"
@@ -671,11 +750,35 @@ export default function ReportWorkspace() {
         />
         <SummaryCard
           label="ผลต่าง (ธนาคาร − BC365)"
-          value={t ? formatAmount(t.diff) : "…"}
-          sub={t ? (Math.abs(t.diff) < 0.005 ? "ยอดตรงกัน" : "ยอดยังไม่ตรง") : undefined}
-          tone={t ? (Math.abs(t.diff) < 0.005 ? "good" : "bad") : "default"}
+          value={shownDiff === null ? "…" : formatAmount(shownDiff)}
+          sub={
+            shownDiff === null
+              ? undefined
+              : Math.abs(shownDiff) < 0.005
+                ? "ยอดตรงกัน"
+                : hasPendingImport
+                  ? "ยอดยังไม่ตรง · เฉพาะธนาคารที่นำเข้าแล้ว"
+                  : "ยอดยังไม่ตรง"
+          }
+          tone={shownDiff === null ? "default" : Math.abs(shownDiff) < 0.005 ? "good" : "bad"}
         />
       </div>
+
+      {/* ธนาคารที่ยังไม่ได้นำเข้า statement ของงวดนี้ไม่ใช่ผลต่างที่ต้องไปตามหาสาเหตุ
+          แยกมาเป็นหมายเหตุ ไม่เอาไปรวมในการ์ดผลต่างด้านบน */}
+      {hasPendingImport && coverage && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-800">
+          <span className="font-semibold">ยังไม่ได้นำเข้ารายการเดินบัญชีของงวดนี้</span>
+          <span className="text-amber-700">
+            {coverage.pendingImport
+              .map((p) => `${BANK_LABEL[p.bankCode] ?? p.bankCode} ${formatAmount(p.glNet)} (${p.glLines.toLocaleString()} บรรทัด)`)
+              .join(" · ")}
+          </span>
+          <span className="text-amber-700">
+            — รวม {formatAmount(coverage.pendingImportNet)} บาท เป็นยอดฝั่ง BC365 ที่ยังไม่มีคู่เทียบ ไม่ใช่ผลต่างจากการกระทบยอด
+          </span>
+        </div>
+      )}
 
       {summary && summary.buckets.length > 1 && (
         <div className="flex flex-wrap gap-2 mb-4">

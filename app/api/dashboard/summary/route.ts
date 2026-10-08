@@ -3,6 +3,8 @@ import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
 import { VIEWER_ROLES } from '../../../../lib/roles';
+import { resolveAccountFilter } from '../../../../lib/bankAccountDb';
+import { loadBanksWithStatement, splitByCoverage } from '../../../../lib/statementCoverage';
 import {
   SIDE_DIRECTION,
   SUMMARY_QUERY,
@@ -69,7 +71,8 @@ type StatusKey = 'MATCHED' | 'SUSPENSE' | 'UNMATCHED';
  *   side         - 'AR' (ค่าเริ่มต้น, เงินเข้า) | 'AP' (เงินออก) | 'ALL' (รวมทั้งสองฝั่ง)
  *   month        - เดือนที่ดู 'YYYY-MM' (ค่าเริ่มต้น = เดือนปัจจุบัน)
  *   basis        - 'BANK' (ค่าเริ่มต้น) | 'GL' เกณฑ์วันที่ที่ใช้จัดรายการเข้าเดือน
- *   bankCode     - รหัสธนาคาร หรือ 'ALL'
+ *   bankCode      - รหัสธนาคาร หรือ 'ALL'
+ *   bankAccountNo - เลขบัญชีธนาคาร หรือ 'ALL' — แคบลงถึงระดับบัญชีให้ตรงกับหน้ากระทบยอด
  *   trendMonths  - จำนวนเดือนย้อนหลังของกราฟแนวโน้ม (6 หรือ 12, ค่าเริ่มต้น 6)
  *
  * ใช้ตัวสร้าง SQL ชุดเดียวกับหน้า Reports (buildReportCte) เพื่อให้ยอดบน dashboard
@@ -89,7 +92,13 @@ export async function GET(req: NextRequest) {
 
     const basis: DateBasis = params.get('basis') === 'GL' ? 'GL' : 'BANK';
     const rawBank = params.get('bankCode');
-    const bankCode = rawBank && rawBank !== 'ALL' ? rawBank : null;
+    let bankCode = rawBank && rawBank !== 'ALL' ? rawBank : null;
+
+    const rawAccount = params.get('bankAccountNo');
+    const account = await resolveAccountFilter(rawAccount && rawAccount !== 'ALL' ? rawAccount : null);
+    if (!account.ok) return NextResponse.json({ error: account.error }, { status: 400 });
+    // เลือกบัญชีแล้วธนาคารต้องตามบัญชีนั้น ไม่ใช่ตามปุ่มที่ค้างอยู่
+    if (account.bankCode) bankCode = account.bankCode;
     const trendMonths = params.get('trendMonths') === '12' ? 12 : 6;
     const rawSide = params.get('side')?.toUpperCase();
     const side: ReportSide | 'ALL' = rawSide === 'AP' ? 'AP' : rawSide === 'ALL' ? 'ALL' : 'AR';
@@ -108,6 +117,7 @@ export async function GET(req: NextRequest) {
       status: 'ALL',
       side: side === 'ALL' ? undefined : side,
       bankCode,
+      bankAccountNo: account.bankAccountNo,
       q: null,
       // หักล้างกันเอง (OFFSET) ไม่ใช่ทั้งงานที่จับคู่แล้วและงานค้าง — ถ้าปล่อยไว้การ์ด KPI จะนับเป็นงานค้าง
       excludeOffset: true,
@@ -220,6 +230,10 @@ export async function GET(req: NextRequest) {
         .reduce((sum, r) => sum + Number(r.BankLines_ ?? 0) + Number(r.GlLines_ ?? 0), 0);
     const sideCounts = { AR: linesOf('IN'), AP: linesOf('OUT') };
 
+    // ธนาคารที่ยังไม่ได้นำเข้า statement ของเดือนนี้ไม่ใช่ "กระทบยอดแล้วไม่ตรง" แต่คือ "ยังไม่ได้เริ่ม"
+    // แยกออกจากการ์ดผลต่าง ไม่งั้นตัวเลขพาดหัวจะใหญ่เกินจริงจนสื่อสารผิด
+    const coverage = splitByCoverage(summary, await loadBanksWithStatement(from, to, account.bankAccountNo));
+
     const daily = dailyResult.recordset.map((r) => ({
       date: isoDay(r.EffDate),
       status: r.Status as StatusKey,
@@ -276,10 +290,11 @@ export async function GET(req: NextRequest) {
       outstanding,
       trend,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
+      bankAccountNo: account.bankAccountNo ?? 'ALL',
+      coverage,
     });
   } catch (err) {
     console.error('Dashboard summary API error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ดึงข้อมูลสรุปไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ดึงข้อมูลสรุปไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

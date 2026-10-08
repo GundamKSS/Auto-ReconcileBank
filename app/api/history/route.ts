@@ -24,6 +24,9 @@ type MatchTypeValue = (typeof MATCH_TYPES)[number];
  *               ('MATCHED,OFFSET') หรือไม่ใส่ = ทุกประเภท
  *               ทุกประเภทยกเว้น MATCHED มีแต่บรรทัดฝั่ง GL — ใช้คู่กับ dateBasis GL/CREATED และ side ALL
  *               เท่านั้น (dateBasis BANK หรือ side AR/AP กรองจากบรรทัด Bank จึงไม่มีทางเจอ)
+ *   suspenseSide - 'IN' (ฝั่งรับ) | 'OUT' (ฝั่งจ่าย) | ไม่ใส่/ALL = ทั้งคู่ — ใช้คู่กับ includeDifferenceSuspense
+ *               ของหน้ารายการพัก ซึ่งแยกฝั่งจากทิศทางของบรรทัด BC (พักทั้งรายการ) และจากยอดสุทธิฝั่ง Bank
+ *               (พักส่วนต่าง) ไม่ใช่จากบรรทัด Bank เหมือน side — Match ที่พักไว้ทั้งสองทิศจะโผล่ทั้งสองฝั่ง
  *   side      - 'AR' (เงินเข้า) | 'AP' (เงินออก) หรือไม่ใส่/ALL = ทั้งคู่ — ความหมายเดียวกับหน้า Dashboard/Reports
  *               ดูจากทิศทางของบรรทัดฝั่ง Bank ใน Match (Credit มีค่า = เงินเข้า) Match ที่มีทั้งสองทิศปนกัน
  *               จะโผล่ทั้งสองแท็บ เพราะมีรายการของทั้งสองฝั่งอยู่จริง
@@ -96,6 +99,13 @@ export async function GET(req: NextRequest) {
     if (rawSide !== 'AR' && rawSide !== 'AP' && rawSide !== 'ALL') return badRequest('side ต้องเป็น AR, AP หรือ ALL');
     const side = rawSide as 'AR' | 'AP' | 'ALL';
 
+    // ฝั่งรับ/จ่ายของหน้ารายการพัก — ดูที่บรรทัด BC ไม่ใช่บรรทัด Bank (รายการพักส่วนใหญ่ไม่มีฝั่ง Bank เลย)
+    const rawSuspenseSide = params.get('suspenseSide')?.toUpperCase() ?? 'ALL';
+    if (rawSuspenseSide !== 'IN' && rawSuspenseSide !== 'OUT' && rawSuspenseSide !== 'ALL') {
+      return badRequest('suspenseSide ต้องเป็น IN, OUT หรือ ALL');
+    }
+    const suspenseSide = rawSuspenseSide as 'IN' | 'OUT' | 'ALL';
+
     const rawBasis = params.get('dateBasis')?.toUpperCase() ?? 'CREATED';
     if (rawBasis !== 'BANK' && rawBasis !== 'GL' && rawBasis !== 'CREATED') {
       return badRequest('dateBasis ต้องเป็น BANK, GL หรือ CREATED');
@@ -147,6 +157,29 @@ export async function GET(req: NextRequest) {
         SELECT 1 FROM ReconciliationMatchLine x_rml
         JOIN BankAccountLedgerEntries x_e ON x_e.Entry_No = x_rml.GLEntryNo
         WHERE x_rml.MatchId = rm.MatchId AND x_rml.SourceType = 'GL' AND ${conds.join(' AND ')}
+      )`;
+    }
+
+    // ฝั่งรับ/จ่ายของรายการพัก:
+    //   พักทั้งรายการ (SUSPENSE/OFFSET/EXCLUDED — มีแต่บรรทัด BC) ดูทิศทางของบรรทัด BC ที่ยังใช้งานอยู่
+    //     Match ที่พักไว้ทั้งขาเข้าและขาออกจะเข้าเงื่อนไขทั้งสองฝั่ง (เหมือนกติกาของ side AR/AP)
+    //   พักส่วนต่าง (MATCHED) ดูยอดสุทธิฝั่ง Bank แบบเดียวกับ suspenseDirection ที่ส่งกลับไปให้การ์ด
+    function suspenseSideCondition(dir: 'IN' | 'OUT') {
+      const glCompare = dir === 'IN' ? '>' : '<';
+      const bankCompare = dir === 'IN' ? '>=' : '<';
+      return `(
+        (rm.MatchType <> 'MATCHED' AND EXISTS (
+          SELECT 1 FROM ReconciliationMatchLine ss_rml
+          JOIN BankAccountLedgerEntries ss_e ON ss_e.Entry_No = ss_rml.GLEntryNo
+          WHERE ss_rml.MatchId = rm.MatchId AND ss_rml.SourceType = 'GL' AND ss_rml.Status = 'ACTIVE'
+            AND ${glSignedSql('ss_e')} ${glCompare} 0
+        ))
+        OR (rm.MatchType = 'MATCHED' AND COALESCE((
+          SELECT SUM(${bankSignedSql('ss_b')})
+          FROM ReconciliationMatchLine ss_bl
+          JOIN BankStatementLine ss_b ON ss_b.LineId = ss_bl.BankLineId
+          WHERE ss_bl.MatchId = rm.MatchId AND ss_bl.SourceType = 'BANK' AND ss_bl.Status = 'ACTIVE'
+        ), 0) ${bankCompare} 0)
       )`;
     }
 
@@ -205,7 +238,11 @@ export async function GET(req: NextRequest) {
         }
     `;
     const baseWhere = `${whereWithoutType} ${typeCondition}`;
-    const whereClause = `${baseWhere} ${bankLineExists(side)} ${glLineExists()}`;
+    // จำนวนต่อฝั่งและยอดสรุปหัวตารางต้องไม่ถูกตัดด้วยฝั่งที่เลือกอยู่ — ไม่งั้นกดแท็บฝั่งรับแล้วเลขฝั่งจ่ายจะเป็น 0
+    const whereWithoutSuspenseSide = `${baseWhere} ${bankLineExists(side)} ${glLineExists()}`;
+    const whereClause = `${whereWithoutSuspenseSide} ${
+      suspenseSide === 'ALL' ? '' : `AND ${suspenseSideCondition(suspenseSide)}`
+    }`;
 
     // ทุก query ที่ใช้ baseWhere ต้อง bind พารามิเตอร์ชุดเดียวกัน — รวมไว้ที่เดียวกันลืม
     function bindFilters(request: sql.Request) {
@@ -357,7 +394,11 @@ export async function GET(req: NextRequest) {
           matchType: h.MatchType,
           suspenseKind: isDifferenceSuspense ? 'DIFFERENCE' : 'LINE',
           suspenseDifference: isDifferenceSuspense ? suspenseDifference : null,
-          suspenseDirection: (bankSigned >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
+          // พักส่วนต่างดูยอดสุทธิฝั่ง Bank ส่วนพักทั้งรายการไม่มีบรรทัด Bank เลย จึงดูยอดสุทธิฝั่ง BC แทน
+          // (ต้องตรงกับ suspenseSideCondition ใน query ไม่งั้นแท็บฝั่งรับ/จ่ายกับป้ายบนการ์ดจะขัดกันเอง)
+          suspenseDirection: (h.MatchType === 'MATCHED'
+            ? bankSigned >= 0 ? 'IN' : 'OUT'
+            : glSigned >= 0 ? 'IN' : 'OUT') as 'IN' | 'OUT',
           createdBy: h.CreatedBy,
           createdAt: h.CreatedAt,
           status: h.Status ?? 'ACTIVE',
@@ -379,11 +420,14 @@ export async function GET(req: NextRequest) {
     // sideCounts ใช้ baseWhere ที่ไม่กรองฝั่ง ไม่งั้นพออยู่แท็บ AR แล้วเลขของแท็บ AP จะกลายเป็น 0
     // SQL Server ไม่ยอมให้ SUM ครอบนิพจน์ที่มี subquery (EXISTS) ตรงๆ จึงคำนวณ flag ต่อแถวใน derived table ก่อน
     const countResult = await bindFilters(pool.request()).query(`
-      SELECT COUNT(*) AS AllCount, SUM(t.IsAr) AS ArCount, SUM(t.IsAp) AS ApCount
+      SELECT COUNT(*) AS AllCount, SUM(t.IsAr) AS ArCount, SUM(t.IsAp) AS ApCount,
+             SUM(t.IsSuspenseIn) AS SuspenseInCount, SUM(t.IsSuspenseOut) AS SuspenseOutCount
       FROM (
         SELECT
           CASE WHEN 1=1 ${bankLineExists('AR')} THEN 1 ELSE 0 END AS IsAr,
-          CASE WHEN 1=1 ${bankLineExists('AP')} THEN 1 ELSE 0 END AS IsAp
+          CASE WHEN 1=1 ${bankLineExists('AP')} THEN 1 ELSE 0 END AS IsAp,
+          CASE WHEN ${suspenseSideCondition('IN')} THEN 1 ELSE 0 END AS IsSuspenseIn,
+          CASE WHEN ${suspenseSideCondition('OUT')} THEN 1 ELSE 0 END AS IsSuspenseOut
         FROM ReconciliationMatch rm
         ${baseWhere} ${bankLineExists('ALL')} ${glLineExists()}
       ) t
@@ -394,7 +438,12 @@ export async function GET(req: NextRequest) {
       AR: Number(counts.ArCount ?? 0),
       AP: Number(counts.ApCount ?? 0),
     };
-    const total = sideCounts[side];
+    const suspenseSideCounts = {
+      ALL: Number(counts.AllCount ?? 0),
+      IN: Number(counts.SuspenseInCount ?? 0),
+      OUT: Number(counts.SuspenseOutCount ?? 0),
+    };
+    const total = suspenseSide === 'ALL' ? sideCounts[side] : suspenseSideCounts[suspenseSide];
 
     // จำนวน Match ของแต่ละประเภท ภายใต้ตัวกรองอื่นที่เลือกอยู่ (ธนาคาร/ช่วงวันที่/คำค้น/ฝั่ง) แต่ไม่กรองประเภท
     // — ไม่งั้นพอกดแท็บ "หักล้างกันเอง" แล้วเลขบนแท็บอื่นจะกลายเป็น 0 ทั้งแถว
@@ -448,7 +497,7 @@ export async function GET(req: NextRequest) {
             JOIN BankAccountLedgerEntries sg ON sg.Entry_No = sl.GLEntryNo
             WHERE sl.MatchId = rm.MatchId AND sl.SourceType = 'GL' AND sl.Status = 'ACTIVE'
           ) gt
-          ${whereClause}
+          ${whereWithoutSuspenseSide}
         ) x
       `);
       const s = summaryResult.recordset[0] ?? {};
@@ -480,6 +529,7 @@ export async function GET(req: NextRequest) {
       matches,
       total,
       sideCounts,
+      suspenseSideCounts,
       typeCounts: { ...typeCounts, ALL: typeCountAll },
       suspenseSummary,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),

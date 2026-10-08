@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { ArrowDownLeft, ArrowUpRight, Loader2, Plus, Scale, Search, Trash2, X } from "lucide-react";
 import { offsetGroupProblem } from "../../../lib/glOffset";
 
+import { formatAmount } from '../../../lib/formatAmount';
 export type OffsetSelectionLine = {
   id: string;
   entryNo: number;
@@ -15,9 +16,6 @@ export type OffsetSelectionLine = {
   amount: number;
 };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function formatDMY(iso: string) {
   const [y, m, d] = new Date(iso).toISOString().slice(0, 10).split("-");
   return `${d}/${m}/${y}`;

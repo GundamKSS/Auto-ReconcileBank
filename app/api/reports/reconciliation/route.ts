@@ -3,6 +3,8 @@ import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
 import { VIEWER_ROLES } from '../../../../lib/roles';
+import { resolveAccountFilter } from '../../../../lib/bankAccountDb';
+import { loadBanksWithStatement, splitByCoverage } from '../../../../lib/statementCoverage';
 import {
   PAGE_SIZE,
   ORDER_BY,
@@ -25,7 +27,9 @@ export const dynamic = 'force-dynamic';
  *   from, to    - ช่วงวันที่ YYYY-MM-DD (ไม่ใส่ = วันที่ 1 ถึงสิ้นเดือนปัจจุบัน)
  *   basis       - 'BANK' (ค่าเริ่มต้น, ใช้ TranDate ของ statement) | 'GL' (ใช้ Posting_Date ฝั่ง BC)
  *   status      - 'MATCHED' (ค่าเริ่มต้น) | 'SUSPENSE' | 'OFFSET' (หักล้างกันเอง) | 'UNMATCHED' | 'ALL'
- *   bankCode    - รหัสธนาคาร หรือ 'ALL'
+ *   bankCode      - รหัสธนาคาร หรือ 'ALL'
+ *   bankAccountNo - เลขบัญชีธนาคาร หรือ 'ALL' — แคบลงถึงระดับบัญชีให้ตรงกับหน้ากระทบยอด
+ *                   ซึ่งทำงานทีละบัญชี (ใส่แล้ว bankCode จะถูกตั้งตามบัญชีนั้นให้อัตโนมัติ)
  *   q           - ค้นหาข้อความ (คำอธิบาย bank / ref / document no / ชื่อบัญชี / MatchId) เจอแล้วติดมาทั้งกลุ่ม
  *   offset      - เริ่มที่แถวที่เท่าไร (infinite scroll ทีละ 50)
  *
@@ -43,6 +47,12 @@ export async function GET(req: NextRequest) {
     if (filters.from > filters.to) {
       return NextResponse.json({ error: 'ช่วงวันที่ไม่ถูกต้อง (วันเริ่มต้นอยู่หลังวันสิ้นสุด)' }, { status: 400 });
     }
+
+    const account = await resolveAccountFilter(filters.bankAccountNo);
+    if (!account.ok) return NextResponse.json({ error: account.error }, { status: 400 });
+    filters.bankAccountNo = account.bankAccountNo;
+    // เลือกบัญชีแล้วให้ธนาคารตามบัญชีนั้นเสมอ ปุ่มธนาคารที่ค้างอยู่จะได้ไม่ขัดกันจนรายงานว่าง
+    if (account.bankCode) filters.bankCode = account.bankCode;
 
     const pool = await getPool();
 
@@ -69,6 +79,10 @@ export async function GET(req: NextRequest) {
     `);
     const { summary, sideCounts } = summarizeBySide(summaryResult.recordset, filters.side);
 
+    // ธนาคารที่ยังไม่ได้นำเข้า statement ของงวดนี้ไม่ใช่ "กระทบยอดแล้วไม่ตรง" แต่คือ "ยังไม่ได้เริ่ม"
+    // แยกออกจากตัวเลขผลต่างหลัก ไม่งั้นพาดหัวจะใหญ่เกินจริงจนไล่หาสาเหตุผิดที่
+    const coverage = splitByCoverage(summary, await loadBanksWithStatement(filters.from, filters.to, filters.bankAccountNo));
+
     // รายชื่อธนาคารสำหรับปุ่มกรอง — ดึงจากข้อมูลจริง ไม่ผูกกับ filter ที่เลือกอยู่
     // ไม่งั้นพอเลือกธนาคารเดียวแล้วปุ่มธนาคารอื่นจะหายไปหมด
     const bankCodesResult = await pool.request().query(`
@@ -88,10 +102,12 @@ export async function GET(req: NextRequest) {
       sideCounts,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
       filters,
+      // บอกหน้าจอเมื่อขอกรองรายบัญชีมาแต่ฐานข้อมูลยังไม่พร้อม จะได้ไม่เข้าใจว่าตัวเลขนี้คือของบัญชีเดียว
+      accountFilterIgnored: account.ignoredReason,
+      coverage,
     });
   } catch (err) {
     console.error('Reconciliation report API error:', err);
-    const detail = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: `ดึงข้อมูลรีพอร์ตไม่สำเร็จ: ${detail}` }, { status: 500 });
+    return NextResponse.json({ error: 'ดึงข้อมูลรีพอร์ตไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
   }
 }

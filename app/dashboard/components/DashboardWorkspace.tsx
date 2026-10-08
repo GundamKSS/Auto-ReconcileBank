@@ -12,6 +12,7 @@ import OutstandingList from './OutstandingList';
 import StatusDonut from './StatusDonut';
 import TrendChart from './TrendChart';
 import ViewPicker from './ViewPicker';
+import { useInitialPeriod } from '../../../hooks/useInitialPeriod';
 import {
   DEFAULT_WIDGETS,
   SIDES,
@@ -78,7 +79,12 @@ const SPAN: Record<WidgetId, string> = {
 };
 
 export default function DashboardWorkspace() {
-  const [month, setMonth] = useState(() => currentMonth());
+  // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรือเดือนล่าสุดที่มีข้อมูล แทนเดือนปัจจุบันที่มักยังว่าง
+  const initialPeriod = useInitialPeriod();
+  // เก็บเฉพาะเดือนที่ผู้ใช้เลือกเอง ส่วนค่าเริ่มต้นคำนวณจากงวดที่ resolve ได้ระหว่าง render
+  // (ไม่คัดลอกลง state ผ่าน effect เพราะทำให้เกิด render ซ้อนและยิง request ด้วยค่า default ทิ้งหนึ่งรอบ)
+  const [monthOverride, setMonth] = useState<string | null>(null);
+  const month = monthOverride ?? initialPeriod.range.from.slice(0, 7);
   const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [prefsLoaded, setPrefsLoaded] = useState(false);
 
@@ -89,7 +95,6 @@ export default function DashboardWorkspace() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const requestIdRef = useRef(0);
-
   // อ่านค่าที่จำไว้จาก localStorage (external source) ตอน mount — derive ระหว่าง render ไม่ได้
   // และอ่านตอน render ตรงๆ ก็ไม่ได้เพราะ HTML ฝั่ง server ไม่มี localStorage จะทำให้ hydrate ไม่ตรง
   useEffect(() => {
@@ -123,8 +128,8 @@ export default function DashboardWorkspace() {
   }, [month, prefs.side, prefs.basis, prefs.bankCode, prefs.trendMonths]);
 
   useEffect(() => {
-    // รอให้อ่านค่าที่จำไว้เสร็จก่อน ไม่งั้นจะยิง request ด้วยค่า default ทิ้งไปเปล่าๆ หนึ่งรอบ
-    if (!prefsLoaded) return;
+    // รอให้อ่านค่าที่จำไว้และงวดเริ่มต้นเสร็จก่อน ไม่งั้นจะยิง request ด้วยค่า default ทิ้งไปเปล่าๆ หนึ่งรอบ
+    if (!prefsLoaded || !initialPeriod.ready) return;
 
     const reqId = ++requestIdRef.current;
     let cancelled = false;
@@ -159,7 +164,7 @@ export default function DashboardWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [params, prefsLoaded, reloadToken]);
+  }, [params, prefsLoaded, initialPeriod.ready, reloadToken]);
 
   const show = (id: WidgetId) => prefs.widgets.includes(id);
   const isCurrentMonth = month === currentMonth();

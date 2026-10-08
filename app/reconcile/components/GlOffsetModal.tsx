@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { isReversalSource, offsetGroupProblem } from "../../../lib/glOffset";
 
+import { formatAmount } from '../../../lib/formatAmount';
 export type OffsetTab = "auto" | "manual" | "done";
 
 export type OffsetLine = {
@@ -38,9 +39,6 @@ type ConfirmedGroup = {
   lines: OffsetLine[];
 };
 
-function formatAmount(n: number) {
-  return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 function isoDay(value: string) {
   return new Date(value).toISOString().slice(0, 10);
 }

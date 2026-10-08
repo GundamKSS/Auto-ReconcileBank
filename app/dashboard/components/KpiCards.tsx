@@ -41,7 +41,11 @@ export default function KpiCards({ data }: { data: DashboardData }) {
   const prev = monthStats(data, shiftMonth(data.month, -1));
   const outstandingLines = suspense.lines + unmatched.lines;
 
-  const hasDiff = Math.abs(all.diff) >= 0.005;
+  // ธนาคารที่ยังไม่ได้นำเข้า statement มีแต่ยอดฝั่ง BC365 ถ้าเอาไปรวมในการ์ดผลต่าง
+  // ตัวเลขจะใหญ่เกินจริงมาก (เคยเจอ -89.5 ล้าน ทั้งที่ 86.87 ล้านคือแค่ยังไม่ได้นำเข้าไฟล์)
+  const pendingImport = data.coverage?.pendingImport ?? [];
+  const shownDiff = data.coverage ? data.coverage.reconcilableDiff : all.diff;
+  const hasDiff = Math.abs(shownDiff) >= 0.005;
 
   // ทุกยอดเงินกำกับแหล่งที่มา (Bank / BC) ด้วยป้าย ไม่ต้องเดาว่าตัวเลขมาจากฝั่งไหน
   // ดูฝั่งเดียว: เทียบยอดทิศทางเดียวกันระหว่าง Bank กับ BC ให้เห็นว่าผลต่างมาจากไหน
@@ -116,10 +120,31 @@ export default function KpiCards({ data }: { data: DashboardData }) {
             ผลต่างสุทธิ <SourceTag source="BANK" /> − <SourceTag source="GL" />
           </p>
           <p className={`mt-1 text-xl font-bold tabular-nums ${hasDiff ? 'text-rose-600' : 'text-slate-900'}`}>
-            {formatAmount(all.diff)}
+            {formatAmount(shownDiff)}
           </p>
+          {pendingImport.length > 0 && (
+            <p className="mt-1 text-[11px] leading-snug text-slate-400">เฉพาะธนาคารที่นำเข้ารายการเดินบัญชีแล้ว</p>
+          )}
         </div>
       </div>
+
+      {/* ยอดของธนาคารที่ยังไม่ได้นำเข้า statement อ่านแยกจากผลต่าง — เป็นงานที่ยังไม่ได้เริ่ม
+          ไม่ใช่ยอดที่กระทบแล้วไม่ตรง */}
+      {pendingImport.length > 0 && data.coverage && (
+        <div className="mt-3 rounded-[20px] border border-amber-200 bg-amber-50/70 px-6 py-3.5">
+          <p className="text-xs font-semibold text-amber-800">
+            ยังไม่ได้นำเข้ารายการเดินบัญชีของเดือนนี้ · {pendingImport.length} ธนาคาร
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
+            {pendingImport
+              .map((p) => `${p.bankCode} ${formatAmount(p.glNet)} (${p.glLines.toLocaleString()} บรรทัด)`)
+              .join(' · ')}
+            {' — รวม '}
+            {formatAmount(data.coverage.pendingImportNet)} บาท เป็นยอดฝั่ง BC365 ที่ยังไม่มีคู่เทียบ
+            ไม่ได้นับรวมในผลต่างด้านบน
+          </p>
+        </div>
+      )}
     </div>
   );
 }
