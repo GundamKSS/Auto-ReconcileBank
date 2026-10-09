@@ -8,6 +8,7 @@ import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../../lib/apiInput';
 import { glAmount, glDirection } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
+import { cancelledGlEntryNos } from '../../../../lib/cancelledGl';
 // กัน Next.js cache response ของ route นี้ไว้ (ต้องเป็นข้อมูลสดทุกครั้ง เพราะ filter วันที่/ธนาคารเปลี่ยนได้ตลอด)
 export const dynamic = 'force-dynamic';
 
@@ -99,7 +100,9 @@ export async function GET(req: NextRequest) {
     `);
 
     // สอง query ไม่ขึ้นต่อกัน ยิงพร้อมกันบน pool ได้ ไม่ต้องรอ bank เสร็จก่อนค่อยเริ่ม GL
-    const [bankResult, glResult] = await Promise.all([bankQuery, glQuery]);
+    const [bankResult, glResult, cancelled] = await Promise.all([
+      bankQuery, glQuery, cancelledGlEntryNos(pool),
+    ]);
 
     const bankLines = bankResult.recordset.map((r) => ({
       id: `bank-${r.LineId}`,
@@ -125,7 +128,9 @@ export async function GET(req: NextRequest) {
       description: r.Document_No,
       amount: glAmount(r),
     });
-    const glLines = glResult.recordset.map(toGlLine);
+    const glLines = glResult.recordset
+      .filter((r) => !cancelled.has(Number(r.Entry_No)))
+      .map(toGlLine);
 
     // รายการฝั่ง bank ที่ยังไม่ได้ระบุบัญชี — หน้าจอเอาไปขึ้นป้ายเตือน (ดู ActiveWorkspace.tsx)
     const unassignedBankLines = byAccount ? bankLines.filter((l) => l.accountNo === null).length : 0;

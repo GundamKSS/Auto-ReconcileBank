@@ -11,9 +11,9 @@ import {
   type AssistantBankLine,
   type AssistantGlLine,
 } from '../../../../lib/matchAssistant';
-import { glAmount, glDirection, glSignedAmount } from '../../../../lib/glAmount';
+import { glAmount, glDirection } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
-import { splitReversalPairs } from '../../../../lib/glOffset';
+import { cancelledGlEntryNos } from '../../../../lib/cancelledGl';
 
 // ข้อมูลต้องสดทุกครั้ง — รายการที่เพิ่งจับคู่ไปต้องไม่โผล่เป็นคำแนะนำอีก
 export const dynamic = 'force-dynamic';
@@ -107,7 +107,9 @@ export async function GET(req: NextRequest) {
         ORDER BY e.Posting_Date DESC, e.Entry_No DESC
       `);
 
-    const [bankResult, glResult] = await Promise.all([bankQuery, glQuery]);
+    const [bankResult, glResult, cancelled] = await Promise.all([
+      bankQuery, glQuery, cancelledGlEntryNos(pool),
+    ]);
 
     const bankLines = bankResult.recordset.map(
       (r): AssistantBankLine => ({
@@ -123,13 +125,7 @@ export async function GET(req: NextRequest) {
 
     // คู่กลับรายการใน BC ถูกแยกออกจากตารางใน /api/reconcile/data แล้ว — ต้องตัดออกแบบเดียวกัน
     // ไม่งั้นผู้ช่วยจะเสนอใบที่ถูกยกเลิกไปแล้วให้จับคู่กับเงินจริงในธนาคาร และจับกลุ่มวันเดียวกันไม่ตรงกับตาราง
-    const { rest: glRows } = splitReversalPairs(glResult.recordset, (r) => ({
-      entryNo: Number(r.Entry_No),
-      accountNo: r.Bank_Account_No ?? '',
-      documentNo: r.Document_No,
-      sourceCode: r.Source_Code,
-      signedAmount: glSignedAmount(r),
-    }));
+    const glRows = glResult.recordset.filter((r) => !cancelled.has(Number(r.Entry_No)));
 
     const glLines = glRows.map(
       (r): AssistantGlLine => ({
