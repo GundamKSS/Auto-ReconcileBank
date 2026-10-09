@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { loadReconcileSession } from '../lib/reconcileSession';
+import { useSessionState } from './useSessionState';
 
 /**
  * งวดที่ควรเปิดมาเจอเป็นค่าเริ่มต้น ของหน้าภาพรวม / รายงาน / ประวัติการจับคู่
@@ -11,7 +12,7 @@ import { loadReconcileSession } from '../lib/reconcileSession';
  * คือการปิดงวดที่ผ่านมา ไม่ใช่เดือนที่กำลังเดินอยู่
  *
  * ลำดับการเลือก:
- *   1. งวดที่หน้ากระทบยอดกำลังทำอยู่ (อ่านจาก localStorage ได้ทันที ไม่ต้องรอ API)
+ *   1. งวดที่หน้ากระทบยอดกำลังทำอยู่ (อ่านจาก sessionStorage ได้ทันที ไม่ต้องรอ API)
  *      — ตรงกับที่หน้ารายการพักทำอยู่แล้ว และเป็นสิ่งที่ผู้ใช้กำลังสนใจจริงๆ
  *   2. งวดล่าสุดที่มีข้อมูลในระบบ (ถาม API)
  *   3. เดือนปัจจุบัน (ยังไม่มีข้อมูลเลยในระบบ)
@@ -35,7 +36,7 @@ export function monthRangeOf(anchor: Date): PeriodRange {
   return { from: `${y}-${pad2(m + 1)}-01`, to: `${y}-${pad2(m + 1)}-${pad2(last.getDate())}` };
 }
 
-/** งวดจากหน้ากระทบยอด — อ่านจาก localStorage จึงได้คำตอบทันทีแบบ sync */
+/** งวดจากหน้ากระทบยอดในแท็บนี้ — อ่านได้ทันทีแบบ sync */
 function periodFromSession(): PeriodRange | null {
   if (typeof window === 'undefined') return null;
   const session = loadReconcileSession();
@@ -43,12 +44,25 @@ function periodFromSession(): PeriodRange | null {
   return { from: session.periodStart, to: session.periodEnd };
 }
 
-export function useInitialPeriod(): { range: PeriodRange; source: PeriodSource; ready: boolean } {
+type ResolvedPeriod = { range: PeriodRange; source: PeriodSource };
+
+function isResolvedPeriod(value: unknown): value is ResolvedPeriod | null {
+  if (value === null) return true;
+  if (typeof value !== 'object') return false;
+  const saved = value as Partial<ResolvedPeriod>;
+  return Boolean(saved.range &&
+    /^\d{4}-\d{2}-\d{2}$/.test(saved.range.from) && /^\d{4}-\d{2}-\d{2}$/.test(saved.range.to) &&
+    saved.range.from <= saved.range.to &&
+    ['session', 'latest', 'fallback'].includes(saved.source ?? ''));
+}
+
+export function useInitialPeriod(pageKey: string): { range: PeriodRange; source: PeriodSource; ready: boolean } {
   const fallback = monthRangeOf(new Date());
-  const [resolved, setResolved] = useState<{ range: PeriodRange; source: PeriodSource } | null>(() => {
+  // จำงวดเริ่มต้นที่แสดงจริงด้วย ไม่เปลี่ยนงวดเมื่อกลับจาก login หรือเปลี่ยนหน้า
+  const [resolved, setResolved] = useSessionState<ResolvedPeriod | null>(`initial-period:${pageKey}`, () => {
     const fromSession = periodFromSession();
     return fromSession ? { range: fromSession, source: 'session' } : null;
-  });
+  }, isResolvedPeriod);
 
   useEffect(() => {
     if (resolved) return; // มี session อยู่แล้ว ไม่ต้องถาม API
@@ -73,7 +87,7 @@ export function useInitialPeriod(): { range: PeriodRange; source: PeriodSource; 
     return () => {
       cancelled = true;
     };
-  }, [resolved]);
+  }, [resolved, setResolved]);
 
   return {
     range: resolved?.range ?? fallback,

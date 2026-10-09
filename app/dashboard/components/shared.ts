@@ -77,7 +77,7 @@ export type DashboardData = {
   bankCodes: string[];
 };
 
-/** id ของแต่ละส่วนบนหน้า — ใช้เป็นคีย์ทั้งใน "ปรับมุมมอง" และตอนจำค่าลง localStorage */
+/** id ของแต่ละส่วนบนหน้า — ใช้เป็นคีย์ทั้งใน "ปรับมุมมอง" และตอนจำค่าลง sessionStorage */
 export type WidgetId = 'kpi' | 'trend' | 'daily' | 'status' | 'bank' | 'aging' | 'outstanding';
 
 export const WIDGETS: { id: WidgetId; label: string; hint: string }[] = [

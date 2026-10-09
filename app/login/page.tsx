@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { discardLegacyWorkspace, resumeWorkspacePath } from '../../lib/tabWorkspace';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Mail,
@@ -46,8 +47,9 @@ export default function LoginPage() {
 
       localStorage.setItem('user', JSON.stringify(data));
       localStorage.setItem('lastActivity', Date.now().toString());
+      discardLegacyWorkspace();
 
-      router.push('/dashboard');
+      router.replace(resumeWorkspacePath(data));
     } catch {
       setError('ไม่สามารถเชื่อมต่อกับเซิร์ฟเวอร์ได้');
     } finally {

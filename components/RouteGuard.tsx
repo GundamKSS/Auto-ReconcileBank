@@ -1,8 +1,9 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useSyncExternalStore } from 'react';
+import { Fragment, useEffect, useSyncExternalStore } from 'react';
 import { canAccessPath, firstAllowedPath, roleFromStoredUser } from '../lib/menu';
+import { rememberWorkspacePath, storedUsername } from '../lib/tabWorkspace';
 
 // หน้าที่เข้าได้โดยไม่ต้องมี session — ไม่ต้องเช็คสิทธิ์เมนู และไม่แสดง Sidebar
 export const PUBLIC_PATHS = ['/', '/login'];
@@ -41,7 +42,12 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
 
   const isPublic = PUBLIC_PATHS.includes(pathname);
   const role = roleFromStoredUser(storedUser);
+  const username = storedUsername(storedUser);
   const allowed = isPublic || (role !== null && canAccessPath(pathname, role));
+
+  useEffect(() => {
+    if (hydrated && allowed && !isPublic && username) rememberWorkspacePath(pathname, username);
+  }, [hydrated, allowed, isPublic, pathname, username]);
 
   useEffect(() => {
     // ระหว่าง hydrate ค่า role ยังเป็น null เสมอ — ถ้า redirect ตอนนี้จะเตะคนที่ login อยู่แล้วออกไปหน้า login
@@ -51,5 +57,5 @@ export default function RouteGuard({ children }: { children: React.ReactNode }) 
 
   if (!allowed) return null;
 
-  return <>{children}</>;
+  return <Fragment key={username ?? 'signed-out'}>{children}</Fragment>;
 }

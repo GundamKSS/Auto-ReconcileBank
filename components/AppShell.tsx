@@ -21,8 +21,8 @@ export default function AppShell({ children }: { children: ReactNode }) {
   return (
     // ปิดแอนิเมชันของ framer-motion ให้คนที่ตั้งค่าเครื่องไว้ว่า "ลดการเคลื่อนไหว"
     <MotionConfig reducedMotion="user">
-      {showSidebar && <Sidebar />}
       <RouteGuard>
+        {showSidebar && <Sidebar />}
         <div key={pathname} className="page-enter">
           {children}
         </div>

@@ -11,7 +11,6 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSidebar } from './SidebarContext';
-import { clearReconcileSession } from '../lib/reconcileSession';
 import { findMenuItem, menuItemsFor, normalizeRole, type Role } from '../lib/menu';
 import type { UserSession } from '../lib/trwApi';
 
@@ -99,7 +98,7 @@ export default function Sidebar() {
     }
     localStorage.removeItem('user');
     localStorage.removeItem('lastActivity');
-    clearReconcileSession();
+    // ตัวกรองใน sessionStorage อยู่ต่อจนปิดแท็บ ไม่ใช่สิทธิ์เข้าใช้งาน
 
     router.push('/login');
   }

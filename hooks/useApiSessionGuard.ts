@@ -2,7 +2,6 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { clearReconcileSession } from '../lib/reconcileSession';
 
 /**
  * พาผู้ใช้กลับไปหน้า login อัตโนมัติเมื่อ session ฝั่ง server หมดอายุ
@@ -32,7 +31,6 @@ export function useApiSessionGuard() {
         if (path.includes('/api/') && !path.includes('/api/login')) {
           localStorage.removeItem('user');
           localStorage.removeItem('lastActivity');
-          clearReconcileSession();
           router.replace('/login');
         }
       }

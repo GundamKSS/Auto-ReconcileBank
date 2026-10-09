@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatAmountOrDash as formatAmount } from '../../../lib/formatAmount';
 import { fullAccountLabel, type BankAccountOption } from '../../../lib/bankAccounts';
 import { useInitialPeriod } from '../../../hooks/useInitialPeriod';
+import { useSessionState } from '../../../hooks/useSessionState';
+import { isNullableString, oneOf } from '../../../lib/tabWorkspace';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -289,25 +291,25 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
 
 export default function ReportWorkspace() {
   // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรืองวดล่าสุดที่มีข้อมูล แทนเดือนปัจจุบันที่มักยังว่าง
-  const initialPeriod = useInitialPeriod();
+  const initialPeriod = useInitialPeriod('reports');
   const initialRange = initialPeriod.range;
 
-  const [side, setSide] = useState<Side>("AR");
-  const [status, setStatus] = useState<StatusFilter>("MATCHED");
-  const [bankCode, setBankCode] = useState("ALL");
+  const [side, setSide] = useSessionState<Side>("reports:side", "AR", oneOf('AR', 'AP'));
+  const [status, setStatus] = useSessionState<StatusFilter>("reports:status", "MATCHED", oneOf('MATCHED', 'UNMATCHED', 'SUSPENSE', 'OFFSET', 'EXCLUDED', 'ALL'));
+  const [bankCode, setBankCode] = useSessionState("reports:bankCode", "ALL");
   // หน้ากระทบยอดทำงานทีละบัญชี รายงานจึงต้องแคบได้ถึงระดับบัญชีเหมือนกัน
   // ไม่งั้นรายงานของธนาคารหนึ่งจะมีบัญชีอื่นที่ยังไม่ได้กระทบยอดปนมาจนผลต่างไม่ใช่ของงานที่ทำ
-  const [bankAccountNo, setBankAccountNo] = useState("ALL");
+  const [bankAccountNo, setBankAccountNo] = useSessionState("reports:account", "ALL");
   const [accounts, setAccounts] = useState<BankAccountOption[]>([]);
-  const [basis, setBasis] = useState<DateBasis>("BANK");
+  const [basis, setBasis] = useSessionState<DateBasis>("reports:basis", "BANK", oneOf('BANK', 'GL'));
   // เก็บเฉพาะวันที่ที่ผู้ใช้เปลี่ยนเอง ส่วนค่าเริ่มต้นคำนวณจากงวดที่ resolve ได้ระหว่าง render
   // (ไม่คัดลอกลง state ผ่าน effect เพราะทำให้เกิด render ซ้อนและยิง request ด้วยค่า default ทิ้งหนึ่งรอบ)
-  const [fromOverride, setFrom] = useState<string | null>(null);
-  const [toOverride, setTo] = useState<string | null>(null);
+  const [fromOverride, setFrom] = useSessionState<string | null>("reports:from", null, isNullableString);
+  const [toOverride, setTo] = useSessionState<string | null>("reports:to", null, isNullableString);
   const from = fromOverride ?? initialRange.from;
   const to = toOverride ?? initialRange.to;
-  const [searchInput, setSearchInput] = useState("");
-  const [q, setQ] = useState("");
+  const [searchInput, setSearchInput] = useSessionState("reports:search", "");
+  const [q, setQ] = useState(() => searchInput.trim());
 
   const [rows, setRows] = useState<ReportRow[]>([]);
   const [total, setTotal] = useState(0);

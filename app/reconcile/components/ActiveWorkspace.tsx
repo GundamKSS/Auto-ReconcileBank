@@ -31,6 +31,7 @@ import RemarkActionModal from "./RemarkActionModal";
 import OffsetConfirmModal from "./OffsetConfirmModal";
 import type { BalanceData } from "./balanceTypes";
 import { AURA_GRADIENT } from "./AuraOrb";
+import { readTabValue, removeTabValue, tabStorageKey, writeTabValue } from "../../../lib/tabWorkspace";
 
 import { formatAmount } from '../../../lib/formatAmount';
 type Direction = "IN" | "OUT";
@@ -116,23 +117,22 @@ function workspaceDraftKey(session: ReconcileSession) {
   ].join(":");
 }
 
-function readWorkspaceDraft(key: string): WorkspaceDraft | null {
+function readWorkspaceDraft(key: string | null): WorkspaceDraft | null {
   try {
-    const raw = sessionStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<WorkspaceDraft>;
+    const parsed = readTabValue(key) as Partial<WorkspaceDraft> | undefined;
+    if (!parsed) return null;
     if (
       parsed.version !== 1 ||
       (parsed.directionFilter !== "IN" && parsed.directionFilter !== "OUT") ||
       !Array.isArray(parsed.selectedBank) ||
       !Array.isArray(parsed.selectedGl)
     ) {
-      sessionStorage.removeItem(key);
+      removeTabValue(key);
       return null;
     }
     return parsed as WorkspaceDraft;
   } catch {
-    sessionStorage.removeItem(key);
+    removeTabValue(key);
     return null;
   }
 }
@@ -890,7 +890,7 @@ export default function ActiveWorkspace({
   const [expandedGlDates, setExpandedGlDates] = useState<Set<string>>(new Set());
   // วันที่ที่คลี่ดูล่าสุด — ตีกรอบน้ำเงินค้างไว้ทั้ง 2 ฝั่ง จนกว่าจะไปคลี่วันอื่น
   const [activeDate, setActiveDate] = useState<string | null>(null);
-  const draftKey = useMemo(() => workspaceDraftKey(session), [session]);
+  const draftKey = useMemo(() => tabStorageKey(workspaceDraftKey(session)), [session]);
   const draftReadyRef = useRef(false);
   const bankScrollRef = useRef<HTMLDivElement>(null);
   const glScrollRef = useRef<HTMLDivElement>(null);
@@ -995,7 +995,7 @@ export default function ActiveWorkspace({
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "โหลดข้อมูลไม่สำเร็จ");
-        return;
+        return false;
       }
       setBankLinesRaw(data.bankLines);
       setGlLinesRaw(data.glLines);
@@ -1017,8 +1017,10 @@ export default function ActiveWorkspace({
       }
       setClusterOf(newClusterOf);
       setDataVersion((v) => v + 1);
+      return true;
     } catch {
       setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+      return false;
     } finally {
       setLoading(false);
     }
@@ -1032,6 +1034,7 @@ export default function ActiveWorkspace({
   ]);
 
   useEffect(() => {
+    draftReadyRef.current = false;
     const draft = readWorkspaceDraft(draftKey);
     if (draft) {
       // คืน snapshot จาก sessionStorage ตอน mount เท่านั้น จึงต้อง sync state หลายชิ้นใน effect เดียวกัน
@@ -1044,8 +1047,10 @@ export default function ActiveWorkspace({
       setActiveDate(draft.activeDate ?? null);
     }
     // โหลดข้อมูลใหม่จาก server ทุกครั้งที่เปลี่ยนช่วงวันที่/บัญชีธนาคาร แล้วค่อยคืน draft ที่ยังใช้ได้
-    void loadData(draft).finally(() => {
-      draftReadyRef.current = true;
+    void loadData(draft).then((loaded) => {
+      // A failed/expired API session must not overwrite the saved selection with
+      // the empty initial state before redirecting the user to login.
+      draftReadyRef.current = loaded;
     });
   }, [draftKey, loadData]);
 
@@ -1065,7 +1070,7 @@ export default function ActiveWorkspace({
       bankScrollTop: bankScrollTopRef.current,
       glScrollTop: glScrollTopRef.current,
     };
-    sessionStorage.setItem(draftKey, JSON.stringify(draft));
+    writeTabValue(draftKey, draft);
   }, [
     activeDate,
     directionFilter,
@@ -1160,12 +1165,12 @@ export default function ActiveWorkspace({
     if (side === "bank") draft.bankScrollTop = top;
     else draft.glScrollTop = top;
     draft.savedAt = Date.now();
-    sessionStorage.setItem(draftKey, JSON.stringify(draft));
+    writeTabValue(draftKey, draft);
   }
 
   function handleResetWorkspace() {
     draftReadyRef.current = false;
-    sessionStorage.removeItem(draftKey);
+    removeTabValue(draftKey);
     bankScrollTopRef.current = 0;
     glScrollTopRef.current = 0;
     if (bankScrollRef.current) bankScrollRef.current.scrollTop = 0;
@@ -1176,8 +1181,8 @@ export default function ActiveWorkspace({
     setExpandedBankDates(new Set());
     setExpandedGlDates(new Set());
     setActiveDate(null);
-    void loadData().finally(() => {
-      draftReadyRef.current = true;
+    void loadData().then((loaded) => {
+      draftReadyRef.current = loaded;
     });
   }
 

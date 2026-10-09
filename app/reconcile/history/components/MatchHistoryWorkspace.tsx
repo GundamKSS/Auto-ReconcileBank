@@ -16,6 +16,8 @@ import { useSidebar } from "../../../../components/SidebarContext";
 import UnmatchConfirmModal, { UnmatchTarget } from "./UnmatchConfirmModal";
 import HistoryTable, { HISTORY_TYPE_LABELS } from "./HistoryTable";
 import { useInitialPeriod } from '../../../../hooks/useInitialPeriod';
+import { useSessionState } from '../../../../hooks/useSessionState';
+import { isNullableString, oneOf } from '../../../../lib/tabWorkspace';
 import {
   MATCH_TYPE_META,
   MATCH_TYPE_ORDER,
@@ -127,30 +129,30 @@ function SuccessToast({ message, onClose }: { message: string; onClose: () => vo
 export default function MatchHistoryWorkspace() {
   // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรืองวดล่าสุดที่มีข้อมูลจริง
   // (เดิมใช้ "เดือนก่อนหน้า" ซึ่งยังเดาผิดได้บ่อย เช่นมานั่งปิดงวดช้ากว่า 1 เดือน ก็เจอหน้าว่างอยู่ดี)
-  const initialPeriod = useInitialPeriod();
+  const initialPeriod = useInitialPeriod('history');
   const initialRange = initialPeriod.range;
   // แถบสรุปที่เลือกลอยอยู่กึ่งกลาง "พื้นที่ตาราง" — บน desktop ต้องเผื่อความกว้าง sidebar เหมือน MainContent
   // ไม่งั้นจะเยื้องไปทางขวาเพราะ fixed อิงขอบจอ ไม่ใช่ขอบ content
   const { collapsed } = useSidebar();
 
-  const [bankFilter, setBankFilter] = useState("ALL");
-  const [typeFilter, setTypeFilter] = useState<TypeFilter>("ALL");
-  const [side, setSide] = useState<Side>("ALL");
+  const [bankFilter, setBankFilter] = useSessionState("history:bankCode", "ALL");
+  const [typeFilter, setTypeFilter] = useSessionState<TypeFilter>("history:type", "ALL", oneOf('ALL', 'MATCHED', 'SUSPENSE', 'OFFSET', 'EXCLUDED'));
+  const [side, setSide] = useSessionState<Side>("history:side", "ALL", oneOf('ALL', 'AP', 'AR'));
   // จำนวน Match ของแต่ละแท็บภายใต้เงื่อนไขอื่นที่เลือกอยู่ — null ระหว่างรอโหลดครั้งแรก
   const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
   const [typeCounts, setTypeCounts] = useState<Record<TypeFilter, number> | null>(null);
   const [bankCodes, setBankCodes] = useState<string[]>([]);
   // เก็บเฉพาะวันที่ที่ผู้ใช้เปลี่ยนเอง ส่วนค่าเริ่มต้นคำนวณจากงวดที่ resolve ได้ระหว่าง render
   // (ไม่คัดลอกลง state ผ่าน effect เพราะทำให้เกิด render ซ้อนและยิง request ด้วยค่า default ทิ้งหนึ่งรอบ)
-  const [fromOverride, setFrom] = useState<string | null>(null);
-  const [toOverride, setTo] = useState<string | null>(null);
+  const [fromOverride, setFrom] = useSessionState<string | null>("history:from", null, isNullableString);
+  const [toOverride, setTo] = useSessionState<string | null>("history:to", null, isNullableString);
   const from = fromOverride ?? initialRange.from;
   const to = toOverride ?? initialRange.to;
   // ค่าเริ่มต้นเป็นวันที่ลงบัญชีใน BC365 — เป็นวันที่เดียวที่รายการทุกประเภทมีเหมือนกัน
   // (พักโอน/หักล้างกันเอง/JV ปรับปรุง ไม่มีบรรทัดฝั่ง Bank จึงไม่มีวันที่ statement ให้อ้างอิง)
-  const [dateBasis, setDateBasis] = useState<DateBasis>("GL");
-  const [queryInput, setQueryInput] = useState("");
-  const [query, setQuery] = useState("");
+  const [dateBasis, setDateBasis] = useSessionState<DateBasis>("history:basis", "GL", oneOf('BANK', 'GL', 'CREATED'));
+  const [queryInput, setQueryInput] = useSessionState("history:searchInput", "");
+  const [query, setQuery] = useSessionState("history:search", "");
 
   const [matches, setMatches] = useState<MatchRecord[]>([]);
   const [total, setTotal] = useState(0);

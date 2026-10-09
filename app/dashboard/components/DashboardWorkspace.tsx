@@ -13,6 +13,8 @@ import StatusDonut from './StatusDonut';
 import TrendChart from './TrendChart';
 import ViewPicker from './ViewPicker';
 import { useInitialPeriod } from '../../../hooks/useInitialPeriod';
+import { useSessionState } from '../../../hooks/useSessionState';
+import { isNullableString } from '../../../lib/tabWorkspace';
 import {
   DEFAULT_WIDGETS,
   SIDES,
@@ -46,25 +48,13 @@ const DEFAULT_PREFS: Prefs = {
   trendMonths: 6,
 };
 
-function readPrefs(): Prefs {
-  try {
-    const raw = localStorage.getItem(PREFS_KEY);
-    if (!raw) return DEFAULT_PREFS;
-    const saved = JSON.parse(raw) as Partial<Prefs>;
-    const known = new Set(WIDGETS.map((w) => w.id));
-    return {
-      // กรองด้วย known ไว้เผื่อเคยบันทึก id ของ widget ที่ถูกลบไปแล้วในเวอร์ชันก่อน
-      widgets: Array.isArray(saved.widgets)
-        ? WIDGETS.map((w) => w.id).filter((id) => saved.widgets!.includes(id) && known.has(id))
-        : DEFAULT_PREFS.widgets,
-      side: saved.side === 'AP' || saved.side === 'ALL' ? saved.side : 'AR',
-      basis: saved.basis === 'GL' ? 'GL' : 'BANK',
-      bankCode: typeof saved.bankCode === 'string' ? saved.bankCode : 'ALL',
-      trendMonths: saved.trendMonths === 12 ? 12 : 6,
-    };
-  } catch {
-    return DEFAULT_PREFS;
-  }
+function isPrefs(value: unknown): value is Prefs {
+  if (!value || typeof value !== 'object') return false;
+  const saved = value as Partial<Prefs>;
+  return Array.isArray(saved.widgets) && saved.widgets.every((id) => WIDGETS.some((w) => w.id === id)) &&
+    (saved.side === 'AR' || saved.side === 'AP' || saved.side === 'ALL') &&
+    (saved.basis === 'BANK' || saved.basis === 'GL') && typeof saved.bankCode === 'string' &&
+    (saved.trendMonths === 6 || saved.trendMonths === 12);
 }
 
 /** ความกว้างของแต่ละส่วนในกริด 3 คอลัมน์ — ปิดส่วนไหนไป ส่วนที่เหลือไหลมาต่อกันเอง */
@@ -80,13 +70,12 @@ const SPAN: Record<WidgetId, string> = {
 
 export default function DashboardWorkspace() {
   // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรือเดือนล่าสุดที่มีข้อมูล แทนเดือนปัจจุบันที่มักยังว่าง
-  const initialPeriod = useInitialPeriod();
+  const initialPeriod = useInitialPeriod('dashboard');
   // เก็บเฉพาะเดือนที่ผู้ใช้เลือกเอง ส่วนค่าเริ่มต้นคำนวณจากงวดที่ resolve ได้ระหว่าง render
   // (ไม่คัดลอกลง state ผ่าน effect เพราะทำให้เกิด render ซ้อนและยิง request ด้วยค่า default ทิ้งหนึ่งรอบ)
-  const [monthOverride, setMonth] = useState<string | null>(null);
+  const [monthOverride, setMonth] = useSessionState<string | null>('dashboard:month', null, isNullableString);
   const month = monthOverride ?? initialPeriod.range.from.slice(0, 7);
-  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
-  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [prefs, setPrefs] = useSessionState<Prefs>(PREFS_KEY, DEFAULT_PREFS, isPrefs);
 
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,26 +84,9 @@ export default function DashboardWorkspace() {
   const [reloadToken, setReloadToken] = useState(0);
 
   const requestIdRef = useRef(0);
-  // อ่านค่าที่จำไว้จาก localStorage (external source) ตอน mount — derive ระหว่าง render ไม่ได้
-  // และอ่านตอน render ตรงๆ ก็ไม่ได้เพราะ HTML ฝั่ง server ไม่มี localStorage จะทำให้ hydrate ไม่ตรง
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setPrefs(readPrefs());
-    setPrefsLoaded(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []);
-
   const updatePrefs = useCallback((patch: Partial<Prefs>) => {
-    setPrefs((prev) => {
-      const next = { ...prev, ...patch };
-      try {
-        localStorage.setItem(PREFS_KEY, JSON.stringify(next));
-      } catch {
-        // โหมด private browsing เขียนไม่ได้ — ยอมให้ค่าอยู่แค่ใน session นี้ ดีกว่าหน้าพัง
-      }
-      return next;
-    });
-  }, []);
+    setPrefs((prev) => ({ ...prev, ...patch }));
+  }, [setPrefs]);
 
   const params = useMemo(() => {
     const p = new URLSearchParams({
@@ -129,7 +101,7 @@ export default function DashboardWorkspace() {
 
   useEffect(() => {
     // รอให้อ่านค่าที่จำไว้และงวดเริ่มต้นเสร็จก่อน ไม่งั้นจะยิง request ด้วยค่า default ทิ้งไปเปล่าๆ หนึ่งรอบ
-    if (!prefsLoaded || !initialPeriod.ready) return;
+    if (!initialPeriod.ready) return;
 
     const reqId = ++requestIdRef.current;
     let cancelled = false;
@@ -164,7 +136,7 @@ export default function DashboardWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [params, prefsLoaded, initialPeriod.ready, reloadToken]);
+  }, [params, initialPeriod.ready, reloadToken]);
 
   const show = (id: WidgetId) => prefs.widgets.includes(id);
   const isCurrentMonth = month === currentMonth();

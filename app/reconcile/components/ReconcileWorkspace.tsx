@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Plus, PanelLeft } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
 import { loadReconcileSession, saveReconcileSession } from "../../../lib/reconcileSession";
+import { currentWorkspaceUser } from "../../../lib/tabWorkspace";
 import { ReconcileSession } from "./types";
 import EmptyState from "./EmptyState";
 import NewReconciliationModal from "./NewReconciliationModal";
@@ -11,6 +12,7 @@ import ActiveWorkspace from "./ActiveWorkspace";
 
 export default function ReconcileWorkspace() {
   const { toggleMobileOpen } = useSidebar();
+  const [workspaceUser] = useState(currentWorkspaceUser);
   const [session, setSession] = useState<ReconcileSession | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   // ตอนเปิด modal จากปุ่ม "New reconciliation" ให้เริ่มฟอร์มเปล่าๆ (ไม่ prefill ของเดิม)
@@ -18,8 +20,7 @@ export default function ReconcileWorkspace() {
   const [modalSeed, setModalSeed] = useState<ReconcileSession | null>(null);
 
   useEffect(() => {
-    // กู้คืน session ที่ค้างไว้จาก localStorage ตอน mount ผู้ใช้จะได้ทำงานต่อจากจุดเดิมได้
-    // (เคลียร์เฉพาะตอน logout/auto-logout หรือกด "New reconciliation" เท่านั้น)
+    // กู้คืนงานของบัญชีผู้ใช้นี้จาก sessionStorage รวมถึงหลัง login ใหม่ในแท็บเดิม
     const saved = loadReconcileSession();
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (saved) setSession(saved);
@@ -27,7 +28,7 @@ export default function ReconcileWorkspace() {
 
   function handleConfirm(newSession: ReconcileSession) {
     setSession(newSession);
-    saveReconcileSession(newSession);
+    saveReconcileSession(newSession, workspaceUser);
     setModalOpen(false);
   }
 
