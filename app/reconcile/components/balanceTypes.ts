@@ -66,4 +66,15 @@ export type BalanceData = {
     entries: { entryNo: number; date: string; documentNo: string | null; amount: number }[];
   }[];
   daily: BalanceDay[];
+  // null = ยังไม่รัน sql/008_period_close.sql — ฟีเจอร์ปิดงวดใช้ไม่ได้ ซ่อน UI ที่เกี่ยวข้องทั้งหมด
+  periodClose: PeriodCloseStatus | null;
+};
+
+export type PeriodCloseStatus = {
+  status: 'OPEN' | 'CLOSED' | 'REOPENED';
+  closedBy: string | null;
+  closedAt: string | null;
+  reopenedBy: string | null;
+  reopenedAt: string | null;
+  reopenReason: string | null;
 };

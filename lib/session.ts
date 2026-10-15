@@ -91,6 +91,34 @@ export async function getSession(): Promise<Session | null> {
   return verifySessionToken(store.get(SESSION_COOKIE)?.value);
 }
 
+/** ความยาวสูงสุดของคอลัมน์ audit ทุกตัวในฐานข้อมูล (CreatedBy / ReversedBy / DeletedBy / UpdatedBy) */
+export const AUDIT_ACTOR_MAX_LENGTH = 100;
+
+/**
+ * ชื่อผู้ทำรายการที่จะบันทึกลง audit trail
+ *
+ * ต้องมี username ติดไปด้วยเสมอ ไม่ใช่ชื่อแสดงผลอย่างเดียว เพราะชื่อแสดงผลซ้ำกันได้
+ * ระหว่างคนละคน (โค้ดฝั่ง workspace ใน lib/tabWorkspace.ts เตือนเรื่องนี้ไว้แล้ว
+ * แต่คอลัมน์ audit ยังเก็บแต่ชื่อแสดงผลอยู่) ถ้าซ้ำกันจะชี้ตัวผู้ทำรายการไม่ได้
+ * ซึ่งเป็นสิ่งแรกที่ผู้สอบบัญชีถามเวลาตรวจรายการกลับรายการ
+ *
+ * รูปแบบ 'ชื่อที่แสดง (username)' — อ่านรู้เรื่องสำหรับฝ่ายบัญชี และไม่กำกวมสำหรับการตรวจสอบ
+ * หน้าประวัติการจับคู่ค้นด้วย CreatedBy LIKE อยู่แล้ว จึงค้นได้ทั้งชื่อและ username
+ *
+ * แถวเก่าที่บันทึกไว้ก่อนหน้านี้มีแต่ชื่อแสดงผล ยังอ่านได้ตามเดิม ไม่ต้องแก้ย้อนหลัง
+ */
+export function auditActor(session: Session): string {
+  const name = session.displayName?.trim();
+  const user = session.username.trim();
+  const label = name && name !== user ? `${name} (${user})` : user;
+  // คอลัมน์เป็น NVARCHAR(100) — ตัดให้พอดีเองดีกว่าปล่อยให้ SQL Server ปฏิเสธทั้ง transaction
+  // ตัดส่วนชื่อออกก่อน เพราะ username คือส่วนที่ต้องเก็บให้ครบเพื่อชี้ตัวคนได้
+  if (label.length <= AUDIT_ACTOR_MAX_LENGTH) return label;
+  const suffix = ` (${user})`;
+  const room = AUDIT_ACTOR_MAX_LENGTH - suffix.length;
+  return room > 1 ? `${name!.slice(0, room - 1)}…${suffix}` : user.slice(0, AUDIT_ACTOR_MAX_LENGTH);
+}
+
 export function sessionCookieOptions(isHttps: boolean) {
   return {
     httpOnly: true,          // JavaScript ฝั่งหน้าเว็บอ่านไม่ได้ — กันการขโมย/ปลอม session

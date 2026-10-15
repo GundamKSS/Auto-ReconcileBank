@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../../../lib/db';
 
-import { requireRole } from '../../../../../../lib/session';
+import { auditActor, requireRole } from '../../../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../../../lib/roles';
 import { badRequest, parseIdParam } from '../../../../../../lib/apiInput';
+import { assertDatesOpen, isoDate, PeriodClosedError, reconcilePeriodCloseReady } from '../../../../../../lib/periodClose';
 
 // ยาวได้ไม่เกินคอลัมน์ DeletedReason NVARCHAR(500)
 const MAX_REASON_LENGTH = 500;
@@ -46,7 +47,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return badRequest(`เหตุผลยาวเกินไป (ไม่เกิน ${MAX_REASON_LENGTH} ตัวอักษร)`);
     }
     // ผู้ลบอ่านจาก session cookie ที่เซ็นไว้ ไม่รับจาก body — ประวัติการลบปลอมชื่อไม่ได้
-    const deletedBy = auth.session.displayName;
+    const deletedBy = auditActor(auth.session);
 
     const pool = await getPool();
     const transaction = new sql.Transaction(pool);
@@ -88,6 +89,27 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         );
       }
 
+      // ห้ามลบไฟล์ที่มีบรรทัดอยู่ในงวดที่ปิดแล้ว — ยอดคงเหลือของงวดนั้นคำนวณจากไฟล์นี้อยู่ ลบแล้วยอดจะขยับ
+      // ข้ามบรรทัดที่ไม่รู้บัญชี (ไฟล์เก่าก่อนมีมิติบัญชี) เหมือนด่านอื่นๆ ที่ใช้มิติบัญชี
+      if (await reconcilePeriodCloseReady()) {
+        const accountDates = await new sql.Request(transaction)
+          .input('importId', sql.Int, importId)
+          .query(`
+            SELECT DISTINCT BankAccountNo, TranDate FROM BankStatementLine
+            WHERE ImportId = @importId AND BankAccountNo IS NOT NULL
+          `);
+        const byAccount = new Map<string, string[]>();
+        for (const row of accountDates.recordset) {
+          const acc = String(row.BankAccountNo);
+          const list = byAccount.get(acc) ?? [];
+          list.push(isoDate(row.TranDate));
+          byAccount.set(acc, list);
+        }
+        for (const [acc, dates] of byAccount) {
+          await assertDatesOpen(transaction, acc, dates);
+        }
+      }
+
       const lines = await new sql.Request(transaction)
         .input('importId', sql.Int, importId)
         .query(`UPDATE BankStatementLine SET MatchStatus = 'DELETED' WHERE ImportId = @importId`);
@@ -108,6 +130,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       await transaction.rollback();
       if (err instanceof DeleteBlockedError) {
         return NextResponse.json({ error: err.message }, { status: err.status });
+      }
+      if (err instanceof PeriodClosedError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
       }
       throw err;
     }

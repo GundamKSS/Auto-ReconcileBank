@@ -3,6 +3,7 @@ import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
+import { assertDatesOpen, isoDate, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
 
 type UnsuspendItem = {
   matchId: number;
@@ -48,13 +49,37 @@ export async function POST(req: NextRequest) {
         const matchCheck = new sql.Request(transaction);
         const matchResult = await matchCheck
           .input('matchId', sql.Int, matchId)
-          .query(`SELECT MatchType FROM ReconciliationMatch WHERE MatchId = @matchId`);
+          .query(`SELECT MatchType, BankAccountNo FROM ReconciliationMatch WHERE MatchId = @matchId`);
 
         if (matchResult.recordset.length === 0) {
           throw new Error(`ไม่พบ MatchId ${matchId} — อาจถูกดึงกลับไปแล้ว กรุณารีเฟรชหน้าใหม่`);
         }
-        if (matchResult.recordset[0].MatchType !== 'SUSPENSE') {
+        const { MatchType, BankAccountNo } = matchResult.recordset[0];
+        if (MatchType !== 'SUSPENSE') {
           throw new Error(`MatchId ${matchId} ไม่ใช่รายการ Suspense`);
+        }
+
+        // ห้ามคืนรายการพักของงวดที่ปิดแล้ว — เช็คจากวันที่จริงของรายการที่กำลังจะคืน ข้ามไปถ้า Match นี้
+        // ไม่มีมิติบัญชี (สร้างก่อนมี BankAccountNo คอลัมน์)
+        if (BankAccountNo && (await reconcilePeriodCloseReady())) {
+          const allIds = [...new Set([...group.bank, ...group.gl])];
+          if (allIds.length > 0) {
+            const idsCsv = allIds.join(',');
+            const datesResult = await new sql.Request(transaction).input('matchId', sql.Int, matchId).query(`
+              SELECT b.TranDate AS Dt FROM ReconciliationMatchLine rml
+                JOIN BankStatementLine b ON b.LineId = rml.BankLineId
+                WHERE rml.MatchId = @matchId AND rml.SourceType = 'BANK' AND rml.BankLineId IN (${idsCsv})
+              UNION ALL
+              SELECT g.Posting_Date AS Dt FROM ReconciliationMatchLine rml
+                JOIN BankAccountLedgerEntries g ON g.Entry_No = rml.GLEntryNo
+                WHERE rml.MatchId = @matchId AND rml.SourceType = 'GL' AND rml.GLEntryNo IN (${idsCsv})
+            `);
+            await assertDatesOpen(
+              transaction,
+              BankAccountNo,
+              datesResult.recordset.map((r) => isoDate(r.Dt))
+            );
+          }
         }
 
         // ลบทีละ match แบบ IN(...) รวดเดียว แทนยิงทีละบรรทัด — "เลือกทั้งหมด" ในหน้า Suspense ส่งมาได้หลายร้อยรายการ

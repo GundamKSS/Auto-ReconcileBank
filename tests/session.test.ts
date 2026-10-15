@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { createSessionToken, verifySessionToken } from '../lib/session';
+import { AUDIT_ACTOR_MAX_LENGTH, auditActor, createSessionToken, verifySessionToken } from '../lib/session';
 
 const login = (o: Partial<Parameters<typeof createSessionToken>[0]> = {}) =>
   createSessionToken({ username: 'siwakorn', displayName: 'ศิวกร ส.', roleProg: 'Admin', ...o });
@@ -63,5 +63,43 @@ describe('createSessionToken / verifySessionToken', () => {
 
     vi.setSystemTime(new Date('2026-09-21T20:01:00Z'));
     expect(verifySessionToken(token)).toBeNull();
+  });
+});
+
+describe('auditActor — ชื่อผู้ทำรายการที่บันทึกลง audit trail', () => {
+  const session = (username: string, displayName: string) =>
+    ({ username, displayName, role: 'Admin' }) as Parameters<typeof auditActor>[0];
+
+  // ชื่อแสดงผลซ้ำกันได้ระหว่างคนละคน จึงต้องมี username ติดไปด้วยเสมอ
+  it('เก็บทั้งชื่อที่แสดงและ username', () => {
+    expect(auditActor(session('acct', 'สมหญิง บัญชี'))).toBe('สมหญิง บัญชี (acct)');
+  });
+
+  it('คนละคนที่ชื่อแสดงผลเหมือนกัน ต้องแยกออกจากกันได้', () => {
+    const a = auditActor(session('somying.a', 'สมหญิง บัญชี'));
+    const b = auditActor(session('somying.b', 'สมหญิง บัญชี'));
+    expect(a).not.toBe(b);
+  });
+
+  it('ไม่ใส่วงเล็บซ้ำเมื่อชื่อที่แสดงกับ username เป็นค่าเดียวกัน', () => {
+    expect(auditActor(session('gundam', 'gundam'))).toBe('gundam');
+  });
+
+  it('ไม่มีชื่อที่แสดง ใช้ username อย่างเดียว', () => {
+    expect(auditActor(session('acct', ''))).toBe('acct');
+    expect(auditActor(session('acct', '   '))).toBe('acct');
+  });
+
+  // คอลัมน์เป็น NVARCHAR(100) — ยาวเกินต้องตัดเอง ไม่ใช่ปล่อยให้ SQL Server ล้ม transaction ทั้งก้อน
+  it('ยาวเกิน 100 ตัวต้องถูกตัด แต่ username ต้องอยู่ครบ', () => {
+    const long = 'ก'.repeat(300);
+    const result = auditActor(session('acct', long));
+    expect(result.length).toBeLessThanOrEqual(AUDIT_ACTOR_MAX_LENGTH);
+    expect(result.endsWith('(acct)')).toBe(true);
+  });
+
+  it('username ยาวเกินคอลัมน์เองก็ยังไม่ล้น', () => {
+    const result = auditActor(session('u'.repeat(200), 'ชื่อยาว'));
+    expect(result.length).toBeLessThanOrEqual(AUDIT_ACTOR_MAX_LENGTH);
   });
 });

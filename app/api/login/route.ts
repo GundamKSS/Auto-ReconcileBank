@@ -73,7 +73,6 @@ export async function POST(req: NextRequest) {
       role: data.role ?? null,
       roleProg: program.role_prog ?? null,
       programs,
-      accessToken: data.access_token ?? null,
     };
 
     const response = NextResponse.json(session);

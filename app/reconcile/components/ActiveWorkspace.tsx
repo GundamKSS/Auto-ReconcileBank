@@ -19,12 +19,14 @@ import {
   Ban,
   ListChecks,
   Scale,
+  Lock,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { ReconcileSession } from "./types";
 import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
+import MatchConfirmModal, { type MatchGroupSummary } from "./MatchConfirmModal";
 import BalanceBadge from "./BalanceBadge";
 import BalanceModal from "./BalanceModal";
 import RemarkActionModal from "./RemarkActionModal";
@@ -871,6 +873,7 @@ export default function ActiveWorkspace({
   // ผู้ช่วยหาคู่ (popup หาคู่ที่ยอดตรงแต่ลงคนละวัน) — ดู MatchAssistantModal
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [confirmSuspenseOpen, setConfirmSuspenseOpen] = useState(false);
+  const [confirmMatchOpen, setConfirmMatchOpen] = useState(false);
   // หน้าต่างที่ต้องใส่หมายเหตุ: จับคู่และพักโอนส่วนต่าง / ไม่นำ GL มาจับคู่
   const [remarkModal, setRemarkModal] = useState<"match" | "exclude" | null>(null);
   // จับชนขาเข้ากับขาออกฝั่ง GL จากรายการที่ติ๊กไว้บนตารางหลัก (ข้ามแท็บ IN/OUT ได้)
@@ -1156,6 +1159,44 @@ export default function ActiveWorkspace({
     }
   }
 
+  async function handleClosePeriod(): Promise<string | null> {
+    if (!session.bankAccountNo) return "ต้องเลือกบัญชีก่อน";
+    try {
+      const res = await fetch("/api/reconcile/period-close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankAccountNo: session.bankAccountNo,
+          periodStart: session.periodStart,
+          periodEnd: session.periodEnd,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) return data.error || "ปิดงวดไม่สำเร็จ";
+      await loadBalance();
+      return null;
+    } catch {
+      return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ";
+    }
+  }
+
+  async function handleReopenPeriod(reason: string): Promise<string | null> {
+    if (!session.bankAccountNo) return "ต้องเลือกบัญชีก่อน";
+    try {
+      const res = await fetch("/api/reconcile/period-close", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bankAccountNo: session.bankAccountNo, periodStart: session.periodStart, reason }),
+      });
+      const data = await res.json();
+      if (!res.ok) return data.error || "เปิดงวดคืนไม่สำเร็จ";
+      await loadBalance();
+      return null;
+    } catch {
+      return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ";
+    }
+  }
+
   function persistScroll(side: "bank" | "gl", top: number) {
     if (side === "bank") bankScrollTopRef.current = top;
     else glScrollTopRef.current = top;
@@ -1168,21 +1209,36 @@ export default function ActiveWorkspace({
     writeTabValue(draftKey, draft);
   }
 
-  function handleResetWorkspace() {
-    draftReadyRef.current = false;
-    removeTabValue(draftKey);
-    bankScrollTopRef.current = 0;
-    glScrollTopRef.current = 0;
-    if (bankScrollRef.current) bankScrollRef.current.scrollTop = 0;
-    if (glScrollRef.current) glScrollRef.current.scrollTop = 0;
-    setDirectionFilter("IN");
-    setGlGroupTab("ALL");
-    setLinkDates(true);
-    setExpandedBankDates(new Set());
-    setExpandedGlDates(new Set());
-    setActiveDate(null);
-    void loadData().then((loaded) => {
-      draftReadyRef.current = loaded;
+  // ดึงข้อมูลใหม่จาก server โดยให้ผู้ใช้อยู่หน้าเดิม — แท็บเงินเข้า/ออก, กลุ่มวันที่ที่คลี่ไว้,
+  // ตำแหน่งที่เลื่อน และรายการที่ติ๊กไว้ยังอยู่ครบ (เดิมปุ่มนี้ล้างทุกอย่างกลับไปเริ่มใหม่
+  // ทั้งที่บัญชีแค่อยากเห็นข้อมูลล่าสุดหลังมีคนซิงค์หรือจับคู่เพิ่ม)
+  // ส่ง snapshot จาก state ปัจจุบันเข้าไป ไม่อ่านจาก draft เพราะ draft เขียนตามหลัง state
+  // loadData กรองเฉพาะ id ที่ยังมีจริง รายการที่ถูกจับคู่/พักไปแล้วจึงหลุดจากที่ติ๊กไว้เอง
+  function handleReloadData() {
+    const snapshot: WorkspaceDraft = {
+      version: 1,
+      savedAt: Date.now(),
+      directionFilter,
+      glGroupTab,
+      selectedBank: [...selectedBank],
+      selectedGl: [...selectedGl],
+      linkDates,
+      expandedBankDates: [...expandedBankDates],
+      expandedGlDates: [...expandedGlDates],
+      activeDate,
+      bankScrollTop: bankScrollTopRef.current,
+      glScrollTop: glScrollTopRef.current,
+    };
+    void loadData(snapshot).then((loaded) => {
+      // โหลดไม่ผ่าน (เช่น session หมดอายุ) ห้ามปล่อยให้ effect เขียน draft ทับของเดิม
+      if (!loaded) {
+        draftReadyRef.current = false;
+        return;
+      }
+      setToast({
+        title: "โหลดข้อมูลใหม่แล้ว",
+        message: "ยังอยู่หน้าเดิม — รายการที่ถูกจับคู่หรือพักไปแล้วหลุดออกจากตารางให้เอง",
+      });
     });
   }
 
@@ -1380,6 +1436,9 @@ export default function ActiveWorkspace({
   const amountMatches = Math.abs(difference) < AMOUNT_TOLERANCE;
   // Suspense พักได้แค่ฝั่ง GL (BC365) เท่านั้น — Bank Statement เป็นข้อมูลหลักจากธนาคาร ห้ามแก้ไข/ห้ามพัก
   const canMoveToSuspense = selectedGlItems.length > 0;
+  // งวดนี้ปิดแล้ว — ปิดปุ่มที่แก้ไขข้อมูลกระทบยอดทั้งหมด (server บังคับเหมือนกันอยู่แล้ว แต่ปิดที่ UI ด้วย
+  // กันผู้ใช้กดแล้วเจอ error ทั้งที่เห็นแถบ "ปิดงวดแล้ว" อยู่บนจอแล้ว)
+  const periodClosed = balanceData?.periodClose?.status === "CLOSED";
 
   // ล้างเฉพาะรายการที่เลือกไว้ "ในทิศทางที่กำลังดูอยู่" — อีกฝั่งที่อีกคนเลือกไว้ไม่ถูกแตะ
   function handleClear() {
@@ -1434,6 +1493,9 @@ export default function ActiveWorkspace({
   // ตอนนี้: รายการที่จับกลุ่มตามวันไม่ลงตัวจะถูกยุบรวมเป็นกลุ่มเดียว (จับคู่ข้ามวันได้)
   // และทุกกลุ่มที่จะส่งต้องมียอดสองฝั่งดุลกันจริง ไม่ใช่ดุลแค่ยอดรวมทั้งหมด
   // ถ้ายังไม่เข้าเงื่อนไข จะปิดปุ่มพร้อมบอกเหตุผล ไม่ตัดรายการทิ้งเงียบอีกต่อไป
+  const bankById = useMemo(() => new Map(selectedBankItems.map((l) => [l.lineId, l])), [selectedBankItems]);
+  const glById = useMemo(() => new Map(selectedGlItems.map((l) => [l.entryNo, l])), [selectedGlItems]);
+
   const matchPlan = useMemo(() => {
     if (selectedBankItems.length === 0 || selectedGlItems.length === 0) {
       return {
@@ -1442,9 +1504,6 @@ export default function ActiveWorkspace({
         needsRemark: false,
       };
     }
-
-    const bankById = new Map(selectedBankItems.map((l) => [l.lineId, l]));
-    const glById = new Map(selectedGlItems.map((l) => [l.entryNo, l]));
 
     const raw = [...groupSelectionByDateDirection().values()];
     const groups: { bankIds: number[]; glIds: number[] }[] = [];
@@ -1512,11 +1571,40 @@ export default function ActiveWorkspace({
 
   const canMatch = matchPlan.groups.length > 0 && matchPlan.problem === null;
 
+  // สรุปยอดรายกลุ่มไว้ให้ MatchConfirmModal แสดงก่อนบันทึกจริง เฉพาะตอนจับคู่หลายกลุ่มพร้อมกัน
+  const matchGroupSummaries = useMemo<MatchGroupSummary[]>(
+    () =>
+      matchPlan.groups.map((g, i) => {
+        const dates = [
+          ...g.bankIds.map((id) => bankById.get(id)?.date),
+          ...g.glIds.map((id) => glById.get(id)?.date),
+        ].filter((d): d is string => Boolean(d));
+        const sorted = [...dates].sort();
+        const amount = g.bankIds.reduce((s, id) => s + (bankById.get(id)?.amount ?? 0), 0);
+        return {
+          key: `group-${i}`,
+          bankCount: g.bankIds.length,
+          glCount: g.glIds.length,
+          amount,
+          dateFrom: sorted[0] ?? "",
+          dateTo: sorted[sorted.length - 1] ?? "",
+        };
+      }),
+    [matchPlan.groups, bankById, glById]
+  );
+
   function handleMatchClick() {
     if (!canMatch || busy || syncingGl) return;
     if (matchPlan.needsRemark) {
       setRemarkError("");
       setRemarkModal("match");
+      return;
+    }
+    // จับคู่หลายกลุ่มในคลิกเดียว (เช่น กดเลือก "ตรงกันทั้งหมด" แล้วกด Match ได้ทีเดียวหลายร้อยกลุ่ม)
+    // ต้องให้เห็นสรุปก่อนยืนยัน — กลุ่มเดียวเห็นอยู่บนจอแล้วจับคู่ได้ทันทีเหมือนเดิม
+    if (matchPlan.groups.length > 1) {
+      setError("");
+      setConfirmMatchOpen(true);
       return;
     }
     void handleMatch();
@@ -1973,6 +2061,8 @@ export default function ActiveWorkspace({
             onClose={() => setBalanceOpen(false)}
             onSaveOpening={handleSaveOpening}
             onUndoExcluded={handleUndoExcluded}
+            onClosePeriod={handleClosePeriod}
+            onReopenPeriod={handleReopenPeriod}
           />
         )}
       </AnimatePresence>
@@ -1988,6 +2078,23 @@ export default function ActiveWorkspace({
             onConfirm={async () => {
               await handleMoveToSuspense();
               setConfirmSuspenseOpen(false);
+            }}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {confirmMatchOpen && (
+          <MatchConfirmModal
+            key="match-confirm"
+            groups={matchGroupSummaries}
+            totalBankCount={selectedBankItems.length}
+            totalGlCount={selectedGlItems.length}
+            totalAmount={bankTotal}
+            busy={busy}
+            onCancel={() => setConfirmMatchOpen(false)}
+            onConfirm={async () => {
+              await handleMatch();
+              setConfirmMatchOpen(false);
             }}
           />
         )}
@@ -2026,14 +2133,24 @@ export default function ActiveWorkspace({
             floating
             onOpen={() => setBalanceOpen(true)}
           />
+          {periodClosed && (
+            <button
+              type="button"
+              onClick={() => setBalanceOpen(true)}
+              className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700"
+              title="งวดนี้ปิดแล้ว — กดเพื่อดูรายละเอียดหรือเปิดงวดคืน"
+            >
+              <Lock size={11} /> ปิดงวดแล้ว
+            </button>
+          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
               <button
                 type="button"
-                onClick={handleResetWorkspace}
+                onClick={handleReloadData}
                 disabled={loading || busy || syncingGl}
                 className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                title="โหลดรายการล่าสุดและล้างการเลือกทั้งหมด โดยใช้บัญชีและช่วงวันที่เดิม"
+                title="โหลดรายการล่าสุดโดยยังอยู่หน้าเดิม — แท็บ กลุ่มวันที่ที่คลี่ไว้ ตำแหน่งที่เลื่อน และรายการที่ติ๊กไว้ยังอยู่"
               >
                 <RotateCcw size={14} />
                 <span className="hidden 2xl:inline">โหลดข้อมูลใหม่</span>
@@ -2130,6 +2247,16 @@ export default function ActiveWorkspace({
             floating={false}
             onOpen={() => setBalanceOpen(true)}
           />
+          {periodClosed && (
+            <button
+              type="button"
+              onClick={() => setBalanceOpen(true)}
+              className="mx-4 flex shrink-0 items-center gap-1 self-start rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 sm:mx-6"
+              title="งวดนี้ปิดแล้ว — กดเพื่อดูรายละเอียดหรือเปิดงวดคืน"
+            >
+              <Lock size={11} /> ปิดงวดแล้ว
+            </button>
+          )}
 
           <Panel
             title="รายการบัญชี BC365"
@@ -2235,8 +2362,12 @@ export default function ActiveWorkspace({
                 setError("");
                 setOffsetConfirmOpen(true);
               }}
-              disabled={loading || busy || syncingGl || glLinesRaw.length === 0}
-              title="รายการ BC365 เงินเข้ากับเงินออกที่ล้างกันเอง ไม่มีคู่ในธนาคาร — เปิดหน้าต่างเลือกได้ทั้งสองฝั่งในที่เดียว"
+              disabled={loading || busy || syncingGl || glLinesRaw.length === 0 || periodClosed}
+              title={
+                periodClosed
+                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                  : "รายการ BC365 เงินเข้ากับเงินออกที่ล้างกันเอง ไม่มีคู่ในธนาคาร — เปิดหน้าต่างเลือกได้ทั้งสองฝั่งในที่เดียว"
+              }
               className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <Scale size={14} /> หักล้างรายการ BC365
@@ -2249,30 +2380,40 @@ export default function ActiveWorkspace({
                 setRemarkError("");
                 setRemarkModal("exclude");
               }}
-              disabled={selectedGlItems.length === 0 || busy || syncingGl}
-              title="ใช้กับ JV ปรับปรุงที่บันทึกใน BC365 แล้ว รายการที่เลือกจะไม่นำไปจับคู่กับธนาคาร และจะใช้คำนวณยอดพักโอน"
+              disabled={selectedGlItems.length === 0 || busy || syncingGl || periodClosed}
+              title={
+                periodClosed
+                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                  : "ใช้กับ JV ปรับปรุงที่บันทึกใน BC365 แล้ว รายการที่เลือกจะไม่นำไปจับคู่กับธนาคาร และจะใช้คำนวณยอดพักโอน"
+              }
               className="flex items-center gap-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
             >
               <Ban size={14} /> ระบุเป็น JV ปรับปรุง
             </button>
             <button
               onClick={() => setConfirmSuspenseOpen(true)}
-              disabled={!canMoveToSuspense || busy || syncingGl}
-              title="พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
+              disabled={!canMoveToSuspense || busy || syncingGl || periodClosed}
+              title={
+                periodClosed
+                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                  : "พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
+              }
               className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
             >
               พักรายการ
             </button>
             <button
               onClick={handleMatchClick}
-              disabled={!canMatch || busy || syncingGl}
+              disabled={!canMatch || busy || syncingGl || periodClosed}
               title={
-                matchPlan.problem ??
-                (matchPlan.needsRemark
-                  ? "ยอดทั้งสองฝั่งไม่เท่ากัน ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง โดยต้องระบุหมายเหตุ"
-                  : matchPlan.groups.length > 1
-                    ? `จะบันทึกแยกเป็น ${matchPlan.groups.length} กลุ่ม (แยกตามวันที่)`
-                    : undefined)
+                periodClosed
+                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                  : matchPlan.problem ??
+                    (matchPlan.needsRemark
+                      ? "ยอดทั้งสองฝั่งไม่เท่ากัน ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง โดยต้องระบุหมายเหตุ"
+                      : matchPlan.groups.length > 1
+                        ? `จะบันทึกแยกเป็น ${matchPlan.groups.length} กลุ่ม (แยกตามวันที่)`
+                        : undefined)
               }
               className="flex w-64 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-blue-600 px-4 py-2 text-sm font-medium tabular-nums text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
             >

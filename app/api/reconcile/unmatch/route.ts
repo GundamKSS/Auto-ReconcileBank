@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
-import { requireRole } from '../../../../lib/session';
+import { auditActor, requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
+import { assertDatesOpen, isoDate, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
 
 // ยกเลิกการจับคู่ (Unmatch) แบบเลือกได้หลายรายการพร้อมกัน โดยใช้เหตุผลเดียวร่วมกันทั้งชุด
 // เลือกได้ถึงระดับ "กลุ่มย่อย (Num)" ภายใน MatchId เดียวกัน — กลุ่มย่อยอื่นที่ไม่ได้เลือกยังจับคู่อยู่ตามเดิม
@@ -77,7 +78,7 @@ export async function POST(req: NextRequest) {
     const targets = parseTargets(body);
     const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
     // ผู้ยกเลิกอ่านจาก session cookie ที่เซ็นไว้ ไม่รับจาก body — ไม่งั้นระบุตัวผู้ทำรายการไม่ได้จริง
-    const unmatchedBy = auth.session.displayName;
+    const unmatchedBy = auditActor(auth.session);
 
     if (targets === null) {
       return NextResponse.json({ error: 'รูปแบบรายการที่ต้องการยกเลิกไม่ถูกต้อง' }, { status: 400 });
@@ -104,12 +105,12 @@ export async function POST(req: NextRequest) {
         const matchCheck = new sql.Request(transaction);
         const matchResult = await matchCheck
           .input('matchId', sql.Int, matchId)
-          .query(`SELECT MatchType, Status FROM ReconciliationMatch WHERE MatchId = @matchId`);
+          .query(`SELECT MatchType, Status, BankAccountNo FROM ReconciliationMatch WHERE MatchId = @matchId`);
 
         if (matchResult.recordset.length === 0) {
           throw new Error(`ไม่พบ MatchId ${matchId}`);
         }
-        const { MatchType, Status } = matchResult.recordset[0];
+        const { MatchType, Status, BankAccountNo } = matchResult.recordset[0];
         if (MatchType !== 'MATCHED' && MatchType !== 'OFFSET' && MatchType !== 'EXCLUDED') {
           throw new Error(`MatchId ${matchId} ไม่ใช่รายการที่จับคู่แล้ว (ใช้หน้า Suspense สำหรับรายการพักไว้)`);
         }
@@ -137,6 +138,25 @@ export async function POST(req: NextRequest) {
         }
         // Num ทุกตัวผ่าน Number.isInteger + เช็คว่ามีอยู่จริงใน Match นี้แล้ว — ปลอดภัยจาก SQL injection
         const numsCsv = numsToReverse.join(',');
+
+        // ห้ามยกเลิกการจับคู่ของงวดที่ปิดแล้ว — เช็คจากวันที่จริงของบรรทัดที่กำลังจะยกเลิก ข้ามไปถ้า
+        // Match นี้ไม่มีมิติบัญชี (สร้างก่อนมี BankAccountNo คอลัมน์) เหมือนด่านอื่นๆ ที่ใช้มิติบัญชี
+        if (BankAccountNo && (await reconcilePeriodCloseReady())) {
+          const datesResult = await new sql.Request(transaction).input('matchId', sql.Int, matchId).query(`
+            SELECT b.TranDate AS Dt FROM ReconciliationMatchLine rml
+              JOIN BankStatementLine b ON b.LineId = rml.BankLineId
+              WHERE rml.MatchId = @matchId AND rml.SourceType = 'BANK' AND rml.Num IN (${numsCsv})
+            UNION ALL
+            SELECT g.Posting_Date AS Dt FROM ReconciliationMatchLine rml
+              JOIN BankAccountLedgerEntries g ON g.Entry_No = rml.GLEntryNo
+              WHERE rml.MatchId = @matchId AND rml.SourceType = 'GL' AND rml.Num IN (${numsCsv})
+          `);
+          await assertDatesOpen(
+            transaction,
+            BankAccountNo,
+            datesResult.recordset.map((r) => isoDate(r.Dt))
+          );
+        }
 
         const bankLinesRequest = new sql.Request(transaction);
         const bankLinesResult = await bankLinesRequest.input('matchId', sql.Int, matchId).query(

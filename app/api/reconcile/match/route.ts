@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
-import { requireRole } from '../../../../lib/session';
+import { auditActor, requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { bankSignedSql, glSignedSql } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
 import { EXTRAS_MIGRATION_HINT, reconcileExtrasReady } from '../../../../lib/reconcileExtrasDb';
 import { remarkProblem } from '../../../../lib/matchRemark';
+import { assertDatesOpen, isoDate, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
 
 type MatchGroup = {
   bankLineIds: number[];
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
     const remark = typeof body.remark === 'string' ? body.remark.trim() : '';
     // ผู้ทำรายการอ่านจาก session cookie ที่เซ็นไว้เท่านั้น ไม่รับค่าจาก body อีกต่อไป
     // ไม่งั้นใครก็ตั้งชื่อคนอื่นเป็นผู้จับคู่ได้ ทำให้ audit trail เชื่อถือไม่ได้
-    const createdBy = auth.session.displayName;
+    const createdBy = auditActor(auth.session);
 
     if (!bankCode || !matchType) {
       return NextResponse.json({ error: 'ข้อมูลไม่ครบ' }, { status: 400 });
@@ -241,6 +242,28 @@ export async function POST(req: NextRequest) {
             );
           }
         }
+      }
+
+      // 1d) ห้ามแก้ไขรายการของงวดที่ปิดแล้ว — เช็คจากวันที่จริงของรายการที่กำลังจะบันทึก ไม่ใช่ช่วงวันที่
+      //     ของ session เพราะจับคู่ข้ามงวดได้ (เช่น includeSuspenseBuffer) ด่านนี้ข้ามไปถ้าระบุบัญชีไม่ได้
+      //     (ไฟล์เก่าก่อนมีมิติบัญชี) เช่นเดียวกับด่าน 1c ด้านบน
+      if (matchAccountNo && (await reconcilePeriodCloseReady())) {
+        const dates: string[] = [];
+        if (seenBank.size > 0) {
+          const idsCsv = [...seenBank].join(',');
+          const bankDates = await new sql.Request(transaction).query(
+            `SELECT TranDate FROM BankStatementLine WHERE LineId IN (${idsCsv})`
+          );
+          dates.push(...bankDates.recordset.map((r) => isoDate(r.TranDate)));
+        }
+        if (seenGl.size > 0) {
+          const glCsv = [...seenGl].join(',');
+          const glDates = await new sql.Request(transaction).query(
+            `SELECT Posting_Date FROM BankAccountLedgerEntries WHERE Entry_No IN (${glCsv})`
+          );
+          dates.push(...glDates.recordset.map((r) => isoDate(r.Posting_Date)));
+        }
+        await assertDatesOpen(transaction, matchAccountNo, dates);
       }
 
       // 2) แต่ละกลุ่มของ MATCHED ต้องมียอดสองฝั่งดุลกัน — ตรวจจากยอดจริงใน DB ไม่ใช่ตัวเลขที่ client ส่งมา

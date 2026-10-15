@@ -32,5 +32,9 @@ export type UserSession = {
   roleProg: string | null;
   // สิทธิ์ทุกโปรแกรมที่ผู้ใช้มี — เก็บไว้เผื่อทำเมนูสลับโปรแกรมภายหลัง
   programs: ProgramAccess[];
-  accessToken: string | null;
 };
+
+// ไม่มี accessToken ของ TRW ในนี้โดยตั้งใจ
+// ของเดิมส่งกลับมาแล้วถูกเก็บลง localStorage ซึ่ง JavaScript บนหน้าอ่านได้ทั้งหมด
+// ทั้งที่ API ของแอปนี้ไม่ได้ใช้ token ตัวนั้นเลย (ตรวจสิทธิ์ด้วย session cookie แบบ httpOnly แทน)
+// ถ้าวันหลังต้องเรียก TRW แทนผู้ใช้จริงๆ ให้เก็บ token ไว้ฝั่ง server เท่านั้น ห้ามส่งลงมาที่ browser
