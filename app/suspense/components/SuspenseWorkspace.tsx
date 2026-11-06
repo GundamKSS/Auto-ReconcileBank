@@ -583,7 +583,7 @@ export default function SuspenseWorkspace() {
         loading={balanceLoading}
         error={balanceError}
         accountLabel={reconcileSession?.accountName ?? reconcileSession?.bankAccountNo ?? null}
-        period={reconcileSession ? `${reconcileSession.periodStart} – ${reconcileSession.periodEnd}` : null}
+        period={reconcileSession ? `${reconcileSession.periodStart} ถึง ${reconcileSession.periodEnd}` : null}
       />
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
@@ -697,7 +697,7 @@ export default function SuspenseWorkspace() {
             <input id="suspense-to" type="date" value={dateTo} min={dateFrom || undefined} onChange={(e) => setDateTo(e.target.value)} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" />
           </div>
         </div>}
-        {(dateFrom || dateTo) && !showDateFilters && <p className="mt-2 text-xs text-blue-600">วันที่พัก: {dateFrom || "ไม่จำกัด"} – {dateTo || "ไม่จำกัด"}</p>}
+        {(dateFrom || dateTo) && !showDateFilters && <p className="mt-2 text-xs text-blue-600">วันที่พัก: {dateFrom || "ไม่จำกัด"} ถึง {dateTo || "ไม่จำกัด"}</p>}
         {dateFrom && dateTo && dateFrom > dateTo && <p role="alert" className="mt-2 text-xs text-amber-700">วันที่สิ้นสุดต้องไม่ก่อนวันที่เริ่ม</p>}
       </div>
 
@@ -727,7 +727,7 @@ export default function SuspenseWorkspace() {
               type="checkbox"
               checked={allSelected}
               disabled={selectingAll || busy || readOnly}
-              title={readOnly ? "ไม่มีสิทธิ์ AP / AR — ดูได้อย่างเดียว" : undefined}
+              title={readOnly ? "ไม่มีสิทธิ์ AP / AR ดูได้อย่างเดียว" : undefined}
               onChange={toggleSelectAll}
               className="w-4 h-4 rounded border-gray-300"
             />

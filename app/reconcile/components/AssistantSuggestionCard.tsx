@@ -532,7 +532,7 @@ export default function AssistantSuggestionCard({
         ) : isCrossDirection ? (
           <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2">
             <p className="text-xs font-medium text-rose-800">
-              ⚠️ ห้ามจับคู่ข้ามฝั่ง — Statement กับ BC365 ลงทิศทางตรงกันข้าม (เดบิต/เครดิตสลับด้าน) กรุณาตรวจสอบและปรับปรุงใน BC365
+              ทิศทางไม่ตรงกัน กรุณาแก้ไขใน BC365 ก่อนจับคู่
             </p>
             <button
               type="button"
@@ -540,15 +540,15 @@ export default function AssistantSuggestionCard({
               className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-800 shadow-xs transition-colors hover:bg-rose-100"
             >
               {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
-              {copied ? "คัดลอกแล้ว" : "คัดลอกแจ้งแก้ BC365"}
+              {copied ? "คัดลอกแล้ว" : "คัดลอกปัญหา"}
             </button>
           </div>
         ) : isCrossAccount ? (
           <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2">
             <p className="text-xs font-medium text-amber-800">
               {isCrossAccountBank
-                ? "⚠️ ห้ามจับคู่ — รายการ Statement นี้อยู่ต่างบัญชีธนาคาร กรุณาตรวจสอบว่าลง BC365 ถูกบัญชีหรือไม่"
-                : "⚠️ ห้ามจับคู่ข้ามบัญชี — กรุณาแก้รหัสธนาคารใน BC365 ให้ตรงก่อนแล้วกดดึงข้อมูลใหม่"}
+                ? "บัญชีธนาคารไม่ตรงกัน กรุณาตรวจสอบ BC365"
+                : "บัญชีไม่ตรงกัน กรุณาแก้ไข BC365 แล้วดึงข้อมูลใหม่"}
             </p>
             <button
               type="button"
@@ -556,7 +556,7 @@ export default function AssistantSuggestionCard({
               className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-xs transition-colors hover:bg-amber-100"
             >
               {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
-              {copied ? "คัดลอกแล้ว" : "คัดลอกแจ้งแก้ BC365"}
+              {copied ? "คัดลอกแล้ว" : "คัดลอกปัญหา"}
             </button>
           </div>
         ) : (

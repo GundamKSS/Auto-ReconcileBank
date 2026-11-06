@@ -251,17 +251,22 @@ export async function POST(req: NextRequest) {
         bankAccountNo
       );
       if (overlap.newLines.length === 0) {
+        await transaction.rollback();
         const sources = overlap.imports
           .map((i) => `${i.fileName} เมื่อ ${formatImportedAt(i.importedAt)}`)
           .join(', ');
-        throw new ImportBlockedError(
-          {
-            error: `ทุกรายการ${importSide === 'ALL' ? '' : IMPORT_SIDE_LABELS[importSide]}ในไฟล์นี้นำเข้าไปแล้ว (${sources}) ไม่มีรายการใหม่ให้นำเข้า`,
-            duplicate: true,
-            existingImportId: overlap.imports[0]?.importId ?? null,
-          },
-          409
-        );
+        return NextResponse.json({
+          importId: overlap.imports[0]?.importId ?? null,
+          bankCode,
+          bankAccountNo,
+          rowCount: 0,
+          skippedCount: overlap.overlapCount,
+          side: importSide,
+          otherSideCount: 0,
+          periodStart,
+          periodEnd,
+          message: `ไม่มีรายการใหม่ให้นำเข้า ทุกรายการในไฟล์นี้มีอยู่ในระบบแล้ว (${sources})`,
+        });
       }
 
       // ช่วงวันที่และจำนวนของหัวไฟล์นับตามรายการที่นำเข้าจริง ไม่ใช่ทั้งไฟล์ —

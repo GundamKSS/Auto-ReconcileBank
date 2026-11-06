@@ -33,9 +33,10 @@ describe('period workflow status UI', () => {
     expect(render([ap, ar], 1)).toContain('disabled=""');
     expect(render([ap, ar], 0, true, ['AP', 'AR'])).toContain('ต้องเป็น Master Admin');
   });
-  it('disables actions and shows migration requirements when not installed', () => {
+  it('disables actions and directs users to an administrator when not installed', () => {
     const html = render([], 0, false);
-    expect(html).toContain('009_period_work_approval.sql');
+    expect(html).toContain('ระบบยืนยันงานยังไม่พร้อม กรุณาติดต่อผู้ดูแล');
+    expect(html).not.toContain('009_period_work_approval.sql');
     expect(html.match(/disabled=""/g)).toHaveLength(2);
   });
   it('AP-only employees still see both sides but cannot confirm AR', () => {

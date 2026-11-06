@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from "../../../../components/HelpTooltip";
 import { useEffect, useRef, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import { fullAccountLabel } from "../../../../lib/bankAccounts";
@@ -57,8 +58,10 @@ export default function AccountStatusModal({ account, onDismiss, onSaved }: {
           <span className="font-mono text-xs text-slate-400">{account.bankAccountNo}</span>
         </p>
         {closing ? (
-          <p>หลังปิดแล้วจะ<strong className="text-rose-600">นำเข้า statement ของบัญชีนี้ไม่ได้</strong> และบัญชีจะไม่แสดงในหน้านำเข้าข้อมูล
-            ส่วนข้อมูลที่นำเข้าไว้แล้วยังกระทบยอดและดูรายงานได้ตามปกติ เปิดบัญชีกลับได้ภายหลัง</p>
+          <div className="flex items-center gap-1">
+            <p>ปิดบัญชีแล้วจะ<strong className="text-rose-600">นำเข้าไฟล์ใหม่ไม่ได้</strong> ข้อมูลเดิมยังใช้งานได้</p>
+            <HelpTooltip label="ผลของการปิดบัญชี">บัญชีจะไม่แสดงในหน้านำเข้าข้อมูล แต่ข้อมูลเดิมยังกระทบยอดและดูรายงานได้ สามารถเปิดบัญชีกลับได้ภายหลัง</HelpTooltip>
+          </div>
         ) : (
           <p>หลังเปิดแล้ว ทีมจะนำเข้า statement ของบัญชีนี้ได้ตามปกติ</p>
         )}

@@ -118,7 +118,7 @@ export default function MasterBankStatement() {
       }
       setDeleteTarget(null);
       setSelectedImportId(null);
-      setNotice(`ลบไฟล์ "${target.FileName}" แล้ว — ดูผู้ลบ วันเวลา และเหตุผลได้ที่แท็บ "ประวัติการลบ"`);
+      setNotice(`ลบไฟล์ "${target.FileName}" แล้ว ดูผู้ลบ วันเวลา และเหตุผลได้ที่แท็บ "ประวัติการลบ"`);
       await loadBatches();
     } catch {
       setDeleteError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
@@ -143,7 +143,7 @@ export default function MasterBankStatement() {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการธนาคาร</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">รายการธนาคาร</h1>
               <HelpTooltip label="เกี่ยวกับรายการธนาคาร">ดูไฟล์ที่นำเข้าและประวัติการลบ หากต้องการแก้ข้อมูล ให้ลบทั้งไฟล์แล้วนำเข้าใหม่</HelpTooltip>
             </div>
           </div>

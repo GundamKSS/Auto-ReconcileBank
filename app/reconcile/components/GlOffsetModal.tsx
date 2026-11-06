@@ -333,8 +333,8 @@ export default function GlOffsetModal({
       // คู่กลับรายการใน BC ไม่กลับเข้าตาราง — /api/reconcile/data แยกไปรอในแท็บ "กลับรายการใน BC" เสมอ
       setNotice(
         group.kind === "REVERSAL"
-          ? `ยกเลิก Match #${group.matchId} กลุ่ม ${group.num} แล้ว — คู่กลับรายการกลับไปรอยืนยันในแท็บ "กลับรายการใน BC"`
-          : `ยกเลิก Match #${group.matchId} กลุ่ม ${group.num} แล้ว — รายการกลับไปรอจับคู่ในตาราง`
+          ? `ยกเลิก Match #${group.matchId} กลุ่ม ${group.num} แล้ว คู่กลับรายการกลับไปรอยืนยันในแท็บ "กลับรายการใน BC"`
+          : `ยกเลิก Match #${group.matchId} กลุ่ม ${group.num} แล้ว รายการกลับไปรอจับคู่ในตาราง`
       );
       onChanged();
       void loadConfirmed();
@@ -703,11 +703,14 @@ export default function GlOffsetModal({
                 {manualProblem && <span className="text-amber-700">{manualProblem}</span>}
               </div>
             ) : (
-              <p className="text-[11px] text-gray-400">
+              <div className="flex items-center gap-1 text-[11px] text-gray-400">
+                <span>{tab === "done" ? "ยกเลิกเพื่อคืนรายการ" : "ยกเลิกภายหลังได้"}</span>
+                <HelpTooltip label="เกี่ยวกับรายการหักล้าง">
                 {tab === "done"
                   ? "ยกเลิกแล้วรายการจะกลับไปรอในตาราง (คู่กลับรายการใน BC จะกลับมารอยืนยันในแท็บแรก)"
-                  : "บันทึกเป็นประเภทหักล้างกันเอง พร้อมชื่อผู้ยืนยัน — ยกเลิกได้ภายหลังที่แท็บยืนยันแล้ว"}
-              </p>
+                  : "บันทึกเป็นประเภทหักล้างกันเอง พร้อมชื่อผู้ยืนยัน ยกเลิกได้ภายหลังที่แท็บยืนยันแล้ว"}
+                </HelpTooltip>
+              </div>
             )}
           </div>
           <div className="flex items-center gap-2">

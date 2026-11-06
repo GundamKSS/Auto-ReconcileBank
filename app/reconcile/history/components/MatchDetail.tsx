@@ -222,7 +222,7 @@ function LineRow({
           {!isBank && isReversalSource(line.sourceCode) && (
             <span
               className="rounded bg-gray-100 px-1 py-0.5 text-[9px] font-semibold text-gray-500"
-              title="แถวกลับรายการที่ BC สร้างให้อัตโนมัติ (Source_Code = REVERSAL)"
+              title="รายการที่ BC365 กลับรายการให้อัตโนมัติ"
             >
               REVERSAL
             </span>
@@ -532,7 +532,7 @@ export default function MatchDetail({
   function groupSummaryText(g: SubGroup) {
     if (match.matchType === "MATCHED") return `${g.bankLines.length} : ${g.glLines.length}`;
     if (match.matchType === "OFFSET") {
-      const { inLines, outLines } = splitByDirection(g.glLines);
+      const { inLines, outLines } = splitByDirection(g.bankLines.length > 0 ? g.bankLines : g.glLines);
       return `${inLines.length} เข้า : ${outLines.length} ออก`;
     }
     return `${g.glLines.length} รายการ`;
@@ -540,7 +540,7 @@ export default function MatchDetail({
 
   function groupAmount(g: SubGroup) {
     if (match.matchType === "MATCHED") return g.bankTotal;
-    if (match.matchType === "OFFSET") return splitByDirection(g.glLines).inTotal;
+    if (match.matchType === "OFFSET") return splitByDirection(g.bankLines.length > 0 ? g.bankLines : g.glLines).inTotal;
     return g.glTotal;
   }
 
@@ -628,8 +628,12 @@ export default function MatchDetail({
   let body: React.ReactNode;
 
   if (match.matchType === "OFFSET") {
-    const inEntries = glEntries.filter((e) => e.line.direction === "IN");
-    const outEntries = glEntries.filter((e) => e.line.direction === "OUT");
+    const isBankOffset = match.bankLines.length > 0;
+    const entries = isBankOffset ? bankEntries : glEntries;
+    const sourceLabel = isBankOffset ? "ธนาคาร" : "BC365";
+    const sourceAccount = isBankOffset ? match.bankCode : accountLabel;
+    const inEntries = entries.filter((e) => e.line.direction === "IN");
+    const outEntries = entries.filter((e) => e.line.direction === "OUT");
     const inTotal = inEntries.reduce((s, e) => (e.line.status === "ACTIVE" ? s + e.line.amount : s), 0);
     const outTotal = outEntries.reduce((s, e) => (e.line.status === "ACTIVE" ? s + e.line.amount : s), 0);
     const net = Math.round((inTotal - outTotal) * 100) / 100;
@@ -641,8 +645,8 @@ export default function MatchDetail({
         left={
           <LinePanel
             tone="in"
-            title="BC365 · ขาเข้า"
-            subtitle={accountLabel || undefined}
+            title={`${sourceLabel} · เงินเข้า`}
+            subtitle={sourceAccount || undefined}
             entries={inEntries}
             totalLabel="IN TOTAL"
             emptyText="ไม่มีรายการขาเข้า"
@@ -655,7 +659,7 @@ export default function MatchDetail({
               tone={balanced ? "ok" : "bad"}
               icon={<Scale size={12} />}
               label={`สุทธิ ${formatAmount(net)}`}
-              title="หักล้างกันเอง: ขาเข้า − ขาออก ต้องเป็น 0.00 จึงไม่มีเงินผ่านธนาคาร"
+              title="ยอดเงินเข้าและเงินออกหักล้างกันจนสุทธิเป็นศูนย์"
             />
             {kinds.has("REVERSAL") && (
               <span className="hidden text-[10px] font-medium text-teal-600 lg:mt-1.5 lg:block">กลับรายการใน BC</span>
@@ -665,8 +669,8 @@ export default function MatchDetail({
         right={
           <LinePanel
             tone="out"
-            title="BC365 · ขาออก"
-            subtitle={accountLabel || undefined}
+            title={`${sourceLabel} · เงินออก`}
+            subtitle={sourceAccount || undefined}
             entries={outEntries}
             totalLabel="OUT TOTAL"
             emptyText="ไม่มีรายการขาออก"
@@ -685,7 +689,7 @@ export default function MatchDetail({
         left={
           <LinePanel
             tone="bc"
-            title="General Ledger (BC365)"
+            title="รายการ BC365"
             subtitle={accountLabel || undefined}
             entries={glEntries}
             totalLabel="BC TOTAL"
@@ -701,8 +705,8 @@ export default function MatchDetail({
               label={isSuspense ? "ยกไปพัก" : "ไม่จับคู่"}
               title={
                 isSuspense
-                  ? "ย้ายรายการ BC เข้าบัญชีพักโอน — ยังไม่มีคู่ฝั่งธนาคารในงวดนี้"
-                  : "JV ปรับปรุงพักโอน — ตั้งใจไม่นำมาจับคู่กับธนาคาร เลย"
+                  ? "ย้ายรายการ BC เข้าบัญชีพักโอน ยังไม่มีคู่ฝั่งธนาคารในงวดนี้"
+                  : "JV ปรับปรุงพักโอน ไม่นำไปจับคู่กับธนาคาร"
               }
             />
           </Connector>
@@ -712,17 +716,17 @@ export default function MatchDetail({
             <DestinationCard
               tone="amber"
               icon={<Wallet size={13} />}
-              title="บัญชีพักโอน (Suspense)"
+              title="บัญชีพักโอน"
               subtitle="รอจับคู่กับธนาคาร ในงวดถัดไป"
               inTotal={inTotal}
               outTotal={outTotal}
               netLabel="ยอดพักสุทธิ"
-              note="รายการฝั่งซ้ายถูกยกออกจากงวดนี้ไปพักไว้ก่อน จึงไม่มีฝั่งธนาคารมาคู่ — ยอดสุทธินี้คือส่วนที่ทำให้ยอดคงเหลือ ธนาคารกับ BC365 ต่างกัน"
+              note="รายการฝั่งซ้ายถูกยกออกจากงวดนี้ไปพักไว้ก่อน จึงไม่มีฝั่งธนาคารมาคู่ ยอดสุทธินี้คือส่วนที่ทำให้ยอดคงเหลือ ธนาคารกับ BC365 ต่างกัน"
               footer={
                 <>
                   {" "}
                   <a href="/suspense" className="font-semibold underline underline-offset-2 hover:text-amber-950">
-                    ดึงกลับ/จัดการที่หน้ารายการพัก
+                    จัดการรายการพัก
                   </a>
                 </>
               }
@@ -739,7 +743,7 @@ export default function MatchDetail({
               note={
                 match.remark
                   ? `เหตุผลที่บันทึกไว้: ${match.remark}`
-                  : "รายการ BC ที่ไม่มีวันมีคู่ในธนาคาร เช่น JV ปรับปรุงยอดปลายงวด — ใช้ปิดยอดพักโอนโดยไม่ต้องรอ statement"
+                  : "รายการ BC ที่ไม่มีวันมีคู่ในธนาคาร เช่น JV ปรับปรุงยอดปลายงวด ใช้ปิดยอดพักโอนโดยไม่ต้องรอ statement"
               }
             />
           )
@@ -771,7 +775,7 @@ export default function MatchDetail({
               title={
                 balanced
                   ? "ยอดรวมสองฝั่งเท่ากัน"
-                  : "จับคู่ทั้งที่ยอดสองฝั่งไม่เท่ากัน — ส่วนต่างถูกพักโอนไว้พร้อมหมายเหตุ"
+                  : "จับคู่ทั้งที่ยอดสองฝั่งไม่เท่ากัน ส่วนต่างถูกพักโอนไว้พร้อมหมายเหตุ"
               }
             />
             {!balanced && (
@@ -784,7 +788,7 @@ export default function MatchDetail({
         right={
           <LinePanel
             tone="bc"
-            title="General Ledger (BC365)"
+            title="รายการ BC365"
             subtitle={accountLabel || undefined}
             entries={glEntries}
             totalLabel="BC TOTAL"

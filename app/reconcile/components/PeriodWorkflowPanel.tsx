@@ -39,11 +39,11 @@ function CheckList({ checks }: { checks: PeriodCheck[] }) {
                 : 'border-emerald-200 bg-emerald-50 text-emerald-900'
           }`}
         >
-          <p className="font-medium">
+          <div className="flex items-center gap-1 font-medium">
             <span className="mr-1.5 rounded bg-white/70 px-1 text-[10px] font-semibold">ข้อ {check.item}</span>
             {check.title}
-          </p>
-          <p className="mt-0.5 leading-relaxed opacity-80">{check.detail}</p>
+            <HelpTooltip label={`รายละเอียด${check.title}`}>{check.detail}</HelpTooltip>
+          </div>
         </li>
       ))}
     </ul>
@@ -68,15 +68,15 @@ export default function PeriodWorkflowPanel({ data, onWorkApproval, onClosePerio
   const permissions = data.workApproval?.permissions;
   // เปิดงวดคืน (และปิดงวดที่ค้างจากก่อนปิดอัตโนมัติ) = Master Admin: Dev/Admin ระบบกลาง หรือ User ที่ได้ MASTER
   const canMaster = hasWorkRole(permissions, 'MASTER');
-  const permissionHint = !permissions?.ready ? 'ต้องติดตั้งสิทธิ์พนักงาน (sql/010_employee_work_roles.sql) ก่อน'
+  const permissionHint = !permissions?.ready ? 'ระบบสิทธิ์ยังไม่พร้อม กรุณาติดต่อผู้ดูแล'
     : !permissions.employeeCode && permissions.roles.length === 0 ? 'ไม่พบ EMP code กรุณาเข้าสู่ระบบใหม่ หรือติดต่อผู้ดูแลระบบ'
       : `${permissions.employeeCode ? `EMP code ${permissions.employeeCode} · ` : ''}สิทธิ์: ${permissions.roles.join(', ') || 'ยังไม่ได้รับสิทธิ์ยืนยันงาน'}`;
   const complete = approvalsComplete(approvals, data.period.from, data.period.to);
   const remaining = data.adjustment.remaining;
   const settled = remaining !== null && Number.isFinite(remaining) && Math.abs(remaining) < 0.005;
-  const problem = !ready ? 'ยังไม่ได้ติดตั้งโครงสร้างยืนยันงาน AP/AR (sql/009_period_work_approval.sql)'
-    : !settled ? 'ผลต่างคงเหลือหลังปรับปรุงต้องเป็นศูนย์ก่อนยืนยันฝั่งสุดท้าย (AP และ AR ยืนยันครบ = ปิดงวดทันที)'
-      : !complete ? 'รอ AP และ AR ยืนยันงานครบในช่วงวันที่เดียวกัน — ยืนยันครบแล้วงวดจะปิดอัตโนมัติ' : null;
+  const problem = !ready ? 'ระบบยืนยันงานยังไม่พร้อม กรุณาติดต่อผู้ดูแล'
+    : !settled ? 'ผลต่างต้องเป็นศูนย์ก่อนยืนยันฝั่งสุดท้าย'
+      : !complete ? 'รอ AP และ AR ยืนยันงวดเดียวกัน' : null;
   const selected = approvals.find((a) => a.direction === action);
   // อีกฝั่งยืนยันไว้แล้ว — การยืนยันครั้งนี้จะปิดงวดรวมทันที
   const closesPeriod = (action === 'IN' || action === 'OUT') && !selected && approvals.some((a) => a.direction !== action);
@@ -104,8 +104,8 @@ export default function PeriodWorkflowPanel({ data, onWorkApproval, onClosePerio
 
   return (
     <section className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs" aria-label="การยืนยันงานและปิดงวด">
-      <div className="flex items-center gap-1"><h3 className="font-semibold text-slate-800">ยืนยันงาน AP / AR และปิดงวดรวม</h3>
-        <HelpTooltip label="ขั้นตอนยืนยันงานและปิดงวด">ตรวจสอบรายการจับคู่และรายการค้าง แล้วให้ AP และ AR ยืนยันงานในช่วงวันที่เดียวกัน เมื่อยืนยันครบทั้งสองฝั่ง (และผลต่างหลังปรับปรุงเป็นศูนย์) งวดจะปิดทันที เปิดงวดคืนได้เฉพาะ Master Admin</HelpTooltip>
+      <div className="flex items-center gap-1"><h3 className="font-semibold text-slate-800">ยืนยันงานและปิดงวด</h3>
+        <HelpTooltip label="ขั้นตอนยืนยันงานและปิดงวด">ตรวจสอบรายการจับคู่และรายการค้าง แล้วให้ AP และ AR ยืนยันงานในช่วงวันที่เดียวกัน ผลต่างหลังปรับปรุงต้องเป็นศูนย์ ยืนยันครบแล้วงวดจะปิดอัตโนมัติ เปิดงวดคืนได้เฉพาะ Master Admin</HelpTooltip>
       </div>
       <p className="mt-1 text-slate-500">{data.period.from} ถึง {data.period.to}</p>
       <p className="mt-1 text-slate-500">{permissionHint}</p>
@@ -114,7 +114,7 @@ export default function PeriodWorkflowPanel({ data, onWorkApproval, onClosePerio
           <span><Lock size={13} className="mr-1 inline" />ปิดงวดรวมแล้ว โดย {data.periodClose?.closedBy}
             <span className="mt-1 block">{data.periodClose?.periodStart} ถึง {data.periodClose?.periodEnd}</span>
           </span>
-          <button disabled={busy || !ready || !canMaster} title={!canMaster ? 'ต้องเป็น Master Admin' : undefined} onClick={() => select('REOPEN')} className="rounded-lg border bg-white px-3 py-2 disabled:opacity-40">เปิดงวดรวมอีกครั้ง</button>
+          <button disabled={busy || !ready || !canMaster} title={!canMaster ? 'ต้องเป็น Master Admin' : undefined} onClick={() => select('REOPEN')} className="rounded-lg border bg-white px-3 py-2 disabled:opacity-40">เปิดงวดอีกครั้ง</button>
         </div>
       ) : (
         <>
@@ -130,8 +130,8 @@ export default function PeriodWorkflowPanel({ data, onWorkApproval, onClosePerio
                   {checks.length > 0 && (
                     <p className={`mt-1 ${sideWarnings > 0 ? 'text-amber-700' : 'text-emerald-700'}`}>
                       {sideWarnings > 0
-                        ? `ตามสเปกใหม่มีคำเตือน ${sideWarnings} ข้อ กดยืนยันเพื่อดูรายละเอียด`
-                        : 'ผ่านทุกข้อที่ระบบตรวจได้ตามสเปกใหม่'}
+                        ? `มีคำเตือน ${sideWarnings} ข้อ`
+                        : 'ผ่านการตรวจสอบ'}
                     </p>
                   )}
                   {approval ? <>
@@ -142,14 +142,14 @@ export default function PeriodWorkflowPanel({ data, onWorkApproval, onClosePerio
                   <button disabled={busy || !ready || !canAct}
                     title={!canAct ? `ต้องมีสิทธิ์ ${directionWorkRole(direction)}` : undefined}
                     onClick={() => select(direction)} className="mt-2 rounded-lg border border-slate-200 bg-white px-3 py-2 font-medium disabled:cursor-not-allowed disabled:opacity-40">
-                    {approval ? 'เปิดงานฝั่งนี้อีกครั้ง' : `ยืนยันงาน ${direction === 'OUT' ? 'AP' : 'AR'}`}
+                    {approval ? 'เปิดงานอีกครั้ง' : `ยืนยันงาน ${direction === 'OUT' ? 'AP' : 'AR'}`}
                   </button>
                 </div>
               );
             })}
           </div>
           <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-slate-600">{problem ?? 'AP/AR ยืนยันครบ และยอดพร้อมปิดงวดรวม'}</p>
+            <p className="text-slate-600">{problem ?? 'พร้อมปิดงวด'}</p>
             {/* ปกติไม่เห็นปุ่มนี้: ยืนยันครบ = ปิดอัตโนมัติ เหลือไว้ให้ Master Admin ปิดงวดที่ยืนยันครบไว้ก่อนเปลี่ยนระบบ */}
             {complete && <button disabled={busy || Boolean(problem) || !canMaster} title={!canMaster ? 'ต้องเป็น Master Admin' : undefined} onClick={() => select('CLOSE')} className="shrink-0 rounded-lg bg-emerald-600 px-3 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40">
               <Lock size={13} className="mr-1 inline" />ปิดงวดรวม
@@ -160,18 +160,21 @@ export default function PeriodWorkflowPanel({ data, onWorkApproval, onClosePerio
       {!ready && closed && <p className="mt-2 text-amber-700">{problem}</p>}
       {action && <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
         <p className="font-medium text-slate-800">
-          {action === 'CLOSE' ? 'ยืนยันปิดงวดรวม — ล็อกทั้ง AP และ AR'
-            : action === 'REOPEN' ? 'เปิดงวดรวม — ยกเลิกการยืนยันทั้ง AP/AR และต้องตรวจสอบยืนยันใหม่'
-              : selected ? `เปิดงาน ${workLabel(action)} — อีกฝั่งยังคงสถานะเดิม`
-                : closesPeriod ? `ยืนยันงาน ${workLabel(action)} — อีกฝั่งยืนยันแล้ว ยืนยันครั้งนี้จะปิดงวดรวมทันที`
-                  : `ยืนยันงาน ${workLabel(action)} — ล็อกการแก้ไขฝั่งนี้`}
+          {action === 'CLOSE' ? 'ยืนยันปิดงวดรวม ล็อกทั้ง AP และ AR'
+            : action === 'REOPEN' ? 'เปิดงวดรวม ยกเลิกการยืนยันทั้ง AP/AR และต้องตรวจสอบยืนยันใหม่'
+              : selected ? `เปิดงาน ${workLabel(action)} อีกฝั่งยังคงสถานะเดิม`
+                : closesPeriod ? `ยืนยันงาน ${workLabel(action)} อีกฝั่งยืนยันแล้ว ยืนยันครั้งนี้จะปิดงวดรวมทันที`
+                  : `ยืนยันงาน ${workLabel(action)} ล็อกการแก้ไขฝั่งนี้`}
         </p>
         {(action === 'IN' || action === 'OUT') && !selected && checks.length > 0 && <>
-          <p className="text-slate-600">ผลตรวจตามสเปกใหม่ของฝั่งนี้ ยังไม่บล็อกการยืนยัน ใช้ดูว่าเหลืออะไรก่อนยืนยัน</p>
+          <div className="flex items-center gap-1 text-slate-600">
+            <span>ตรวจสอบคำเตือนก่อนยืนยันงาน</span>
+            <HelpTooltip label="เกี่ยวกับผลตรวจสอบ">คำเตือนนี้ไม่บล็อกการยืนยัน ตรวจสอบรายละเอียดแต่ละข้อก่อนดำเนินการ</HelpTooltip>
+          </div>
           <CheckList checks={checksForDirection(checks, action)} />
         </>}
         {action !== 'CLOSE' && <textarea value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} disabled={busy}
-          aria-label="หมายเหตุการยืนยันหรือเหตุผลเปิดงาน" placeholder="ระบุผลการตรวจสอบและเหตุผลรายการค้าง หรือเหตุผลที่เปิดงานอีกครั้ง (จำเป็น)"
+          aria-label="หมายเหตุการยืนยันหรือเหตุผลเปิดงาน" placeholder="ระบุหมายเหตุหรือเหตุผล (จำเป็น)"
           className="min-h-16 w-full rounded-lg border border-slate-300 bg-white p-2" />}
         <label className="flex items-start gap-2 text-slate-700">
           <input type="checkbox" checked={acknowledged} disabled={busy} onChange={(e) => setAcknowledged(e.target.checked)} />

@@ -155,11 +155,11 @@ export default function BalanceModal({
         <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100 shrink-0">
           <div className="min-w-0">
             <h2 id="balance-title" className="text-base font-semibold text-gray-900">
-              เปรียบเทียบยอดคงเหลือธนาคารกับ BC365
+              สรุปยอดคงเหลือ
             </h2>
             <p className="text-xs text-gray-500 mt-0.5 truncate">
               {accountLabel}
-              {data && ` · ${formatDMY(data.period.from)} – ${formatDMY(data.period.to)}`}
+              {data && ` · ${formatDMY(data.period.from)} ถึง ${formatDMY(data.period.to)}`}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -202,13 +202,13 @@ export default function BalanceModal({
               {data.bank.lineCount > 0 && !data.bank.chainOk && (data.bank.totalIn === 0 || data.bank.totalOut === 0) ? (
                 // AP นำเข้าเฉพาะเงินออก AR เฉพาะเงินเข้า — ฝั่งเดียวเข้ามาแล้ว สาย Balance ยังขาดเป็นช่วงๆ
                 <Notice>
-                  statement ช่วงนี้ยังนำเข้าไม่ครบสองฝั่ง (มีแต่{data.bank.totalIn === 0 ? "เงินออก — รอ AR นำเข้าเงินเข้า" : "เงินเข้า — รอ AP นำเข้าเงินออก"}) —
-                  ยอดยกมาและยอดคงเหลือฝั่งธนาคารจะถูกต้องเมื่อนำเข้าครบทั้งสองฝั่ง
+                  รอ{data.bank.totalIn === 0 ? " AR นำเข้าเงินเข้า" : " AP นำเข้าเงินออก"} ยอดธนาคารอาจยังไม่ครบ
+                  <HelpTooltip label="เกี่ยวกับยอดธนาคารที่ยังไม่ครบ">ขณะนี้มีข้อมูลเพียงฝั่งเดียว ยอดยกมาและยอดคงเหลือจะถูกต้องเมื่อนำเข้าครบทั้งเงินเข้าและเงินออก</HelpTooltip>
                 </Notice>
               ) : data.bank.lineCount > 0 && !data.bank.chainOk && (
                 <Notice>
-                  ยอดคงเหลือในไฟล์ statement ต่อกันไม่ครบทุกบรรทัด (ไฟล์อาจขาดบางรายการ อีกฝั่งยังนำเข้าไม่ครบ หรือธนาคารไม่ส่งยอดคงเหลือมา) —
-                  ยอดยกมาฝั่งธนาคารอาจไม่ถูกต้อง
+                  ยอดธนาคารไม่ต่อเนื่อง กรุณาตรวจสอบไฟล์นำเข้า
+                  <HelpTooltip label="สาเหตุที่ยอดธนาคารไม่ต่อเนื่อง">ไฟล์อาจขาดบางรายการ ยังนำเข้าไม่ครบทั้งสองฝั่ง หรือไม่มีข้อมูลยอดคงเหลือ ยอดยกมาฝั่งธนาคารจึงอาจไม่ถูกต้อง</HelpTooltip>
                 </Notice>
               )}
 

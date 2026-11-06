@@ -20,7 +20,7 @@ import {
 
 export const HISTORY_TYPE_LABELS: Record<MatchTypeValue, string> = {
   MATCHED: "จับคู่แล้ว",
-  OFFSET: "หักล้าง BC365",
+  OFFSET: "หักล้างกันเอง",
   SUSPENSE: "พักรายการ",
   EXCLUDED: "JV ปรับปรุง",
 };

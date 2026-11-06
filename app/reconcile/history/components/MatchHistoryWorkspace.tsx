@@ -77,7 +77,8 @@ function typeHasBankSide(filter: TypeFilter) {
 function toUnmatchTarget(g: SubGroup, match: MatchRecord): UnmatchTarget {
   if (match.matchType === "OFFSET") {
     // UnmatchConfirmModal variant "offset" อ่าน bank*/gl* เป็นขาเข้า/ขาออก
-    const { inLines, outLines, inTotal, outTotal } = splitByDirection(g.glLines);
+    const lines = g.glLines.length > 0 ? g.glLines : g.bankLines;
+    const { inLines, outLines, inTotal, outTotal } = splitByDirection(lines);
     return {
       key: g.key,
       matchId: g.matchId,
@@ -477,10 +478,10 @@ export default function MatchHistoryWorkspace() {
       const groupCount = typeof data.groupCount === "number" ? data.groupCount : pendingUnmatch.length;
       setToast(
         pendingVariant === "offset"
-          ? `ยกเลิกหักล้างกันเองสำเร็จ ${groupCount} กลุ่ม — รายการ BC กลับไปอยู่หน้ากระทบยอด แล้ว`
+          ? `ยกเลิกหักล้างกันเองสำเร็จ ${groupCount} กลุ่ม รายการ BC กลับไปอยู่หน้ากระทบยอด แล้ว`
           : groupCount > 1
-            ? `ยกเลิกสำเร็จ ${groupCount} กลุ่มย่อย จาก ${targetsByMatchId.size} Match — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น “รอจับคู่” แล้ว`
-            : `ยกเลิก Match #${pendingUnmatch[0].matchId} กลุ่ม ${pendingUnmatch[0].num} สำเร็จ — คืนสถานะ ${data.revertedBankLineCount} รายการเป็น “รอจับคู่” แล้ว`
+            ? `ยกเลิกสำเร็จ ${groupCount} กลุ่มย่อย จาก ${targetsByMatchId.size} Match คืนสถานะ ${data.revertedBankLineCount} รายการเป็น “รอจับคู่” แล้ว`
+            : `ยกเลิก Match #${pendingUnmatch[0].matchId} กลุ่ม ${pendingUnmatch[0].num} สำเร็จ คืนสถานะ ${data.revertedBankLineCount} รายการเป็น “รอจับคู่” แล้ว`
       );
       const unmatchedKeys = new Set(pendingUnmatch.map((t) => t.key));
       setSelectedKeys((prev) => {
@@ -603,7 +604,7 @@ export default function MatchHistoryWorkspace() {
                 type="button"
                 onClick={() => updateSide(tab.value)}
                 disabled={blocked}
-                title={blocked ? `ไม่มีสิทธิ์ ${tab.value} — เห็นได้เฉพาะฝั่งที่ได้รับสิทธิ์` : undefined}
+                title={blocked ? `ไม่มีสิทธิ์ ${tab.value} เห็นได้เฉพาะฝั่งที่ได้รับสิทธิ์` : undefined}
                 aria-pressed={active}
                 className={`flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40 ${
                   active ? SIDE_FILTER_ACTIVE_CLASS[tab.value] : SIDE_FILTER_INACTIVE_CLASS

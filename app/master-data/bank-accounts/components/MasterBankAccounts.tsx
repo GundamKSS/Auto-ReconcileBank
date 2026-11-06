@@ -136,7 +136,7 @@ export default function MasterBankAccounts() {
               <Database size={20} className="text-white" />
             </div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · บัญชีธนาคาร</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">บัญชีธนาคาร</h1>
               <HelpTooltip label="เกี่ยวกับบัญชีธนาคาร">
                 บัญชีที่ใช้นำเข้า statement และกระทบยอด เพิ่มบัญชีใหม่ได้จากรหัสบัญชีที่มีใน BC365 แล้วเท่านั้น
                 ปิดบัญชี = นำเข้า statement ใหม่ไม่ได้ แต่ข้อมูลเดิมยังกระทบยอดและดูรายงานได้ และเปิดบัญชีกลับได้
@@ -295,7 +295,7 @@ export default function MasterBankAccounts() {
         {!canManage && data && (
           <p className="flex items-center gap-1.5 text-xs text-slate-500">
             <Lock size={12} className="shrink-0" />
-            ดูข้อมูลเท่านั้น — เพิ่มหรือปิดบัญชีได้เฉพาะผู้ดูแล (Admin / MASTER)
+            ดูข้อมูลเท่านั้น เพิ่มหรือปิดบัญชีได้โดยผู้ดูแล
           </p>
         )}
       </section>

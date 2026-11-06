@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from "../../../../components/HelpTooltip";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Landmark, Loader2, Save, X } from "lucide-react";
 import { ACCOUNT_BANK_CODES, STATEMENT_BANK_CODES } from "../../../../lib/bankAccounts";
@@ -67,7 +68,10 @@ export default function AddBankAccountModal({ candidates, onDismiss, onSaved }: 
         <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><Landmark size={20} /></div>
         <div className="min-w-0 flex-1">
           <h2 id="add-bank-account-title" className="text-lg font-semibold">เพิ่มบัญชีธนาคาร</h2>
-          <p className="mt-0.5 text-xs text-slate-500">เลือกจากรหัสบัญชีที่มีรายการใน BC365 แล้ว แต่ยังไม่ได้ผูกกับระบบ</p>
+          <div className="flex items-center gap-1 text-xs text-slate-500">
+            <span>เลือกบัญชีจาก BC365</span>
+            <HelpTooltip label="บัญชีที่เพิ่มได้">เลือกได้เฉพาะบัญชีที่มีรายการใน BC365 และยังไม่ได้เพิ่มในระบบนี้</HelpTooltip>
+          </div>
         </div>
         <button type="button" onClick={onDismiss} disabled={saving} aria-label="ปิดหน้าต่าง"
           className="flex size-9 shrink-0 items-center justify-center rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-40"><X size={20} /></button>
@@ -76,10 +80,10 @@ export default function AddBankAccountModal({ candidates, onDismiss, onSaved }: 
       <form onSubmit={(event) => void save(event)} aria-busy={saving} className="flex min-h-0 flex-col">
         <div className="min-h-0 space-y-5 overflow-y-auto px-6 py-5">
           {candidates.length === 0 ? (
-            <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-relaxed text-amber-800">
-              ไม่มีรหัสบัญชีใหม่ใน BC365 ให้เพิ่ม — ต้องสร้างบัญชีธนาคารใน BC365 (ชื่อบัญชีลงท้ายด้วย #เลขบัญชี)
-              และมีรายการเคลื่อนไหวแล้วดึงข้อมูล GL ที่หน้านำเข้าข้อมูลก่อน
-            </p>
+            <div className="flex items-center gap-1 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              <span>ไม่พบบัญชีใหม่จาก BC365</span>
+              <HelpTooltip label="วิธีเพิ่มบัญชีจาก BC365">สร้างบัญชีธนาคารใน BC365 โดยให้ชื่อลงท้ายด้วย #เลขบัญชี เมื่อมีรายการเคลื่อนไหวแล้ว ให้ดึงข้อมูล GL ที่หน้านำเข้าข้อมูล</HelpTooltip>
+            </div>
           ) : (
             <fieldset disabled={saving} className="space-y-2">
               <legend className="text-sm font-medium text-slate-600">รหัสบัญชีจาก BC365 <span className="text-red-500">*</span></legend>
@@ -104,12 +108,12 @@ export default function AddBankAccountModal({ candidates, onDismiss, onSaved }: 
           {selected && (
             <label className="block text-sm font-medium text-slate-600">ธนาคาร <span className="text-red-500">*</span>
               <select value={bankCode} onChange={(event) => setBankCode(event.target.value)} disabled={saving} className={inputClass}>
-                <option value="">— เลือกธนาคาร —</option>
+                <option value="">เลือกธนาคาร</option>
                 {ACCOUNT_BANK_CODES.map((code) => <option key={code} value={code}>{code}</option>)}
               </select>
               {bankCode && !STATEMENT_BANK_CODES.includes(bankCode) && (
                 <span className="mt-1.5 block text-xs font-normal text-amber-700">
-                  ระบบยังอ่านไฟล์ statement ของ {bankCode} ไม่ได้ — เพิ่มได้เพื่อดูฝั่ง GL แต่ยังนำเข้าไฟล์ไม่ได้
+                  {bankCode} ดูรายการ BC365 ได้ แต่ยังนำเข้าไฟล์ธนาคารไม่ได้
                 </span>
               )}
             </label>

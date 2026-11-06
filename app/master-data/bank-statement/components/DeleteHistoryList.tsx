@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from "../../../../components/HelpTooltip";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { History, Loader2 } from "lucide-react";
 import { formatDate, formatDateTime } from "./ImportBatchList";
@@ -146,7 +147,10 @@ export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
 
   return (
     <div>
-      <p className="mb-3 text-xs text-gray-400">ไฟล์ที่ถูกลบทั้งหมด {total.toLocaleString()} ไฟล์ — บันทึกผู้ลบ วันเวลา และเหตุผลไว้ทุกครั้ง</p>
+      <div className="mb-3 flex items-center gap-1 text-xs text-gray-400">
+        <span>ลบแล้ว {total.toLocaleString()} ไฟล์</span>
+        <HelpTooltip label="เกี่ยวกับประวัติการลบ">บันทึกผู้ลบ วันเวลา และเหตุผลไว้ทุกครั้ง ข้อมูลยังเก็บไว้ตรวจสอบย้อนหลัง</HelpTooltip>
+      </div>
       <div className="overflow-x-auto border border-gray-200 rounded-2xl">
         <table className="w-full text-sm min-w-[860px]">
           <thead className="bg-gray-50 border-b border-gray-200 text-gray-500 text-xs uppercase tracking-wide">
@@ -164,7 +168,7 @@ export default function DeleteHistoryList({ bankCode }: { bankCode: string }) {
                 <td className="px-3 py-3 max-w-[320px]">
                   <p className="font-medium text-gray-900 break-all">{d.FileName}</p>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    {formatDate(d.PeriodStart)} – {formatDate(d.PeriodEnd)} · {d.ImportedRowCount.toLocaleString()} รายการ
+                    {formatDate(d.PeriodStart)} ถึง {formatDate(d.PeriodEnd)} · {d.ImportedRowCount.toLocaleString()} รายการ
                   </p>
                   <p className="text-xs text-gray-400">นำเข้าเมื่อ {formatDateTime(d.ImportedAt)}</p>
                 </td>

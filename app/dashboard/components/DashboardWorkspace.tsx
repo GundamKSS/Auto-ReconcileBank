@@ -262,7 +262,7 @@ export default function DashboardWorkspace() {
 
       {prefs.widgets.length === 0 && (
         <p className="rounded-2xl border border-dashed border-slate-200 py-12 text-center text-sm text-slate-400">
-          ยังไม่ได้เลือกส่วนที่จะแสดง — กด &ldquo;ปรับมุมมอง&rdquo; ด้านบนเพื่อเลือก
+          เลือกส่วนที่ต้องการใน &ldquo;ปรับมุมมอง&rdquo;
         </p>
       )}
 

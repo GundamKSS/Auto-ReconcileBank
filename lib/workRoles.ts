@@ -6,9 +6,9 @@ import type { AppRole, Role } from './roles';
 export const WORK_ROLES = ['AP', 'AR', 'MASTER'] as const;
 export type WorkRole = typeof WORK_ROLES[number];
 export const WORK_ROLE_LABELS: Record<WorkRole, string> = {
-  AP: 'ยืนยัน / เปิดงาน AP (เงินออก)',
-  AR: 'ยืนยัน / เปิดงาน AR (เงินเข้า)',
-  MASTER: 'Master Admin — ทำได้ทุกอย่าง: AP + AR, เปิดงวดที่ปิดแล้ว และให้สิทธิ์',
+  AP: 'งาน AP (เงินออก)',
+  AR: 'งาน AR (เงินเข้า)',
+  MASTER: 'ผู้ดูแลระบบ',
 };
 const MASTER_ROLES: readonly WorkRole[] = ['AP', 'AR', 'MASTER'];
 // MASTER carries every workflow role.

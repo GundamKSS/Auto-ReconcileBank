@@ -26,7 +26,7 @@ export function batchSideLabel(b: ImportBatch): string {
   const sides = batchSides(b);
   return sides.length === 2 ? "เงินเข้า + เงินออก" : sides[0] === "IN" ? "เงินเข้า" : sides[0] === "OUT" ? "เงินออก" : "";
 }
-export const NO_DELETE_RIGHT = "ไม่มีสิทธิ์ลบ — ลบได้เฉพาะไฟล์ของฝั่งที่ได้รับสิทธิ์ (ไฟล์ที่มีทั้งสองฝั่งต้องมีทั้ง AP และ AR)";
+export const NO_DELETE_RIGHT = "ไม่มีสิทธิ์ลบ ลบได้เฉพาะไฟล์ของฝั่งที่ได้รับสิทธิ์ (ไฟล์ที่มีทั้งสองฝั่งต้องมีทั้ง AP และ AR)";
 
 export function formatDate(iso: string | null) {
   return iso ? new Date(iso).toISOString().slice(0, 10) : "-";
@@ -82,7 +82,7 @@ export default function ImportBatchList({
             <div className="flex-1 min-w-0">
               <p className="text-sm font-semibold text-gray-900 truncate">{b.FileName}</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                {formatDate(b.PeriodStart)} – {formatDate(b.PeriodEnd)} ·{" "}
+                {formatDate(b.PeriodStart)} ถึง {formatDate(b.PeriodEnd)} ·{" "}
                 <span className="text-gray-500 font-medium">{b.ImportedRowCount.toLocaleString()} รายการ</span>
                 {batchSideLabel(b) && <> · <span className="text-gray-500">{batchSideLabel(b)}</span></>}
                 {b.LockedCount > 0 && (
@@ -98,7 +98,7 @@ export default function ImportBatchList({
           </button>
           {b.LockedCount > 0 ? (
             <span
-              title={`ลบไม่ได้ — มี ${b.LockedCount.toLocaleString()} รายการที่จับคู่/พักไว้อยู่ ต้องยกเลิกการจับคู่ก่อน`}
+              title={`ลบไม่ได้ มี ${b.LockedCount.toLocaleString()} รายการที่จับคู่/พักไว้อยู่ ต้องยกเลิกการจับคู่ก่อน`}
               className="p-2 text-gray-300 shrink-0 cursor-not-allowed"
             >
               <Lock size={16} />

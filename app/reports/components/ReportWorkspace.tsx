@@ -125,7 +125,7 @@ const STATUS_BADGE: Record<StatusValue, string> = {
 const STATUS_LABEL: Record<StatusValue, string> = {
   MATCHED: "จับคู่แล้ว",
   SUSPENSE: "พักรายการ",
-  OFFSET: "หักล้างรายการ BC365",
+  OFFSET: "หักล้างกันเอง",
   EXCLUDED: "JV ปรับปรุง",
   UNMATCHED: "รอจับคู่",
 };
@@ -240,7 +240,7 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
           <span className="text-slate-700 line-clamp-2">{row.bank.description || "-"}</span>
         ) : noBankSide ? (
           groupStart && (
-            <span className="text-[11px] text-teal-700 whitespace-nowrap">ไม่มีเงินผ่านธนาคาร — BC ยกเลิกกันเอง</span>
+            <span className="text-[11px] text-teal-700 whitespace-nowrap">{row.status === "EXCLUDED" ? "JV ปรับปรุง" : "หักล้างใน BC365"}</span>
           )
         ) : (
           <MissingSide inGroup={inGroup} />
@@ -258,7 +258,9 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
 
       {/* ฝั่ง BC365 (GL) */}
       <td className="px-3 py-2 align-top whitespace-nowrap text-slate-500 border-l border-slate-100">
-        {row.gl ? formatDay(row.gl.date) : <MissingSide inGroup={inGroup} first />}
+        {row.gl ? formatDay(row.gl.date) : row.status === "OFFSET" && row.bank ? (
+          groupStart && <span className="text-[11px] text-teal-700">หักล้างในธนาคาร</span>
+        ) : <MissingSide inGroup={inGroup} first />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap text-slate-700">
         {row.gl ? row.gl.documentNo || "-" : <MissingSide inGroup={inGroup} />}
@@ -791,15 +793,15 @@ export default function ReportWorkspace() {
           แยกมาเป็นหมายเหตุ ไม่เอาไปรวมในการ์ดผลต่างด้านบน */}
       {hasPendingImport && coverage && (
         <div className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-2.5 text-xs text-amber-800">
-          <span className="font-semibold">ยังไม่ได้นำเข้ารายการเดินบัญชีของงวดนี้</span>
-          <span className="text-amber-700">
+          <span className="font-semibold">รอนำเข้าไฟล์ธนาคาร</span>
+          <HelpTooltip label="รายละเอียดธนาคารที่รอนำเข้า">
             {coverage.pendingImport
               .map((p) => `${BANK_LABEL[p.bankCode] ?? p.bankCode} ${formatAmount(p.glNet)} (${p.glLines.toLocaleString()} บรรทัด)`)
               .join(" · ")}
-          </span>
+            {' เป็นยอด BC365 ที่ยังไม่มีไฟล์ธนาคารเทียบ จึงไม่นับรวมในผลต่าง'}
+          </HelpTooltip>
           <span className="text-amber-700">
             รวม {formatAmount(coverage.pendingImportNet)} บาท
-            <HelpTooltip label="ยอดที่ยังไม่นำเข้า statement">ยอด BC365 ที่ยังไม่มี statement เทียบ จึงยังไม่นับรวมในผลต่างจากการกระทบยอด</HelpTooltip>
           </span>
         </div>
       )}

@@ -93,7 +93,7 @@ export default function LineItemsView({
         <div className="min-w-0">
           <h2 className="text-lg font-bold text-gray-900 break-all">{batch.FileName}</h2>
           <p className="text-xs text-gray-400 mt-0.5">
-            {formatDate(batch.PeriodStart)} – {formatDate(batch.PeriodEnd)} ·{" "}
+            {formatDate(batch.PeriodStart)} ถึง {formatDate(batch.PeriodEnd)} ·{" "}
             <span className="text-gray-500 font-medium">
               {lineCount.toLocaleString()} รายการ{hasActiveFilters ? "ที่ตรงกับตัวกรอง" : ""} · {totalDays.toLocaleString()} วัน
             </span>
@@ -114,7 +114,7 @@ export default function LineItemsView({
           </button>
           {batch.LockedCount > 0 ? (
             <p className="text-[11px] text-amber-600">
-              มี {batch.LockedCount.toLocaleString()} รายการจับคู่แล้ว — ต้องยกเลิกการจับคู่ก่อนจึงลบได้
+              มี {batch.LockedCount.toLocaleString()} รายการจับคู่แล้ว ต้องยกเลิกการจับคู่ก่อนจึงลบได้
             </p>
           ) : !canDelete && <p className="text-[11px] text-amber-600">{NO_DELETE_RIGHT}</p>}
         </div>
@@ -221,7 +221,7 @@ export default function LineItemsView({
         emptyState={
           hasActiveFilters ? (
             <>
-              ไม่พบรายการที่ตรงกับตัวกรอง —{" "}
+              ไม่พบรายการที่ตรงกับตัวกรอง {" "}
               <button onClick={clearFilters} className="text-blue-600 hover:underline font-medium">
                 ล้างตัวกรอง
               </button>

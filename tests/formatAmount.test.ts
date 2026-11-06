@@ -33,6 +33,12 @@ describe('formatAmount', () => {
     expect(formatAmount(-0.005)).toBe('-0.01');
     expect(formatAmount(-0.01)).toBe('-0.01');
   });
+
+  it('ปลอดภัยต่อค่า null, undefined หรือ NaN โดยคืน 0.00 ไม่แครช', () => {
+    expect(formatAmount(null)).toBe('0.00');
+    expect(formatAmount(undefined)).toBe('0.00');
+    expect(formatAmount(NaN)).toBe('0.00');
+  });
 });
 
 describe('formatAmountOrDash', () => {

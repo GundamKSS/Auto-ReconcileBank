@@ -140,11 +140,11 @@ export const MATCH_TYPE_META: Record<MatchTypeValue, MatchTypeMeta> = {
     revertable: true,
   },
   OFFSET: {
-    label: "หักล้างรายการ BC365",
-    hint: "เฉพาะ BC365 ยอดสุทธิเป็นศูนย์",
+    label: "หักล้างกันเอง",
+    hint: "ธนาคารหรือ BC365 ยอดสุทธิเป็นศูนย์",
     chipClass: "bg-teal-100 text-teal-700",
     tabClass: "border-teal-600 text-teal-700",
-    hasBankSide: false,
+    hasBankSide: true,
     revertable: true,
   },
   SUSPENSE: {

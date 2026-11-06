@@ -215,7 +215,7 @@ export default function NewReconciliationModal({
   // ซึ่งชวนให้เข้าใจผิดว่ากระทบยอดครบแล้ว ทั้งที่จริงแค่กรอกวันที่กลับด้าน
   const rangeError =
     periodStart && periodEnd && periodStart > periodEnd
-      ? 'ช่วงวันที่ไม่ถูกต้อง — "ถึงวันที่" ต้องไม่มาก่อน "จากวันที่"'
+      ? 'ช่วงวันที่ไม่ถูกต้อง "ถึงวันที่" ต้องไม่มาก่อน "จากวันที่"'
       : null;
   const canStart = Boolean(
     bankCode && periodStart && periodEnd && !rangeError && (accounts.length === 0 || bankAccountNo)
@@ -331,14 +331,14 @@ export default function NewReconciliationModal({
             )}
             {!loadingAccounts && accounts.length === 0 && (
               <p className="text-xs text-amber-700 mt-1">
-                โหลดรายชื่อบัญชีไม่สำเร็จ — จะกระทบยอดรวมทุกบัญชีของธนาคารที่เลือก
+                โหลดรายชื่อบัญชีไม่สำเร็จ จะกระทบยอดรวมทุกบัญชีของธนาคารที่เลือก
               </p>
             )}
             {!loadingAccounts && accounts.length > 0 && !accountDimensionReady && (
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
-                ระบบยังไม่พร้อมแยกข้อมูลตามเลขบัญชี กรุณาติดต่อผู้ดูแลระบบ
-                ขณะนี้หน้ากระทบยอดจะแสดงรวมทุกบัญชีของธนาคารที่เลือก
-              </p>
+              <div className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-2">
+                <span>ยังแยกบัญชีไม่ได้ จะแสดงรวมทุกบัญชี</span>
+                <HelpTooltip label="เกี่ยวกับการแสดงรวมทุกบัญชี">ระบบยังไม่พร้อมแยกข้อมูลตามเลขบัญชี กรุณาติดต่อผู้ดูแลระบบ ขณะนี้จะแสดงรวมทุกบัญชีของธนาคารที่เลือก</HelpTooltip>
+              </div>
             )}
           </div>
 
@@ -353,7 +353,7 @@ export default function NewReconciliationModal({
               <option value={CUSTOM_RANGE}>-- กำหนดวันที่เอง / รวมทุกไฟล์ --</option>
               {imports.map((imp) => (
                 <option key={imp.ImportId} value={imp.ImportId}>
-                  {imp.FileName} ({toDateInputValue(imp.PeriodStart)} – {toDateInputValue(imp.PeriodEnd)}) ·{" "}
+                  {imp.FileName} ({toDateInputValue(imp.PeriodStart)} ถึง {toDateInputValue(imp.PeriodEnd)}) ·{" "}
                   {imp.ImportedRowCount} รายการ
                 </option>
               ))}

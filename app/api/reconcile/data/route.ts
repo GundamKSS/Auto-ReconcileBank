@@ -118,6 +118,12 @@ export async function GET(req: NextRequest) {
       const senderAccountNo = r.SenderAccountNo ?? fallback?.senderAccountNo ?? null;
       const senderAccountName = r.SenderAccountName ?? fallback?.senderAccountName ?? null;
 
+      const credit = r.Credit !== null && r.Credit !== undefined ? Number(r.Credit) : null;
+      const debit = r.Debit !== null && r.Debit !== undefined ? Number(r.Debit) : null;
+      const direction: 'IN' | 'OUT' = credit !== null && (debit === null || credit > 0) ? 'IN' : 'OUT';
+      const rawAmount = credit !== null ? credit : (debit !== null ? debit : 0);
+      const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : 0;
+
       return {
         id: `bank-${r.LineId}`,
         lineId: Number(r.LineId),
@@ -125,13 +131,13 @@ export async function GET(req: NextRequest) {
         accountNo: r.BankAccountNo ?? null,
         date: r.TranDate,
         ref: r.ChequeNo && r.ChequeNo !== '0' ? `Chq ${r.ChequeNo}` : `L-${r.LineId}`,
-        direction: r.Credit !== null ? 'IN' : 'OUT',
+        direction,
         description: r.Description,
         rawDescription: r.RawDescription ?? null,
         senderBank,
         senderAccountNo,
         senderAccountName,
-        amount: r.Credit !== null ? r.Credit : r.Debit,
+        amount,
       };
     });
 

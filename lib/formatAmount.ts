@@ -10,7 +10,10 @@
  * ฝั่งบัญชีเห็นแล้วจะสงสัยทันทีว่ายอดไม่ลงตัวจริงหรือเปล่า ทั้งที่จริงลงตัวพอดี
  * (เจอจริงที่ช่อง "ยอดเท่ากัน" ฝั่งเงินออก ตอนเลือก 98 รายการเทียบกับ 119 รายการ)
  */
-export function formatAmount(n: number): string {
+export function formatAmount(n: number | null | undefined): string {
+  if (n === null || n === undefined || typeof n !== 'number' || Number.isNaN(n)) {
+    return '0.00';
+  }
   const text = n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   // แก้เฉพาะ "-0.00" ตอนแสดงผลเท่านั้น ไม่ไปยุ่งกับการปัดเศษ
   // (เคยลองปัดเองด้วย Math.round(n * 100) / 100 แล้วพบว่าเปลี่ยนผลลัพธ์ของค่าครึ่งสตางค์พอดี
@@ -21,6 +24,6 @@ export function formatAmount(n: number): string {
 
 /** เหมือน formatAmount แต่ยอมรับค่าว่างได้ — ใช้กับคอลัมน์ในรายงานที่บางแถวไม่มียอด */
 export function formatAmountOrDash(n: number | null | undefined): string {
-  if (n === null || n === undefined) return '-';
+  if (n === null || n === undefined || (typeof n === 'number' && Number.isNaN(n))) return '-';
   return formatAmount(n);
 }

@@ -46,22 +46,26 @@ export default function ReconcileWorkspace() {
     <div className="flex-1 min-w-0 flex flex-col bg-gray-50 lg:h-full lg:overflow-hidden">
       {/* ขั้นตั้งค่ายังมีปุ่มสร้างงานใหม่ แต่เมื่อเข้าสู่ workspace แล้วให้ตารางใช้พื้นที่เต็มทันที */}
       {!session && (
-        <div className="flex items-center gap-3 px-4 sm:px-6 py-3 bg-white border-b border-gray-100 flex-wrap shrink-0">
-          <button
-            onClick={toggleMobileOpen}
-            className="p-1.5 text-gray-400 hover:text-gray-600 shrink-0 lg:hidden"
-            aria-label="เปิดหรือปิดเมนู"
-          >
-            <PanelLeft size={18} />
-          </button>
+        <div className="flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-white border-b border-gray-100 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <button
+              onClick={toggleMobileOpen}
+              className="p-1.5 text-gray-400 hover:text-gray-600 shrink-0 lg:hidden"
+              aria-label="เปิดหรือปิดเมนู"
+            >
+              <PanelLeft size={18} />
+            </button>
 
-          <div className="flex-1 min-w-[160px] order-3 sm:order-none">
-
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="h-2 w-2 rounded-full bg-slate-300 shrink-0" />
+              <h1 className="text-sm font-semibold text-slate-800 truncate">กระทบยอดธนาคาร</h1>
+              <span className="text-xs text-slate-400 hidden sm:inline shrink-0">• ยังไม่ได้เลือกงวดงาน</span>
+            </div>
           </div>
 
           <button
             onClick={openNewReconciliation}
-            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg shrink-0 whitespace-nowrap"
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-medium px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl shrink-0 whitespace-nowrap shadow-xs transition-colors"
           >
             <Plus size={16} /> เริ่มกระทบยอดใหม่
           </button>

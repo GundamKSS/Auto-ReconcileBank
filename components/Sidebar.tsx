@@ -289,7 +289,7 @@ export default function Sidebar() {
             href="/dashboard"
             onClick={(e) => handleNavigate(e, '/dashboard')}
             className="group flex items-center gap-3"
-            aria-label="Auto Reconcile Bank — กลับหน้าภาพรวม"
+            aria-label="Auto Reconcile Bank กลับหน้าภาพรวม"
           >
             <motion.img
               src="/logo.svg"

@@ -203,7 +203,7 @@ export default function MasterGl() {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการบัญชี BC365</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">รายการ BC365</h1>
               <HelpTooltip label="เกี่ยวกับรายการบัญชี BC365">รายการเงินเข้าและเงินออกจาก BC365 หากต้องการแก้ไข ให้แก้ใน BC365 แล้วดึงข้อมูลใหม่ที่หน้านำเข้าข้อมูลหรือกระทบยอด</HelpTooltip>
             </div>
           </div>
@@ -436,7 +436,7 @@ export default function MasterGl() {
               emptyState={
                 hasActiveFilters || filterStatus ? (
                   <>
-                    ไม่พบรายการที่ตรงกับตัวกรอง —{" "}
+                    ไม่พบรายการที่ตรงกับตัวกรอง {" "}
                     <button
                       onClick={() => {
                         clearFilters();

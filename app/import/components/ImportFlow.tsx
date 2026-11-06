@@ -86,7 +86,7 @@ export default function ImportFlow() {
 
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
-  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; skippedCount: number; otherSideCount: number } | null>(null);
+  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; skippedCount: number; otherSideCount: number; message?: string } | null>(null);
 
   // ฝั่งที่นำเข้าตามสิทธิ์ AP/AR (lib/importSide.ts) — AP เงินออก, AR เงินเข้า, มีทั้งคู่/Master เลือกทุกครั้ง
   // server ตรวจซ้ำทั้งตอน preview และนำเข้า ค่าที่นี่มีไว้ให้หน้าจอพาไปถูกทาง
@@ -276,7 +276,12 @@ export default function ImportFlow() {
         setImportError(data.error || "นำเข้าไม่สำเร็จ");
         return;
       }
-      setImportSuccess({ rowCount: data.rowCount, skippedCount: data.skippedCount ?? 0, otherSideCount: data.otherSideCount ?? 0 });
+      setImportSuccess({
+        rowCount: data.rowCount,
+        skippedCount: data.skippedCount ?? 0,
+        otherSideCount: data.otherSideCount ?? 0,
+        message: data.message,
+      });
     } catch {
       setImportError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
     } finally {
@@ -417,10 +422,10 @@ export default function ImportFlow() {
                 </div>
 
                 {!accountDimensionReady && (
-                  <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4 max-w-lg">
-                    ระบบยังไม่พร้อมแยกข้อมูลตามเลขบัญชี กรุณาติดต่อผู้ดูแลระบบ
-                    หากนำเข้าตอนนี้ ไฟล์จะผูกกับธนาคารโดยไม่ระบุบัญชี
-                  </p>
+                  <div className="flex items-center gap-1 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-4 max-w-lg">
+                    <span>ยังแยกบัญชีไม่ได้ ไฟล์จะไม่ระบุบัญชี</span>
+                    <HelpTooltip label="กรณีระบบยังแยกบัญชีไม่ได้">กรุณาติดต่อผู้ดูแลระบบ หากนำเข้าตอนนี้ ไฟล์จะผูกกับธนาคารโดยไม่ระบุเลขบัญชี</HelpTooltip>
+                  </div>
                 )}
               </div>
             )}
@@ -495,11 +500,14 @@ export default function ImportFlow() {
 
             {accounts.length === 0 ? (
               // โหลดรายชื่อบัญชีไม่ได้เลย (API ล่ม) — ต้องยอมให้ข้ามขั้นนี้ ไม่งั้นนำเข้าไฟล์ไม่ได้ทั้งระบบ
-              <p className="mt-6 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+              <div className="mt-6 flex items-center gap-1 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <span>
                 {loadingAccounts
                   ? "กำลังโหลดรายชื่อบัญชี..."
-                  : "ไม่พบรายชื่อบัญชี หากดำเนินการต่อ ไฟล์จะผูกกับธนาคารโดยไม่ระบุบัญชี กรุณาติดต่อผู้ดูแลระบบเพื่อตรวจสอบ"}
-              </p>
+                  : "ไม่พบบัญชี หากนำเข้าต่อ ไฟล์จะไม่ระบุบัญชี"}
+                </span>
+                {!loadingAccounts && <HelpTooltip label="เมื่อไม่พบรายชื่อบัญชี">กรุณาติดต่อผู้ดูแลระบบเพื่อตรวจสอบ หากดำเนินการต่อ ไฟล์จะผูกกับธนาคารโดยไม่ระบุเลขบัญชี</HelpTooltip>}
+              </div>
             ) : accountsOfBank.length === 0 ? (
               <p className="mt-6 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
                 ยังไม่มีบัญชีของ {selectedBank} ให้เลือก กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มบัญชี
@@ -549,9 +557,10 @@ export default function ImportFlow() {
               <div className="mt-6">
                 <h3 className="text-sm font-semibold text-slate-800">ฝั่งที่จะนำเข้า</h3>
                 {sides.length === 1 ? (
-                  <p className="mt-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
-                    นำเข้าเฉพาะ <span className="font-semibold">{IMPORT_SIDE_LABELS[sides[0]]}</span> ตามสิทธิ์ของคุณ
-                  </p>
+                  <div className="mt-2 flex items-center gap-1 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                    <span className="font-semibold">{sides[0] === 'ALL' ? 'นำเข้าทั้งไฟล์' : `นำเข้า${IMPORT_SIDE_LABELS[sides[0]]}`}</span>
+                    <HelpTooltip label="ข้อมูลที่จะนำเข้า">{sides[0] === 'ALL' ? 'นำเข้าทั้งเงินเข้าและเงินออก เพื่อให้ข้อมูลครบและรองรับการหักล้างรายการธนาคาร' : `นำเข้าเฉพาะ${IMPORT_SIDE_LABELS[sides[0]]}ตามสิทธิ์ของคุณ`}</HelpTooltip>
+                  </div>
                 ) : (
                   <>
                     <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2" role="radiogroup" aria-label="ฝั่งที่จะนำเข้า">
@@ -818,14 +827,14 @@ export default function ImportFlow() {
                         <CheckCircle2 size={18} className="text-slate-400 mt-0.5 shrink-0" />
                         <span className="text-sm text-slate-500">
                           ไม่นำเข้า{IMPORT_SIDE_LABELS[preview.side === "IN" ? "OUT" : "IN"]}{" "}
-                          {preview.sideCounts[preview.side === "IN" ? "OUT" : "IN"].toLocaleString()} รายการ — เป็นงานของอีกทีม
+                          {preview.sideCounts[preview.side === "IN" ? "OUT" : "IN"].toLocaleString()} รายการ เป็นงานของอีกทีม
                         </span>
                       </div>
                     )}
                     <div className="flex items-start gap-2">
                       <CheckCircle2 size={18} className="text-green-500 mt-0.5" />
                       <span className="text-sm text-slate-700">
-                        ช่วงวันที่ {preview.periodStart} – {preview.periodEnd}
+                        ช่วงวันที่ {preview.periodStart} ถึง {preview.periodEnd}
                       </span>
                     </div>
                     {preview.warnings.possibleDuplicates > 0 && (
@@ -854,7 +863,7 @@ export default function ImportFlow() {
                           <span className="font-semibold">
                             {preview.warnings.overlap.newCount.toLocaleString()} รายการใหม่
                           </span>{" "}
-                          ({preview.warnings.overlap.newPeriodStart} – {preview.warnings.overlap.newPeriodEnd})
+                          ({preview.warnings.overlap.newPeriodStart} ถึง {preview.warnings.overlap.newPeriodEnd})
                         </span>
                       </div>
                     )}
@@ -868,12 +877,22 @@ export default function ImportFlow() {
                 )}
 
                 {importSuccess ? (
-                  <div className="p-4 bg-green-50 border border-green-100 rounded-xl text-sm text-green-700">
-                    นำเข้าสำเร็จ {importSuccess.rowCount.toLocaleString()} รายการ
-                    {importSuccess.skippedCount > 0 &&
-                      ` · ข้ามรายการที่นำเข้าแล้ว ${importSuccess.skippedCount.toLocaleString()} รายการ`}
-                    {importSuccess.otherSideCount > 0 &&
-                      ` · ไม่นำเข้ารายการอีกฝั่ง ${importSuccess.otherSideCount.toLocaleString()} รายการ`}
+                  <div className={`p-4 rounded-xl text-sm border ${importSuccess.rowCount > 0 ? "bg-green-50 border-green-100 text-green-700" : "bg-amber-50 border-amber-100 text-amber-800"}`}>
+                    {importSuccess.rowCount > 0 ? (
+                      <>
+                        นำเข้าสำเร็จ {importSuccess.rowCount.toLocaleString()} รายการ
+                        {importSuccess.skippedCount > 0 &&
+                          ` · ข้ามรายการที่นำเข้าแล้ว ${importSuccess.skippedCount.toLocaleString()} รายการ`}
+                        {importSuccess.otherSideCount > 0 &&
+                          ` · ไม่นำเข้ารายการอีกฝั่ง ${importSuccess.otherSideCount.toLocaleString()} รายการ`}
+                      </>
+                    ) : (
+                      <>
+                        {importSuccess.message || "ไม่มีรายการใหม่ให้นำเข้า (ทุกรายการมีอยู่ในระบบแล้ว)"}
+                        {importSuccess.skippedCount > 0 &&
+                          ` · ตรวจพบรายการเดิมแล้ว ${importSuccess.skippedCount.toLocaleString()} รายการ`}
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="mt-auto flex flex-col gap-3">

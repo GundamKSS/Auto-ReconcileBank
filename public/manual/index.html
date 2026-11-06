@@ -230,6 +230,221 @@
   .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: auto; }
   .check input { width: 18px; height: 18px; accent-color: var(--ar); cursor: pointer; }
 
+  /* ---------- Step Conditions Box / Button ---------- */
+  .step-rules-box {
+    margin: 12px 0 6px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    background: #f8fafc;
+    overflow: hidden;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .step-rules-box[open] {
+    border-color: #93c5fd;
+    background: #fff;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.08);
+  }
+  .step-rules-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: #1e40af;
+    background: #eff6ff;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    transition: background .15s;
+  }
+  .step-rules-btn::-webkit-details-marker { display: none; }
+  .step-rules-btn:hover { background: #dbeafe; }
+  .step-rules-btn .badge-pill {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #bfdbfe;
+    color: #1e3a5f;
+    margin-left: 2px;
+  }
+  .step-rules-btn .chevron {
+    margin-left: auto;
+    width: 14px;
+    height: 14px;
+    transition: transform .2s ease;
+    color: #64748b;
+    flex-shrink: 0;
+  }
+  .step-rules-box[open] .step-rules-btn .chevron {
+    transform: rotate(180deg);
+    color: #1e40af;
+  }
+  .step-rules-body {
+    padding: 10px 14px 12px;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--text-2);
+    border-top: 1px solid #e2e8f0;
+  }
+  .step-rules-body ul { margin: 4px 0 0; padding-left: 18px; }
+  .step-rules-body li { margin: 4px 0; }
+  .step-rules-body b { color: var(--text); }
+  .rule-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 5px;
+    vertical-align: 1px;
+  }
+  .rule-tag.req { background: #dbeafe; color: #1e40af; }
+  .rule-tag.forbid { background: #fee2e2; color: #991b1b; }
+  .rule-tag.info { background: #fef3c7; color: #92400e; }
+  .rule-tag.pass { background: #dcfce7; color: #166534; }
+
+  /* ---------- Screen Guide Box & Mockups ---------- */
+  .screen-guide-box {
+    margin: 12px 0 6px;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    background: #f8fafc;
+    overflow: hidden;
+  }
+  .screen-guide-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #1d4ed8;
+    background: #eff6ff;
+    border-bottom: 1px solid #dbeafe;
+  }
+  .screen-guide-tabs {
+    display: inline-flex;
+    gap: 4px;
+    background: #dbeafe;
+    padding: 2px;
+    border-radius: 6px;
+  }
+  .guide-tab-btn {
+    border: none;
+    background: transparent;
+    color: #1e40af;
+    padding: 3px 8px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .guide-tab-btn:hover {
+    background: rgba(255, 255, 255, 0.6);
+  }
+  .guide-tab-btn.active {
+    background: #ffffff;
+    color: #1d4ed8;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  .screen-guide-body {
+    padding: 12px 14px;
+    background: #ffffff;
+  }
+  .screen-img-container {
+    position: relative;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f1f5f9;
+  }
+  .screen-img-container img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .screen-img-badge {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    background: rgba(15, 23, 42, 0.82);
+    color: #ffffff;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    backdrop-filter: blur(4px);
+    z-index: 2;
+  }
+  .screen-guide-steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .screen-step-mini {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12px;
+    color: var(--text-2);
+    line-height: 1.45;
+  }
+  .screen-step-mini b {
+    display: block;
+    color: #1e3a5f;
+    margin-bottom: 2px;
+    font-size: 12.5px;
+  }
+  .screen-workflow-mock {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 10px 0;
+    padding: 10px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+  }
+  .mock-flow-step {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 11.5px;
+    text-align: center;
+    color: #475569;
+  }
+  .mock-flow-step span {
+    display: block;
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 12px;
+  }
+  .mock-flow-step.mock-flow-lock {
+    border-color: #a7f3d0;
+    background: #ecfdf5;
+  }
+  .mock-flow-step.mock-flow-lock span {
+    color: #047857;
+  }
+  .mock-flow-arrow {
+    color: #94a3b8;
+    font-weight: 700;
+    font-size: 14px;
+  }
+
   /* ---------- FAQ ---------- */
   .faq { display: grid; gap: 10px; }
   .faq details { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 16px; }
@@ -327,7 +542,7 @@
     <h2>ระบบรู้ได้อย่างไรว่าคุณเป็นใคร</h2>
     <p class="sub">ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับระบบกลาง ระบบจะดูสิทธิ์ให้เอง</p>
     <div class="who">
-      <div class="card"><h4>Admin ในระบบกลาง</h4><p>ได้สิทธิ์ทุกอย่างทันที</p></div>
+      <div class="card"><h4>Admin ในระบบกลาง (IT กำหนด)</h4><p>ได้สิทธิ์ทุกอย่างทันที</p></div>
       <div class="card"><h4>User ที่ได้สิทธิ์ MASTER</h4><p>เป็น Master ทำได้เหมือน Admin ทุกอย่าง</p></div>
       <div class="card"><h4>User ที่ได้สิทธิ์ AP หรือ AR</h4><p>AP ทำงานเงินออก AR ทำงานเงินเข้า</p></div>
       <div class="card"><h4>User ที่ยังไม่ได้รับสิทธิ์</h4><p>ดูหน้าภาพรวมและรายงานได้อย่างเดียว ขอสิทธิ์ได้จาก Admin</p></div>
@@ -360,7 +575,7 @@
             <td data-col="ap"><span class="part">เงินออก</span></td><td data-col="ar"><span class="part">เงินเข้า</span></td><td data-col="admin"><span class="yes">ทั้งหมด</span></td><td data-col="master"><span class="yes">ทั้งหมด</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
           <tr><td>หักล้างรายการ BC365</td>
             <td data-col="ap"><span class="yes">ได้</span></td><td data-col="ar"><span class="yes">ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
-          <tr><td>ยกเลิกการจับคู่ และคืนรายการพัก</td>
+          <tr><td>ยกเลิกการจับคู่ และจัดการรายการพัก (หาคู่/ส่งคืน)</td>
             <td data-col="ap"><span class="part">เงินออก</span></td><td data-col="ar"><span class="part">เงินเข้า</span></td><td data-col="admin"><span class="yes">ทั้งหมด</span></td><td data-col="master"><span class="yes">ทั้งหมด</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
           <tr><td>ลบไฟล์ธนาคาร</td>
             <td data-col="ap"><span class="part">ไฟล์เงินออก</span></td><td data-col="ar"><span class="part">ไฟล์เงินเข้า</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
@@ -368,7 +583,7 @@
             <td data-col="ap"><span class="part">งาน AP</span></td><td data-col="ar"><span class="part">งาน AR</span></td><td data-col="admin"><span class="yes">ทั้ง AP และ AR</span></td><td data-col="master"><span class="yes">ทั้ง AP และ AR</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
           <tr><td>เปิดงวดที่ปิดแล้ว</td>
             <td data-col="ap"><span class="no">ไม่ได้</span></td><td data-col="ar"><span class="no">ไม่ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
-          <tr><td>เพิ่มหรือปิดบัญชีธนาคาร</td>
+          <tr><td>เพิ่ม เปิด หรือปิดบัญชีธนาคาร (Active/Inactive)</td>
             <td data-col="ap"><span class="no">ดูได้อย่างเดียว</span></td><td data-col="ar"><span class="no">ดูได้อย่างเดียว</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
           <tr><td>ให้สิทธิ์พนักงาน</td>
             <td data-col="ap"><span class="no">ไม่ได้</span></td><td data-col="ar"><span class="no">ไม่ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="part">ได้ ยกเว้นสิทธิ์ของตัวเอง</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
@@ -435,7 +650,36 @@
       <details><summary>ระบบเตือนว่ายอดคงเหลือไม่ครบ</summary>
         <div><p>อีกทีมอาจยังไม่ได้นำเข้าไฟล์ของตัวเอง ให้แจ้งอีกทีมนำเข้าไฟล์เดียวกัน ระบบจะไม่นำเข้ารายการซ้ำ</p></div></details>
       <details><summary>กดยืนยันงานแล้วไม่ผ่าน</summary>
-        <div><p>ถ้าอีกทีมยืนยันไว้แล้ว ระบบจะตรวจว่ายอดตรงกันและวันที่ตรงกันก่อนปิดงวด ให้จับคู่ พักรายการ หรือระบุ JV ปรับปรุงให้ครบก่อน</p></div></details>
+        <div>
+          <p>ระบบตรวจสอบความถูกต้อง 2 ระดับ:</p>
+          <ol style="margin:6px 0 8px;padding-left:20px;font-size:0.95em">
+            <li><b>การยืนยันของฝั่งตนเอง (AP หรือ AR):</b> ต้องไม่มีรายการ Statement ธนาคารฝั่งตนเองค้างรอจับคู่ และต้องนำเข้าไฟล์ Statement ถึงวันสิ้นงวดแล้ว</li>
+            <li><b>การปิดงวดอัตโนมัติ (เมื่อยืนยันครบ 2 ฝั่ง):</b> ทั้งสองทีมต้องยืนยันครอบคลุมช่วงวันที่เดียวกัน, นำเข้า Statement ครบทั้งสองฝั่ง และยอดคงเหลือสุทธิตรงกัน (ผลต่างเป็นศูนย์หรืออธิบายได้ครบถ้วน)</li>
+          </ol>
+          <p>หากไม่ผ่านข้อใด ให้อ่านข้อความแจ้งเตือนสีแดงหรือสีเหลืองข้างปุ่มยืนยัน ระบบจะระบุว่าขาดรายการใด</p>
+        </div></details>
+      <details><summary>หน้ารายการพักสามารถจับคู่กับ Statement ได้ทันทีอย่างไร</summary>
+        <div>
+          <p>ระบบมีระบบช่วยค้นหา Statement บัญชีเดียวกันทุกเดือนที่มียอดตรงกันให้รายการพักอัตโนมัติ โดยมีป้ายใต้รายการ:</p>
+          <ul style="margin:6px 0 8px;padding-left:20px;font-size:0.95em">
+            <li><b>ป้ายสีเขียว:</b> ระบบพบคู่ที่มั่นใจสูง แนะนำให้จับคู่</li>
+            <li><b>ป้ายสีเหลือง:</b> พบคู่ที่ยอดตรงกันหลายรายการ ให้เปิดเลือกรายการที่ถูกต้อง</li>
+            <li><b>ป้ายสีเทา:</b> ยังไม่พบ Statement ที่ยอดตรงกัน</li>
+          </ul>
+          <p>กดที่ป้ายเพื่อเปิดหน้าต่างตรวจสอบเหตุผล แล้วกด <span class="btn-name">ใช่ รายการนี้</span> และ <span class="btn-name">ยืนยันจับคู่</span> ได้ทันทีโดยไม่ต้องส่งคืนไปหน้ากระทบยอด</p>
+        </div></details>
+      <details><summary>รายการพักของงวดที่ปิดแล้ว สามารถนำมาจับคู่ได้หรือไม่</summary>
+        <div>
+          <p><b>จับคู่ได้</b> — รายการพักของงวดที่ปิดแล้วสามารถจับคู่กับ Statement ของงวดที่ยังเปิดอยู่ได้ทันที โดยยอดจะถูกบันทึกเป็น "จับคู่ข้ามงวด" ซึ่งจะไม่กระทบยอดคงเหลือของงวดที่ปิดไปแล้ว (แต่หากต้องการยกเลิกคู่นี้ภายหลัง จะต้องให้ Admin หรือ Master เปิดงวดเดิมคืนก่อน)</p>
+        </div></details>
+      <details><summary>การปิดบัญชีธนาคาร (Inactive) มีผลอย่างไร</summary>
+        <div>
+          <p>การกด <b>ปิดบัญชี</b> ในเมนู จัดการข้อมูล แท็บ บัญชีธนาคาร จะซ่อนบัญชีนั้นไม่ให้แสดงในหน้านำเข้าข้อมูล เพื่อป้องกันการนำเข้าผิดบัญชี แต่ประวัติการกระทบยอดและรายงานเดิมยังคงอยู่ครบถ้วน และสามารถกด <b>เปิดบัญชี</b> เพื่อนำกลับมาใช้งานใหม่ได้ทุกเมื่อ</p>
+        </div></details>
+      <details><summary>ข้อมูลผู้โอนและเลขอ้างอิงใน Statement มาจากไหน</summary>
+        <div>
+          <p>ระบบตรวจดึงข้อมูลชื่อผู้โอน/ผู้รับเงินและเลขอ้างอิงจากรายละเอียดของ Statement ธนาคาร (KBANK, SCB, BBL) โดยอัตโนมัติตอนนำเข้าไฟล์ เพื่อช่วยให้ผู้ใช้ตรวจสอบและค้นหาคู่ได้สะดวกรวดเร็วยิ่งขึ้น</p>
+        </div></details>
       <details><summary>แก้ข้อมูลใน BC365 แล้ว แต่ในระบบยังไม่เปลี่ยน</summary>
         <div><p>กดปุ่ม <span class="btn-name">ดึงข้อมูลใหม่จาก BC365</span> ที่หน้ากระทบยอด</p></div></details>
       <details><summary>กดเปิดหน้านี้ แล้วไปหน้าเข้าสู่ระบบ</summary>
@@ -452,6 +696,7 @@
 <script>
 (function () {
   var ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>';
+  var CHEVRON = '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 
   function b(name) { return '<span class="btn-name">' + name + '</span>'; }
 
@@ -466,7 +711,15 @@
           '<li>เข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่านของระบบกลาง</li>' +
           '<li>หน้าภาพรวมบอกยอดเงิน ผลต่าง และรายการที่ยังค้าง</li>' +
           '<li>กดลูกศรซ้ายหรือขวาเพื่อเปลี่ยนเดือน</li>' +
-          '</ol>'
+          '</ol>',
+        conditions: {
+          title: 'เงื่อนไขการเข้าใช้งานและสิทธิ์การมองเห็น',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">บัญชีผู้ใช้</span> เข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่านของระบบกลาง TRW</li>' +
+            '<li><span class="rule-tag info">การมองเห็น</span> ' + s.code + ' จะเห็นเฉพาะข้อมูลฝั่ง' + s.dir + ' ยอดผลต่างและกราฟจะคำนวณจากฝั่งตนเอง</li>' +
+            '<li><span class="rule-tag forbid">ผู้ไม่มีสิทธิ์</span> หากยังไม่ได้รับสิทธิ์ ' + s.code + ' จะดูได้เฉพาะภาพรวมและรายงานเท่านั้น ไม่สามารถเข้าหน้ากระทบยอดได้</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'ดึงข้อมูลจาก BC365',
@@ -476,7 +729,15 @@
           '<li>เลือก <b>รายการบัญชี (BC365)</b></li>' +
           '<li>กด ' + b('ดึงข้อมูลบัญชีทั้งหมดจาก BC365') + ' แล้วรอจนเสร็จ</li>' +
           '</ol>' +
-          '<div class="note info">ถ้าแก้เอกสารใน BC365 แล้วอยากเห็นผลเร็ว ให้กด ' + b('ดึงข้อมูลใหม่จาก BC365') + ' ที่หน้ากระทบยอดแทน</div>'
+          '<div class="note info">ถ้าแก้เอกสารใน BC365 แล้วอยากเห็นผลเร็ว ให้กด ' + b('ดึงข้อมูลใหม่จาก BC365') + ' ที่หน้ากระทบยอดแทน</div>',
+        conditions: {
+          title: 'เงื่อนไขการดึงข้อมูลจาก BC365',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">สิทธิ์</span> ต้องมีสิทธิ์ AP, AR, Admin หรือ Master</li>' +
+            '<li><span class="rule-tag info">ช่องทางดึงข้อมูล</span> ดึงข้อมูลบัญชีทั้งหมดในหน้านำเข้าข้อมูล หรือกดดึงข้อมูลใหม่ที่หน้ากระทบยอดเพื่อซิงค์ 40 วันล่าสุดอย่างรวดเร็ว</li>' +
+            '<li><span class="rule-tag pass">ผลลัพธ์</span> อัปเดตรายการ BankAccountLedgerEntries ล่าสุดเข้าสู่ระบบเพื่อนำไปเปรียบเทียบกับ Statement</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'นำเข้าไฟล์ธนาคาร',
@@ -487,7 +748,17 @@
           '<li>เลือกธนาคารและเลขบัญชีให้ถูก ถ้าเลือกผิด ยอดจะผิดทั้งเดือน</li>' +
           '<li>อัปโหลดไฟล์ ตรวจตัวอย่าง แล้วกดนำเข้า</li>' +
           '</ol>' +
-          '<div class="note info">ระบบนำเข้าเฉพาะ' + s.dir + 'ให้เอง ' + s.otherDir + 'ในไฟล์เดียวกันจะไม่ถูกนำเข้า ทีม ' + s.other + ' นำเข้าไฟล์เดิมได้โดยรายการไม่ซ้ำ</div>'
+          '<div class="note info">ระบบนำเข้าเฉพาะ' + s.dir + 'ให้เอง ' + s.otherDir + 'ในไฟล์เดียวกันจะไม่ถูกนำเข้า ทีม ' + s.other + ' นำเข้าไฟล์เดิมได้โดยรายการไม่ซ้ำ และระบบจะดึงชื่อผู้โอน/ผู้รับเงินและเลขอ้างอิงมาแสดงให้โดยอัตโนมัติ</div>',
+        conditions: {
+          title: 'เงื่อนไขการนำเข้าไฟล์ Statement',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">บัญชีเปิดใช้งาน</span> บัญชีธนาคารต้องมีสถานะเป็น "เปิดใช้งาน (Active)" หากปิดบัญชีอยู่จะไม่แสดงให้เลือกนำเข้า</li>' +
+            '<li><span class="rule-tag req">ธนาคารที่รองรับ</span> รองรับไฟล์ Statement ของ BBL, KBANK และ SCB</li>' +
+            '<li><span class="rule-tag req">เลขบัญชีตรงกัน</span> ต้องเลือกเลขบัญชีให้ตรงกับไฟล์ Statement หากเลือกผิดจะกระทบยอดคงเหลือทั้งเดือน</li>' +
+            '<li><span class="rule-tag pass">แยกเงินเข้า/ออก</span> ระบบนำเข้าเฉพาะรายการ' + s.dir + 'ให้เอง ส่วน' + s.otherDir + 'จะไม่ถูกนำเข้า ทีม ' + s.other + ' สามารถนำเข้าไฟล์เดียวกันได้โดยรายการไม่ซ้ำซ้อน</li>' +
+            '<li><span class="rule-tag forbid">ป้องกันนำเข้าซ้ำ</span> บรรทัดใน Statement ที่เคยนำเข้าแล้ว ระบบจะตรวจจับและไม่นำเข้าซ้ำ</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'เริ่มกระทบยอด',
@@ -498,7 +769,15 @@
           '<li>เลือกธนาคาร บัญชี และไฟล์ที่นำเข้าไว้ หรือกำหนดวันที่เอง</li>' +
           '<li>ถ้าระบบถาม <b>ยอดยกมา BC365</b> ให้กรอกยอดคงเหลือใน BC ของวันก่อนเริ่มงวด</li>' +
           '</ol>' +
-          '<div class="note info">ถ้ามีรายการที่ลงบัญชีข้ามเดือน ให้ติ๊ก <b>รวม BC365 อีก 7 วันของเดือนถัดไป</b></div>'
+          '<div class="note info">ถ้ามีรายการที่ลงบัญชีข้ามเดือน ให้ติ๊ก <b>รวม BC365 อีก 7 วันของเดือนถัดไป</b></div>',
+        conditions: {
+          title: 'เงื่อนไขการเริ่มกระทบยอด',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">เลือกบัญชีและงวด</span> ต้องระบุบัญชีธนาคารและช่วงวันที่ที่ต้องการกระทบยอด</li>' +
+            '<li><span class="rule-tag info">ยอดยกมา BC365</span> ถ้าระบบคำนวณอัตโนมัติไม่ได้ ต้องกรอกยอดยกมาตามรายงานแยกประเภทของวันก่อนเริ่มงวด</li>' +
+            '<li><span class="rule-tag pass">รวม 7 วันถัดไป</span> หากมีเช็คหรือเงินโอนที่ลงบัญชีข้ามเดือน ให้ติ๊ก "รวม BC365 อีก 7 วันของเดือนถัดไป" เพื่อดึงมาจับคู่</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'จับคู่รายการ',
@@ -506,7 +785,7 @@
         href: '/reconcile',
         body: '<ol>' +
           '<li>ตารางซ้ายคือธนาคาร ตารางขวาคือ BC365</li>' +
-          '<li>ติ๊กรายการที่คู่กันทั้งสองฝั่ง</li>' +
+          '<li>ติ๊กรายการที่คู่กันทั้งสองฝั่ง (สามารถดูชื่อผู้โอน/ผู้รับเงินในรายละเอียดเพื่อช่วยยืนยัน)</li>' +
           '<li>ดูยอดด้านล่าง ถ้าเท่ากัน กด ' + b('จับคู่') + '</li>' +
           '</ol>' +
           '<p><b>ปุ่มช่วยเลือก</b></p><ul>' +
@@ -514,7 +793,46 @@
           '<li>' + b('ต้องรวมหลายรายการ') + ' เลือกคู่ที่ต้องรวมหลายรายการ ควรตรวจก่อนกดจับคู่</li>' +
           '<li>' + b('ผู้ช่วยจับคู่') + ' หาคู่ที่วันที่ไม่ตรงกัน ควรตรวจก่อนยืนยัน</li>' +
           '</ul>' +
-          '<div class="note">ถ้ายอดไม่เท่ากัน ปุ่มจะเปลี่ยนเป็น ' + b('จับคู่และพักส่วนต่าง') + ' และต้องเขียนหมายเหตุ ถ้ากดปุ่มไม่ได้ ให้อ่านข้อความสีเหลืองข้างยอดเงิน</div>'
+          '<div class="note">ถ้ายอดไม่เท่ากัน ปุ่มจะเปลี่ยนเป็น ' + b('จับคู่และพักส่วนต่าง') + ' และต้องเขียนหมายเหตุ ถ้ากดปุ่มไม่ได้ ให้อ่านข้อความสีเหลืองข้างยอดเงิน</div>' +
+          '<div class="screen-guide-box">' +
+            '<div class="screen-guide-head">' +
+              '<span>📍 ตำแหน่งปุ่ม "ผู้ช่วยจับคู่" บนหน้าจอ</span>' +
+              '<div class="screen-guide-tabs">' +
+                '<button type="button" class="guide-tab-btn active" data-view="static">📷 ภาพชี้พิกัด</button>' +
+                '<button type="button" class="guide-tab-btn" data-view="gif">🎬 คลิปสาธิต (GIF)</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="screen-guide-body">' +
+              '<div class="screen-view-item screen-view-static" style="display:block">' +
+                '<div class="screen-img-container">' +
+                  '<span class="screen-img-badge">✨ ปุ่มอยู่แถบเครื่องมือเหนือตาราง</span>' +
+                  '<img src="img/match-assistant-guide.png" alt="ตำแหน่งปุ่มผู้ช่วยจับคู่บนแถบเครื่องมือ" loading="lazy">' +
+                '</div>' +
+              '</div>' +
+              '<div class="screen-view-item screen-view-gif" style="display:none">' +
+                '<div class="screen-img-container">' +
+                  '<span class="screen-img-badge">🎬 คลิปเคลื่อนไหวสาธิตการทำงาน</span>' +
+                  '<img src="img/match-assistant-demo.gif" alt="คลิปสาธิตผู้ช่วยจับคู่" loading="lazy">' +
+                '</div>' +
+              '</div>' +
+              '<div class="screen-guide-steps">' +
+                '<div class="screen-step-mini"><b>1. ปุ่มอยู่ตรงไหน</b>อยู่บนแถบเครื่องมือเหนือตารางธนาคาร (ปุ่มสีขาวประกายม่วง ✨)</div>' +
+                '<div class="screen-step-mini"><b>2. สแกนหาคู่ข้ามวัน</b>ระบบช่วยค้นหาคู่ที่ยอดตรงกันแต่คนละวัน (🟢 มั่นใจสูง / 🟡 ปานกลาง)</div>' +
+                '<div class="screen-step-mini"><b>3. กดยืนยัน Match</b>ตรวจรายละเอียดแล้วกดปุ่ม "ยอมรับ Match" เพื่อบันทึกทันที</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>',
+        conditions: {
+          title: 'เงื่อนไขที่จะจับคู่รายการ (Matching Rules)',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">ยอดเงินต้องเท่ากันเป๊ะ</span> ยอดรวมฝั่งธนาคารและ BC365 ต้องเท่ากันพอดี (ผลต่างอนุโลมไม่เกิน 0.005 บาทเท่านั้น)</li>' +
+            '<li><span class="rule-tag forbid">ห้ามจับคู่ข้ามบัญชี</span> <b style="color:#b91c1c">ต้องเป็นบัญชีธนาคารเดียวกันเท่านั้น</b> ระบบไม่อนุญาตให้จับคู่ข้ามบัญชีเด็ดขาด</li>' +
+            '<li><span class="rule-tag req">ทิศทางตรงกัน</span> ต้องเป็นรายการ' + s.dir + 'เหมือนกันทั้งสองฝั่ง (เงินออก Bank Debit ↔ GL Credit, เงินเข้า Bank Credit ↔ GL Debit)</li>' +
+            '<li><span class="rule-tag req">งวดต้องยังเปิดอยู่</span> วันที่ของรายการต้องไม่อยู่ในงวดที่ปิดหรือล็อกแล้ว</li>' +
+            '<li><span class="rule-tag pass">รูปแบบที่รองรับ</span> รองรับการจับคู่ 1:1, 1:N (รวมหลายรายการ), N:1 และ N:M</li>' +
+            '<li><span class="rule-tag forbid">กรณียอดไม่เท่ากัน</span> ปุ่มจะเปลี่ยนเป็น "จับคู่และพักส่วนต่าง" ซึ่งต้องระบุหมายเหตุเหตุผลความจำเป็น</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'รายการที่ยังไม่มีคู่',
@@ -524,29 +842,105 @@
           '<li>' + b('พักรายการ') + ' เก็บรายการ BC365 ไว้จับคู่ทีหลัง พักได้เฉพาะรายการ BC365</li>' +
           '<li>' + b('ระบุเป็น JV ปรับปรุง') + ' ใช้กับ JV ที่บันทึกใน BC365 แล้ว</li>' +
           '<li>' + b('หักล้างรายการ BC365') + ' ใช้กับรายการเงินเข้าและเงินออกใน BC365 ที่หักกันเอง</li>' +
-          '</ul>'
+          '</ul>',
+        conditions: {
+          title: 'เงื่อนไขการพักรายการ และการหักล้าง (Suspense & Offset)',
+          body: '<ul>' +
+            '<li><span class="rule-tag forbid">ห้ามพักรายการธนาคาร</span> <b>พักได้เฉพาะรายการฝั่ง BC365 เท่านั้น</b> ห้ามพัก Statement ธนาคารเด็ดขาด เพราะเป็นเอกสารหลักฐานกฎหมายภายนอก</li>' +
+            '<li><span class="rule-tag req">การพักรายการ (Suspense)</span> ต้องระบุหมายเหตุเหตุผลทุกครั้ง เช่น รอใบเสร็จ, รอตัดเช็ค, รอยืนยันยอด</li>' +
+            '<li><span class="rule-tag req">การหักล้าง (Offset)</span> ต้องเป็นรายการ BC365 ในบัญชีเดียวกัน มียอดเงินเข้าและเงินออกหักลบกันสุทธิเป็น <b>0.00 บาทพอดี</b> และไม่มีเงินผ่านธนาคาร</li>' +
+            '<li><span class="rule-tag pass">การกลับรายการ (Reversal)</span> รายการที่มี Source Code = REVERSAL เลขที่เอกสารเดียวกันและยอดตรงข้าม ระบบจะหักล้างให้อัตโนมัติ</li>' +
+            '<li><span class="rule-tag req">JV ปรับปรุง</span> ใช้กับรายการปรับปรุงยอดหรือค่าธรรมเนียมที่ลงบันทึกใน BC365 เรียบร้อยแล้ว</li>' +
+            '</ul>'
+        }
       },
       {
-        title: 'ตรวจยอดคงเหลือ',
+        title: 'ตรวจยอดคงเหลือและสถานะงวด',
         where: 'เมนู กระทบยอด',
         href: '/reconcile',
         body: '<ol>' +
-          '<li>กดป้ายผลต่างตรงกลางแถบด้านบน</li>' +
+          '<li>แถบด้านบนมี <b>การ์ดติดตามสถานะงวด (Period Workflow)</b> แสดงว่า AP และ AR ยืนยันแล้วหรือยัง</li>' +
+          '<li>กดป้ายผลต่างหรือการ์ดสถานะเพื่อเปิดหน้าต่าง <b>ยอดคงเหลือและพิสูจน์ยอด</b></li>' +
           '<li>ดูว่ายอดคงเหลือธนาคารกับ BC365 ตรงกันไหม แถวสีเหลืองคือวันที่ยอดไม่ตรง</li>' +
           '<li>ถ้ายังมีผลต่าง ให้บันทึก JV ใน BC365 ดึงข้อมูลใหม่ แล้วกด ' + b('ระบุเป็น JV ปรับปรุง') + '</li>' +
           '</ol>' +
-          '<div class="note">ถ้าทีม ' + s.other + ' ยังไม่นำเข้า' + s.otherDir + ' ยอดคงเหลือจะยังไม่ครบ ระบบจะขึ้นเตือน</div>'
+          '<div class="note">ถ้าทีม ' + s.other + ' ยังไม่นำเข้า' + s.otherDir + ' ยอดคงเหลือจะยังไม่ครบ ระบบจะขึ้นเตือนสีเหลือง</div>' +
+          '<div class="screen-guide-box">' +
+            '<div class="screen-guide-head">' +
+              '<span>📍 ตำแหน่ง "ป้ายผลต่าง" และขั้นตอนปิดงวด</span>' +
+              '<div class="screen-guide-tabs">' +
+                '<button type="button" class="guide-tab-btn active" data-view="static">📷 ภาพชี้พิกัด</button>' +
+                '<button type="button" class="guide-tab-btn" data-view="gif">🎬 คลิปสาธิต (GIF)</button>' +
+              '</div>' +
+            '</div>' +
+            '<div class="screen-guide-body">' +
+              '<div class="screen-view-item screen-view-static" style="display:block">' +
+                '<div class="screen-img-container">' +
+                  '<span class="screen-img-badge">ป้ายผลต่าง (BalanceBadge) อยู่ตรงกลางแถบด้านบนสุด</span>' +
+                  '<img src="img/period-close-guide.png" alt="ตำแหน่งป้ายผลต่างตรงกลางแถบด้านบน" loading="lazy">' +
+                '</div>' +
+              '</div>' +
+              '<div class="screen-view-item screen-view-gif" style="display:none">' +
+                '<div class="screen-img-container">' +
+                  '<span class="screen-img-badge">🎬 คลิปเคลื่อนไหวสาธิตการยืนยันและปิดงวด</span>' +
+                  '<img src="img/period-close-demo.gif" alt="คลิปสาธิตขั้นตอนยืนยันและปิดงวด" loading="lazy">' +
+                '</div>' +
+              '</div>' +
+              '<div class="screen-workflow-mock">' +
+                '<div class="mock-flow-step"><span>1. คลิกป้ายผลต่าง</span>ตรงกลางแถบด้านบน</div>' +
+                '<div class="mock-flow-arrow">➔</div>' +
+                '<div class="mock-flow-step"><span>2. AP / AR ยืนยันงาน</span>กดปุ่มในหน้าต่างยอดคงเหลือ</div>' +
+                '<div class="mock-flow-arrow">➔</div>' +
+                '<div class="mock-flow-step mock-flow-lock"><span>3. ปิดงวดอัตโนมัติ 🔒</span>เมื่อครบ 2 ฝั่ง + ผลต่างเป็น 0</div>' +
+              '</div>' +
+              '<div class="screen-guide-steps">' +
+                '<div class="screen-step-mini"><b>1. ป้ายผลต่างอยู่ตรงไหน</b>อยู่กึ่งกลางแถบด้านบนสุด (BalanceBadge) คลิกเพื่อเปิดหน้าต่างยอดคงเหลือ</div>' +
+                '<div class="screen-step-mini"><b>2. AP/AR กดยืนยัน</b>ตรวจสอบงานฝั่งตนเอง แล้วกดปุ่ม "ยืนยันงาน AP" หรือ "ยืนยันงาน AR"</div>' +
+                '<div class="screen-step-mini"><b>3. ปิดงวดอัตโนมัติ 🔒</b>เมื่อยืนยันครบ 2 ฝั่งและผลต่างสุทธิเป็น 0.00 บาท ระบบจะล็อกทันที</div>' +
+              '</div>' +
+            '</div>' +
+          '</div>',
+        conditions: {
+          title: 'เงื่อนไขความถูกต้องของยอดคงเหลือและสถานะงวด',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">Statement ครบทั้ง 2 ฝั่ง</span> ยอดคงเหลือสิ้นงวดจะคำนวณถูกต้องสมบูรณ์ต่อเมื่อทั้ง AP (เงินออก) และ AR (เงินเข้า) นำเข้า Statement ครบถ้วน</li>' +
+            '<li><span class="rule-tag req">ยอดคงเหลือต่อเนื่อง</span> วันที่ใน Statement ต้องต่อเนื่องกัน ไม่แหว่ง และยอดต้นวันต้องเท่ากับยอดสิ้นวันก่อนหน้า</li>' +
+            '<li><span class="rule-tag pass">เป้าหมายก่อนปิดงวด</span> ผลต่างคงเหลือหลังปรับปรุงต้องเป็น <b>0.00 บาท</b> พอดี</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'ยืนยันงาน ' + s.code,
         where: 'เมนู กระทบยอด ในหน้าต่างยอดคงเหลือ',
         href: '/reconcile',
         body: '<ol>' +
-          '<li>กด ' + b('ยืนยันงาน ' + s.code) + '</li>' +
-          '<li>เขียนหมายเหตุ ติ๊กช่องรับทราบ แล้วกด ' + b('ยืนยัน') + '</li>' +
+          '<li>ตรวจความพร้อมของฝั่ง ' + s.code + ': ต้องไม่มีรายการ statement ธนาคาร' + s.dir + 'ค้างรอจับคู่ และนำเข้าไฟล์ถึงวันสิ้นงวดแล้ว</li>' +
+          '<li>กด ' + b('ยืนยันงาน ' + s.code) + ' ในหน้าต่างยอดคงเหลือ</li>' +
+          '<li>เขียนหมายเหตุ ติ๊กช่องรับทราบว่าได้ตรวจสอบแล้ว แล้วกด ' + b('ยืนยัน') + '</li>' +
           '<li>หลังยืนยัน จะแก้ไขงาน' + s.dir + 'ไม่ได้ ถ้าต้องแก้ ให้กด ' + b('เปิดงานฝั่งนี้อีกครั้ง') + '</li>' +
           '</ol>' +
-          '<div class="note info">เมื่อ AP และ AR ยืนยันครบ และยอดตรงกัน ระบบจะปิดงวดให้เอง ถ้าปิดงวดแล้วต้องแก้ ให้แจ้ง Admin หรือ Master</div>'
+          '<div class="note info">เมื่อทั้ง AP และ AR ยืนยันครบทั้งสองฝั่ง และยอดผลต่างสุทธิเป็นศูนย์ (หรืออธิบายได้ครบ) ระบบจะทำการ<b>ปิดงวดและล็อกงวดให้อัตโนมัติ</b> ถ้าปิดงวดแล้วต้องแก้ ให้แจ้ง Admin หรือ Master</div>' +
+          '<div class="note">💡 <b>ดูภาพชี้ตำแหน่งปุ่มและแอนิเมชันปิดงวด:</b> ดูได้ที่ขั้นตอนที่ 7 ด้านบน (คลิกป้ายผลต่างตรงกลางแถบด้านบน)</div>',
+        conditions: {
+          title: 'เงื่อนไขที่จะยืนยันงาน และการปิดงวดอัตโนมัติ',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">เงื่อนไขยืนยันงานฝั่ง ' + s.code + ':</span>' +
+              '<ul>' +
+              '<li>ไม่มี Statement ฝั่ง' + s.dir + 'ค้างรอจับคู่ (จับคู่ครบทุกรายการของฝั่งตนเอง)</li>' +
+              '<li>นำเข้า Statement ฝั่งตนเองครบถ้วนจนถึงวันสิ้นงวด</li>' +
+              '<li>กรอกหมายเหตุการยืนยัน และติ๊กรับรองว่าได้ตรวจสอบแล้ว</li>' +
+              '</ul>' +
+            '</li>' +
+            '<li><span class="rule-tag pass">เงื่อนไขปิดงวดอัตโนมัติ (ตรวจเมื่อยืนยันครบ 2 ฝั่ง):</span>' +
+              '<ul>' +
+              '<li>ทั้ง AP และ AR ยืนยันครอบคลุมช่วงวันที่เดียวกัน</li>' +
+              '<li>นำเข้า Statement ครบทั้งเงินเข้าและเงินออก</li>' +
+              '<li>ยอดคงเหลือสุทธิและผลต่างตรงกัน (ผลต่างหลังปรับปรุงเป็นศูนย์)</li>' +
+              '</ul>' +
+            '</li>' +
+            '<li><span class="rule-tag forbid">การล็อกงวด</span> เมื่องวดปิดแล้ว ระบบจะล็อกไม่อนุญาตให้แก้ไข จับคู่ ยกเลิกคู่ หรือลบไฟล์ในงวดนั้นอีก</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'ยกเลิกการจับคู่',
@@ -557,17 +951,53 @@
           '<li>กดที่รายการเพื่อดูรายละเอียด แล้วเลือกกลุ่มที่ต้องการ</li>' +
           '<li>กด ' + b('ส่งกลับ') + ' รายการจะกลับไปรอจับคู่</li>' +
           '</ol>' +
-          '<div class="note info">รายการที่พักไว้ ยกเลิกที่หน้านี้ไม่ได้ ให้ไปที่หน้ารายการพัก</div>'
+          '<div class="note info">รายการที่พักไว้ ยกเลิกที่หน้านี้ไม่ได้ ให้ไปที่หน้ารายการพัก</div>',
+        conditions: {
+          title: 'เงื่อนไขการยกเลิกการจับคู่ (Unmatch)',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">งวดต้องยังเปิดอยู่</span> รายการที่จะยกเลิกต้องอยู่ในงวดที่ยังไม่ได้ปิดหรือล็อก</li>' +
+            '<li><span class="rule-tag forbid">ห้ามยกเลิกในงวดปิด</span> หากงวดถูกปิดไปแล้ว จะกดยกเลิกไม่ได้ (ต้องให้ Master/Admin เปิดงวดคืนก่อน)</li>' +
+            '<li><span class="rule-tag info">ผลของการยกเลิก</span> รายการจะแยกออกจากกันและกลับไปรอจับคู่ในหน้ากระทบยอด พร้อมบันทึกประวัติผู้ยกเลิก</li>' +
+            '<li><span class="rule-tag forbid">รายการพัก</span> รายการที่พักไว้ ยกเลิกที่หน้านี้ไม่ได้ ให้ไปจัดการที่หน้ารายการพัก</li>' +
+            '</ul>'
+        }
       },
       {
-        title: 'คืนรายการพัก',
+        title: 'จัดการรายการพักและหาคู่ใน statement',
         where: 'เมนู รายการพัก',
         href: '/suspense',
-        body: '<ol>' +
-          '<li>ติ๊กรายการที่ต้องการ</li>' +
-          '<li>กด ' + b('คืนไปจับคู่') + ' แล้วยืนยัน</li>' +
-          '<li>รายการจะกลับไปรอที่หน้ากระทบยอด</li>' +
-          '</ol>'
+        body: '<p><b>1. หาคู่ใน statement จากหน้ารายการพักได้ทันที (วิธีแนะนำ)</b></p>' +
+          '<ol>' +
+          '<li>ระบบตรวจหา statement บัญชีเดียวกันทุกเดือนที่ยอดตรงกันให้รายการพักอัตโนมัติ โดยมีป้ายใต้รายการ:' +
+            '<ul>' +
+            '<li><span class="part">เขียว</span> <b>น่าจะตรงกับ statement วันที่...</b> — ระบบพบคู่ที่มีความมั่นใจสูง แนะนำให้จับคู่</li>' +
+            '<li><span class="part">เหลือง</span> <b>พบยอดนี้ใน statement N รายการ</b> — พบคู่ที่ยอดตรงกันหลายรายการ ให้เปิดเลือก</li>' +
+            '<li><span class="part">เทา</span> <b>ยังไม่พบยอดนี้ใน statement</b> — ยังไม่มีรายการที่ยอดตรงกัน</li>' +
+            '</ul>' +
+          '</li>' +
+          '<li>คลิกที่ป้ายเพื่อเปิดหน้าต่าง <b>หาคู่ใน statement</b></li>' +
+          '<li>ตรวจสอบรายการ statement ที่ระบบพบ พร้อมระดับความมั่นใจและเหตุผล</li>' +
+          '<li>กด ' + b('ใช่ รายการนี้') + ' แล้วกด ' + b('ยืนยันจับคู่') + ' รายการจะย้ายไปอยู่ในประวัติการจับคู่ทันที</li>' +
+          '</ol>' +
+          '<div class="note info">รายการพักที่อยู่ในงวดที่ปิดแล้ว สามารถจับคู่กับ statement ของงวดที่ยังเปิดอยู่ได้ทันที (ยอดย้ายเป็น "จับคู่ข้ามงวด" โดยยอดคงเหลือของงวดที่ปิดแล้วไม่เปลี่ยนแปลง)</div>' +
+          '<p style="margin-top:10px"><b>2. ส่งคืนรายการพักไปหน้ากระทบยอด</b></p>' +
+          '<ol>' +
+          '<li>หากต้องการจับคู่แบบหลายรายการรวมกัน (1:N หรือ N:1) หรือมียอดต่างกัน ให้ติ๊กเลือกรายการที่ต้องการ</li>' +
+          '<li>กด ' + b('คืนไปจับคู่') + ' แล้วยืนยัน รายการจะกลับไปรอที่หน้ากระทบยอด</li>' +
+          '</ol>',
+        conditions: {
+          title: 'เงื่อนไขการหาคู่ใน Statement / ข้ามงวด / ข้อห้ามข้ามบัญชี',
+          body: '<ul>' +
+            '<li><span class="rule-tag forbid">ห้ามจับคู่ข้ามบัญชีเด็ดขาด!</span> <b style="color:#b91c1c">ต้องเป็นบัญชีธนาคารเดียวกันเท่านั้น</b> ระบบไม่ยอมให้จับคู่ข้ามบัญชี</li>' +
+            '<li><span class="rule-tag pass">ค้นหาข้ามเดือนได้</span> สามารถค้นหา Statement ได้ทุกเดือนของบัญชีเดียวกัน (เช่น เช็คสั่งจ่ายเดือน ก.ย. ธนาคารเพิ่งตัดเดือน ต.ค.)</li>' +
+            '<li><span class="rule-tag req">ยอดเงินตรงกันพอดี</span> ต้องเป็นคู่ที่ยอดเงินตรงกันถึงสตางค์ (1:1)</li>' +
+            '<li><span class="rule-tag req">ทิศทางเงินตรงกัน</span> เงินเข้าตรงกับเงินเข้า, เงินออกตรงกับเงินออก</li>' +
+            '<li><span class="rule-tag req">Statement ต้องอยู่ในงวดเปิด</span> Statement ที่จะจับคู่ต้องอยู่ในงวดที่ยังเปิดและฝั่งนั้นยังไม่ยืนยันงาน</li>' +
+            '<li><span class="rule-tag pass">รายการพักงวดปิดจับคู่ได้ (ข้ามงวด)</span> รายการพักที่อยู่ในงวดที่ปิดแล้ว สามารถจับคู่กับ Statement ในงวดที่เปิดอยู่ได้ ยอดจะย้ายเป็น "จับคู่ข้ามงวด" โดยยอดคงเหลือของงวดเดิมไม่เปลี่ยนแปลง</li>' +
+            '<li><span class="rule-tag forbid">การยกเลิกคู่ข้ามงวด</span> หากจับคู่ผิดและต้องการยกเลิก ต้องให้ Master/Admin เปิดงวดเดิมคืนก่อน จึงจะยกเลิกคู่นั้นได้</li>' +
+            '<li><span class="rule-tag info">ส่งคืนไปหน้ากระทบยอด</span> ใช้เมื่อต้องการจับคู่แบบหลายรายการ (1:N หรือ N:1) หรือมียอดต่างกัน</li>' +
+            '</ul>'
+        }
       },
       {
         title: 'ดูรายงาน',
@@ -577,7 +1007,15 @@
           '<li>เลือกช่วงวันที่ ธนาคาร และบัญชี</li>' +
           '<li>กด ' + b('ดาวน์โหลด Excel') + ' เพื่อเก็บหรือส่งต่อ</li>' +
           '</ol>' +
-          '<div class="note info">รายงานแสดงเฉพาะ' + s.dir + '</div>'
+          '<div class="note info">รายงานแสดงเฉพาะ' + s.dir + '</div>',
+        conditions: {
+          title: 'เงื่อนไขการออกรายงานและดาวน์โหลด Excel',
+          body: '<ul>' +
+            '<li><span class="rule-tag req">สิทธิ์</span> ทุกบทบาท รวมถึงผู้ใช้ทั่วไป (Viewer) สามารถดูรายงานและดาวน์โหลด Excel ได้</li>' +
+            '<li><span class="rule-tag info">การแสดงผลตามสิทธิ์</span> ' + s.code + ' จะดูได้เฉพาะรายการฝั่ง' + s.dir + ' ส่วน Admin/Master จะเลือกดูได้ทั้งเงินเข้า เงินออก หรือทั้งหมด</li>' +
+            '<li><span class="rule-tag pass">การตรวจสอบ</span> ใช้สำหรับส่งมอบให้ผู้บริหารหรือผู้สอบบัญชีเพื่อยืนยันสถานะการกระทบยอด</li>' +
+            '</ul>'
+        }
       }
     ];
   }
@@ -651,7 +1089,16 @@
             '<li>เลือกสิทธิ์ AP AR หรือ MASTER แล้วเลือก เปิดสิทธิ์ หรือ ปิดสิทธิ์</li>' +
             '<li>เขียนเหตุผล แล้วบันทึก</li>' +
             '</ol>' +
-            '<div class="note">พนักงาน AP และ AR ต้องเป็น User ในระบบกลาง ถ้าเป็น Admin จะเห็นทุกอย่าง หลังเปลี่ยนสิทธิ์ พนักงานต้องออกจากระบบแล้วเข้าใหม่</div>'
+            '<div class="note">พนักงาน AP และ AR ต้องเป็น User ในระบบกลาง ถ้าเป็น Admin จะเห็นทุกอย่าง หลังเปลี่ยนสิทธิ์ พนักงานต้องออกจากระบบแล้วเข้าใหม่</div>',
+          conditions: {
+            title: 'เงื่อนไขการให้สิทธิ์พนักงาน (Work Roles)',
+            body: '<ul>' +
+              '<li><span class="rule-tag req">ผู้มีสิทธิ์ให้</span> เฉพาะผู้ที่มีสิทธิ์ Admin หรือ Master เท่านั้น</li>' +
+              '<li><span class="rule-tag forbid">ข้อห้าม Master</span> Master ไม่สามารถเปลี่ยนสิทธิ์ MASTER ของตนเองได้ (เพื่อป้องกันการล็อกตัวเองออกจากระบบ)</li>' +
+              '<li><span class="rule-tag req">สถานะพนักงาน</span> พนักงานต้องมีบัญชีเป็น User ในระบบกลาง TRW (หากเป็น Admin ในระบบกลางจะได้รับสิทธิ์เต็มโดยอัตโนมัติอยู่แล้ว)</li>' +
+              '<li><span class="rule-tag info">การมีผล</span> หลังบันทึกเปลี่ยนสิทธิ์ พนักงานต้องออกจากระบบแล้วเข้าสู่ระบบใหม่</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'จัดการบัญชีธนาคาร',
@@ -660,9 +1107,17 @@
           body: '<ol>' +
             '<li>ค้นหาบัญชีด้วยชื่อ เลขบัญชี หรือรหัส BC365</li>' +
             '<li>กด ' + b('เพิ่มบัญชี') + ' เลือกธนาคารและรหัสบัญชีจาก BC365 แล้วบันทึก</li>' +
-            '<li>กด ' + b('ปิดบัญชี') + ' หรือ ' + b('เปิดบัญชี') + ' ในช่องจัดการ</li>' +
+            '<li>กด ' + b('ปิดบัญชี') + ' เพื่อระงับบัญชีที่ไม่ใช้งาน หรือ ' + b('เปิดบัญชี') + ' เพื่อนำกลับมาใช้งานใหม่</li>' +
             '</ol>' +
-            '<div class="note info">บัญชีที่ปิดแล้ว นำเข้าไฟล์ใหม่ไม่ได้ แต่ข้อมูลเดิมยังดูได้ และเปิดกลับได้</div>'
+            '<div class="note info">บัญชีที่ปิดแล้ว (Inactive) นำเข้าไฟล์ใหม่ไม่ได้ เพื่อป้องกันการเลือกผิด แต่ข้อมูลเดิมและรายงานยังเปิดดูได้ตามปกติ และเปิดกลับได้ทุกเมื่อ</div>',
+          conditions: {
+            title: 'เงื่อนไขการจัดการบัญชีธนาคาร (เปิด/ปิดบัญชี)',
+            body: '<ul>' +
+              '<li><span class="rule-tag req">การเพิ่มบัญชี</span> ต้องมีบัญชีธนาคารที่สร้างไว้ใน BC365 โดยชื่อบัญชีต้องลงท้ายด้วย #เลขบัญชี และมีรายการเคลื่อนไหว</li>' +
+              '<li><span class="rule-tag pass">ปิดบัญชี (Inactive)</span> ใช้สำหรับปิดการนำเข้าไฟล์ของบัญชีที่ไม่ใช้งานแล้ว ข้อมูลเดิมและรายงานยังคงเปิดดูได้ตามปกติ</li>' +
+              '<li><span class="rule-tag pass">เปิดบัญชี (Active)</span> กดเปิดบัญชีกลับมาใช้งานใหม่ได้ตลอดเวลา</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'นำเข้าข้อมูล',
@@ -672,14 +1127,50 @@
             '<li>ดึงข้อมูลจาก BC365 เหมือน AP และ AR</li>' +
             '<li>ตอนนำเข้าไฟล์ธนาคาร ต้องเลือกว่าจะนำเข้า เงินเข้า เงินออก หรือทั้งสองอย่าง</li>' +
             '</ol>' +
-            '<div class="note">ถ้านำเข้าแค่อย่างเดียว ยอดคงเหลือจะยังไม่ครบจนกว่าจะนำเข้าอีกอย่าง</div>'
+            '<div class="note">ถ้านำเข้าแค่อย่างเดียว ยอดคงเหลือจะยังไม่ครบจนกว่าจะนำเข้าอีกอย่าง และระบบจะดึงชื่อผู้โอน/ผู้รับเงินมาแสดงให้โดยอัตโนมัติ</div>',
+          conditions: {
+            title: 'เงื่อนไขการนำเข้าข้อมูลสำหรับ Admin/Master',
+            body: '<ul>' +
+              '<li><span class="rule-tag req">สิทธิ์เต็ม</span> สามารถเลือกนำเข้าเฉพาะเงินเข้า, เฉพาะเงินออก หรือทั้งสองอย่างพร้อมกันได้</li>' +
+              '<li><span class="rule-tag info">ความครบถ้วน</span> หากนำเข้าเพียงฝั่งเดียว ยอดคงเหลือสิ้นงวดจะยังไม่ครบจนกว่าจะนำเข้าอีกฝั่ง</li>' +
+              '<li><span class="rule-tag pass">ดึงชื่อผู้โอนอัตโนมัติ</span> ระบบตรวจจับชื่อผู้โอน/ผู้รับเงินและเลขอ้างอิงจาก Statement ให้โดยอัตโนมัติ</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'กระทบยอด',
           where: 'เมนู กระทบยอด',
           href: '/reconcile',
           body: '<p>ทำเหมือนคู่มือ AP แต่เห็นทั้งเงินเข้าและเงินออก</p>' +
-            '<p><a href="#" data-switch="ap">ดูขั้นตอนในคู่มือ AP</a></p>'
+            '<p><a href="#" data-switch="ap">ดูขั้นตอนในคู่มือ AP</a></p>',
+          conditions: {
+            title: 'เงื่อนไขการกระทบยอดสำหรับ Admin/Master',
+            body: '<ul>' +
+              '<li><span class="rule-tag pass">เห็นครบทุกฝั่ง</span> สามารถสลับดูและทำงานได้ทั้งฝั่งเงินเข้า (AR) และเงินออก (AP)</li>' +
+              '<li><span class="rule-tag req">กฎการจับคู่</span> ใช้กฎเดียวกัน: ยอดตรงกันถึงระดับ 0.005 บาท, บัญชีเดียวกันเท่านั้น (<b style="color:#b91c1c">ห้ามข้ามบัญชี</b>), ทิศทางเงินตรงกัน</li>' +
+              '</ul>'
+          }
+        },
+        {
+          title: 'จัดการรายการพักและหาคู่ใน statement',
+          where: 'เมนู รายการพัก',
+          href: '/suspense',
+          body: '<ol>' +
+            '<li>Admin และ Master สามารถจัดการรายการพักได้ทั้งเงินเข้าและเงินออก</li>' +
+            '<li>ตรวจดูป้ายแนะนำใต้รายการ และคลิกเพื่อเปิดหน้าต่าง <b>หาคู่ใน statement</b></li>' +
+            '<li>กด ' + b('ใช่ รายการนี้') + ' และ ' + b('ยืนยันจับคู่') + ' ได้ทันทีโดยไม่ต้องส่งคืนไปหน้ากระทบยอด</li>' +
+            '<li>สามารถจับคู่รายการพักของงวดที่ปิดแล้วกับ statement ของงวดที่ยังเปิดอยู่ได้ (ยอดย้ายเป็นจับคู่ข้ามงวด)</li>' +
+            '</ol>',
+          conditions: {
+            title: 'เงื่อนไขการหาคู่ใน Statement / ข้ามงวด / ข้อห้ามข้ามบัญชี',
+            body: '<ul>' +
+              '<li><span class="rule-tag forbid">ห้ามจับคู่ข้ามบัญชีเด็ดขาด!</span> <b style="color:#b91c1c">ต้องเป็นบัญชีธนาคารเดียวกันเท่านั้น</b> ระบบไม่ยอมให้จับคู่ข้ามบัญชี</li>' +
+              '<li><span class="rule-tag pass">ค้นหาข้ามเดือนได้</span> สามารถค้นหา Statement ได้ทุกเดือนของบัญชีเดียวกัน (เช่น เช็คสั่งจ่ายเดือน ก.ย. ธนาคารเพิ่งตัดเดือน ต.ค.)</li>' +
+              '<li><span class="rule-tag req">ยอดเงินตรงกันพอดี</span> ต้องเป็นคู่ที่ยอดเงินตรงกันถึงสตางค์ (1:1)</li>' +
+              '<li><span class="rule-tag pass">รายการพักงวดปิดจับคู่ได้ (ข้ามงวด)</span> รายการพักที่อยู่ในงวดที่ปิดแล้ว สามารถจับคู่กับ Statement ในงวดที่เปิดอยู่ได้ ยอดจะย้ายเป็น "จับคู่ข้ามงวด" โดยยอดคงเหลือของงวดเดิมไม่เปลี่ยนแปลง</li>' +
+              '<li><span class="rule-tag forbid">การยกเลิกคู่ข้ามงวด</span> หากจับคู่ผิดและต้องการยกเลิก ต้องให้ Master/Admin เปิดงวดเดิมคืนก่อน จึงจะยกเลิกคู่นั้นได้</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'ติดตามการยืนยันงาน',
@@ -689,7 +1180,15 @@
             '<li>ดูว่า AP และ AR ยืนยันแล้วหรือยัง ใครยืนยัน และเมื่อไร</li>' +
             '<li>อ่านข้อความด้านล่างว่ายังขาดอะไร</li>' +
             '<li>ถ้าจำเป็น กดยืนยันแทนได้ทั้ง AP และ AR</li>' +
-            '</ol>'
+            '</ol>',
+          conditions: {
+            title: 'เงื่อนไขการติดตามและยืนยันงานแทน',
+            body: '<ul>' +
+              '<li><span class="rule-tag info">การติดตาม</span> แสดงสถานะว่า AP และ AR ยืนยันแล้วหรือยัง พร้อมชื่อผู้ยืนยันและเวลา</li>' +
+              '<li><span class="rule-tag req">กดยืนยันแทน</span> Admin/Master สามารถกดยืนยันแทน AP หรือ AR ได้เมื่อจำเป็น</li>' +
+              '<li><span class="rule-tag pass">การปิดงวดอัตโนมัติ</span> เมื่อทั้งสองฝั่งยืนยันครบและผลต่างหลังปรับปรุงเป็นศูนย์ ระบบจะปิดงวดให้อัตโนมัติ</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'เปิดงวดที่ปิดแล้ว',
@@ -699,7 +1198,15 @@
             '<li>งวดที่ปิดแล้วจะมีรูปกุญแจที่แถบด้านบน กดเพื่อเปิดหน้าต่างยอดคงเหลือ</li>' +
             '<li>กด ' + b('เปิดงวดรวมอีกครั้ง') + ' เขียนเหตุผล ติ๊กช่องรับทราบ แล้วกด ' + b('ยืนยัน') + '</li>' +
             '</ol>' +
-            '<div class="note">เมื่อเปิดงวด การยืนยันของ AP และ AR จะถูกล้าง ทั้งสองทีมต้องยืนยันใหม่</div>'
+            '<div class="note">เมื่อเปิดงวด การยืนยันของ AP และ AR จะถูกล้าง ทั้งสองทีมต้องยืนยันใหม่</div>',
+          conditions: {
+            title: 'เงื่อนไขการเปิดงวดคืน',
+            body: '<ul>' +
+              '<li><span class="rule-tag req">สิทธิ์เฉพาะ</span> มีเพียง Admin และ Master เท่านั้นที่ได้รับอนุญาตให้เปิดงวดคืน</li>' +
+              '<li><span class="rule-tag req">ต้องระบุเหตุผล</span> ต้องกรอกเหตุผลที่ชัดเจนเพื่อบันทึกประวัติการตรวจสอบ (Audit Trail)</li>' +
+              '<li><span class="rule-tag info">ผลของการเปิดงวด</span> การยืนยันของทั้ง AP และ AR จะถูกล้าง ทั้งสองทีมต้องเข้ามาตรวจสอบและยืนยันใหม่อีกครั้ง</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'ลบไฟล์ธนาคารที่ผิด',
@@ -710,7 +1217,15 @@
             '<li>เขียนเหตุผล เช่น ผิดเดือน หรือข้อมูลไม่ครบ</li>' +
             '<li>นำเข้าไฟล์ที่ถูกต้องใหม่</li>' +
             '</ol>' +
-            '<div class="note info">ดูได้ว่าใครลบ เมื่อไร และเพราะอะไร ที่แท็บ ประวัติการลบ</div>'
+            '<div class="note info">ดูได้ว่าใครลบ เมื่อไร และเพราะอะไร ที่แท็บ ประวัติการลบ</div>',
+          conditions: {
+            title: 'เงื่อนไขการลบไฟล์ Statement',
+            body: '<ul>' +
+              '<li><span class="rule-tag req">ต้องระบุเหตุผล</span> ต้องเขียนเหตุผลที่ลบไฟล์เสมอ เช่น นำเข้าผิดเดือน หรือไฟล์ไม่สมบูรณ์</li>' +
+              '<li><span class="rule-tag forbid">งวดต้องยังเปิดอยู่</span> ไม่สามารถลบไฟล์ของงวดที่ปิดหรือล็อกแล้วได้</li>' +
+              '<li><span class="rule-tag forbid">ห้ามลบรายการที่จับคู่แล้ว</span> หากรายการในไฟล์ถูกนำไปจับคู่แล้ว ต้องยกเลิกการจับคู่ก่อนจึงจะลบได้</li>' +
+              '</ul>'
+          }
         },
         {
           title: 'ดูรายงาน',
@@ -719,7 +1234,14 @@
           body: '<ol>' +
             '<li>เลือกช่วงวันที่ ธนาคาร และบัญชี ดูได้ทั้งเงินเข้าและเงินออก</li>' +
             '<li>กด ' + b('ดาวน์โหลด Excel') + ' เพื่อเก็บหรือส่งต่อ</li>' +
-            '</ol>'
+            '</ol>',
+          conditions: {
+            title: 'เงื่อนไขการดูและส่งออกรายงาน',
+            body: '<ul>' +
+              '<li><span class="rule-tag pass">เข้าถึงได้ครบถ้วน</span> ดูรายงานได้ทั้งเงินเข้า เงินออก และรายงานสรุปรวมทุกบัญชี</li>' +
+              '<li><span class="rule-tag pass">ดาวน์โหลด Excel</span> นำข้อมูลออกเป็นไฟล์ Excel เพื่อใช้ในการประชุมหรือปิดรอบบัญชี</li>' +
+              '</ul>'
+          }
         }
       ]
     }
@@ -775,10 +1297,21 @@
 
     el('steps').innerHTML = data.steps.map(function (s, i) {
       var n = i + 1;
+      var condHtml = '';
+      if (s.conditions) {
+        condHtml = '<details class="step-rules-box">' +
+          '<summary class="step-rules-btn">' +
+            '<span>📋 ' + (s.conditions.title || 'เงื่อนไขในการทำงานขั้นตอนนี้') + '</span>' +
+            '<span class="badge-pill">คลิกดูเงื่อนไข</span>' +
+            CHEVRON +
+          '</summary>' +
+          '<div class="step-rules-body">' + s.conditions.body + '</div>' +
+        '</details>';
+      }
       return '<article class="step' + (done[i] ? ' is-done' : '') + '" id="step-' + n + '">' +
         '<div class="step-head"><div class="step-num">' + n + '</div>' +
         '<div class="step-title"><div class="where">' + s.where + '</div><h3>' + s.title + '</h3></div></div>' +
-        '<div class="step-body">' + s.body + '</div>' +
+        '<div class="step-body">' + s.body + condHtml + '</div>' +
         '<div class="step-foot">' +
           '<a class="go" href="' + s.href + '" target="_blank" rel="noopener">เปิดหน้านี้' + ARROW + '</a>' +
           '<label class="check"><input type="checkbox" data-step="' + i + '"' + (done[i] ? ' checked' : '') + '> ทำขั้นนี้แล้ว</label>' +
@@ -803,7 +1336,6 @@
   document.querySelectorAll('.role-card').forEach(function (c) {
     c.addEventListener('click', function () {
       render(c.getAttribute('data-role'));
-      el('guide').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 
@@ -821,6 +1353,18 @@
   });
 
   el('steps').addEventListener('click', function (e) {
+    var tabBtn = e.target.closest('.guide-tab-btn');
+    if (tabBtn) {
+      var box = tabBtn.closest('.screen-guide-box');
+      if (box) {
+        var view = tabBtn.getAttribute('data-view');
+        box.querySelectorAll('.guide-tab-btn').forEach(function (b) { b.classList.toggle('active', b === tabBtn); });
+        box.querySelectorAll('.screen-view-item').forEach(function (item) {
+          item.style.display = item.classList.contains('screen-view-' + view) ? 'block' : 'none';
+        });
+      }
+      return;
+    }
     var a = e.target.closest('[data-switch]');
     if (!a) return;
     e.preventDefault();

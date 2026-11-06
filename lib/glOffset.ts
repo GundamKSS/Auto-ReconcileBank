@@ -105,7 +105,7 @@ export function offsetGroupProblem(signedAmounts: number[]): string | null {
   const net = signedAmounts.reduce((sum, a) => sum + a, 0);
   if (Math.abs(net) >= AMOUNT_TOLERANCE) {
     const diff = Math.abs(net).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    return `ยอดขาเข้ากับขาออกยังต่างกัน ${diff} — ต้องเท่ากันพอดีจึงหักล้างได้`;
+    return `ยอดขาเข้ากับขาออกยังต่างกัน ${diff} ต้องเท่ากันพอดีจึงหักล้างได้`;
   }
   return null;
 }

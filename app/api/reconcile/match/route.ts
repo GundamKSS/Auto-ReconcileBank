@@ -90,19 +90,42 @@ export async function POST(req: NextRequest) {
           );
         }
       }
-      // จับชน IN↔OUT ต้องมีอย่างน้อยขาเข้า 1 + ขาออก 1 และห้ามมีฝั่ง Bank — ถ้ามีเงินผ่านธนาคารจริงต้องใช้ MATCHED
+      // จับชน IN↔OUT: ฝั่ง GL ทั้งหมด (ล้างกันเองใน BC) หรือ ฝั่ง Bank ทั้งหมด (เช่น เช็คเด้ง ล้างกันเองใน Statement)
+      // ห้ามปนกันระหว่าง Bank กับ GL ในกลุ่มเดียวกัน (ถ้ามีทั้งคู่ต้องใช้ MATCHED)
       if (matchType === 'OFFSET') {
-        if (g.bankLineIds.length > 0) {
+        const hasBank = g.bankLineIds.length > 0;
+        const hasGl = g.glEntryNos.length > 0;
+        if (hasBank && hasGl) {
           return NextResponse.json(
-            { error: 'จับชนใช้ได้เฉพาะรายการฝั่ง GL (BC365) — รายการที่มีเงินผ่านธนาคารต้องจับคู่ด้วยปุ่ม Match' },
+            { error: 'การจับชน (OFFSET) ต้องเป็นฝั่ง GL ทั้งหมด หรือฝั่ง Bank ทั้งหมดในแต่ละกลุ่ม — ถ้ามีทั้งสองฝั่งต้องใช้ปุ่ม Match' },
             { status: 400 }
           );
         }
-        if (g.glEntryNos.length < 2) {
+        if (!hasBank && !hasGl) {
           return NextResponse.json(
-            { error: 'การจับชนแต่ละกลุ่มต้องมีรายการ GL อย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
+            { error: 'การจับชนแต่ละกลุ่มต้องมีรายการอย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
             { status: 400 }
           );
+        }
+        if (hasGl && g.glEntryNos.length < 2) {
+          return NextResponse.json(
+            { error: 'การจับชนฝั่ง GL แต่ละกลุ่มต้องมีรายการ GL อย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
+            { status: 400 }
+          );
+        }
+        if (hasBank) {
+          if (g.bankLineIds.length < 2) {
+            return NextResponse.json(
+              { error: 'การหักล้างฝั่ง Bank Statement แต่ละกลุ่มต้องมีรายการ Bank อย่างน้อย 2 รายการ (ขาเข้าและขาออก)' },
+              { status: 400 }
+            );
+          }
+          if (!remark) {
+            return NextResponse.json(
+              { error: 'การหักล้างรายการฝั่ง Bank Statement ต้องระบุเหตุผลเสมอ' },
+              { status: 400 }
+            );
+          }
         }
       }
       if (matchType === 'EXCLUDED') {
@@ -232,19 +255,27 @@ export async function POST(req: NextRequest) {
 
         // ฝั่ง bank ยอมให้ BankAccountNo เป็น NULL ได้ (ไฟล์ที่นำเข้าก่อนระบบแยกตามบัญชี)
         // แต่ถ้าระบุไว้แล้วต้องตรงกัน
-        if (seenBank.size > 0 && matchAccountNo) {
+        if (seenBank.size > 0) {
           const idsCsv = [...seenBank].join(',');
-          const wrong = await new sql.Request(transaction)
-            .input('accountNo', sql.NVarChar, matchAccountNo)
-            .query(`
-              SELECT DISTINCT BankAccountNo FROM BankStatementLine
-              WHERE LineId IN (${idsCsv}) AND BankAccountNo IS NOT NULL AND BankAccountNo <> @accountNo
-            `);
-          if (wrong.recordset.length > 0) {
-            throw new Error(
-              `จับคู่ข้ามบัญชีไม่ได้ — รายการฝั่ง Bank เป็นของบัญชี ` +
-                `${wrong.recordset.map((r) => r.BankAccountNo).join(', ')} ไม่ใช่ ${matchAccountNo}`
-            );
+          const bankAccounts = await new sql.Request(transaction).query(`
+            SELECT DISTINCT BankAccountNo FROM BankStatementLine
+            WHERE LineId IN (${idsCsv}) AND BankAccountNo IS NOT NULL
+          `);
+          const bankList = bankAccounts.recordset.map((r) => r.BankAccountNo as string);
+          if (bankList.length > 1) {
+            throw new Error(`จับคู่ข้ามบัญชีไม่ได้ — รายการฝั่ง Bank ที่เลือกมาจาก ${bankList.length} บัญชี (${bankList.join(', ')})`);
+          }
+          if (!matchAccountNo && bankList.length === 1) {
+            matchAccountNo = bankList[0];
+          }
+          if (matchAccountNo) {
+            const wrong = bankList.filter((acc) => acc !== matchAccountNo);
+            if (wrong.length > 0) {
+              throw new Error(
+                `จับคู่ข้ามบัญชีไม่ได้ — รายการฝั่ง Bank เป็นของบัญชี ` +
+                  `${wrong.join(', ')} ไม่ใช่ ${matchAccountNo}`
+              );
+            }
           }
         }
       }
@@ -316,30 +347,56 @@ export async function POST(req: NextRequest) {
 
       // 2b) กลุ่มจับชนต้องมีทั้งขาเข้าและขาออก และยอดสุทธิเป็น 0 จริง — ตรวจจากยอดใน DB ไม่ใช่ตัวเลขจาก client
       if (matchType === 'OFFSET') {
-        const signed = glSignedSql();
+        const glSigned = glSignedSql();
+        const bSigned = bankSignedSql();
         for (let i = 0; i < groups.length; i++) {
-          const result = await new sql.Request(transaction).query(`
-            SELECT SUM(${signed}) AS Net,
-                   SUM(CASE WHEN ${signed} > 0 THEN 1 ELSE 0 END) AS InCount,
-                   SUM(CASE WHEN ${signed} < 0 THEN 1 ELSE 0 END) AS OutCount,
-                   SUM(CASE WHEN ${signed} = 0 THEN 1 ELSE 0 END) AS ZeroCount,
-                   COUNT(DISTINCT Bank_Account_No) AS AccountCount
-            FROM BankAccountLedgerEntries WHERE Entry_No IN (${groups[i].glEntryNos.join(',')})
-          `);
-          const row = result.recordset[0] ?? {};
-          const net = Number(row.Net ?? 0);
-          // ด่าน 1c ข้ามไปถ้ายังไม่ได้รัน sql/006 แต่การจับชนข้ามบัญชีผิดเสมอ ฝั่ง GL มีเลขบัญชีทุกแถวอยู่แล้วจึงเช็คได้เลย
-          if (Number(row.AccountCount ?? 0) !== 1) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการจากหลายบัญชี — จับชนข้ามบัญชีไม่ได้`);
-          }
-          if (Number(row.ZeroCount ?? 0) > 0) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการยอด 0 บาท — จับชนไม่ได้`);
-          }
-          if (Number(row.InCount ?? 0) === 0 || Number(row.OutCount ?? 0) === 0) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} ต้องมีทั้งรายการขาเข้า (IN) และขาออก (OUT) — จับชนไม่ได้`);
-          }
-          if (Math.abs(net) >= AMOUNT_TOLERANCE) {
-            throw new Error(`กลุ่มย่อยที่ ${i + 1} ขาเข้ากับขาออกต่างกัน ${formatAmount(Math.abs(net))} — จับชนไม่ได้`);
+          const g = groups[i];
+          if (g.glEntryNos.length > 0) {
+            const result = await new sql.Request(transaction).query(`
+              SELECT SUM(${glSigned}) AS Net,
+                     SUM(CASE WHEN ${glSigned} > 0 THEN 1 ELSE 0 END) AS InCount,
+                     SUM(CASE WHEN ${glSigned} < 0 THEN 1 ELSE 0 END) AS OutCount,
+                     SUM(CASE WHEN ${glSigned} = 0 THEN 1 ELSE 0 END) AS ZeroCount,
+                     COUNT(DISTINCT Bank_Account_No) AS AccountCount
+              FROM BankAccountLedgerEntries WHERE Entry_No IN (${g.glEntryNos.join(',')})
+            `);
+            const row = result.recordset[0] ?? {};
+            const net = Number(row.Net ?? 0);
+            if (Number(row.AccountCount ?? 0) !== 1) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการจากหลายบัญชี — จับชนข้ามบัญชีไม่ได้`);
+            }
+            if (Number(row.ZeroCount ?? 0) > 0) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการยอด 0 บาท — จับชนไม่ได้`);
+            }
+            if (Number(row.InCount ?? 0) === 0 || Number(row.OutCount ?? 0) === 0) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} ต้องมีทั้งรายการขาเข้า (IN) และขาออก (OUT) — จับชนไม่ได้`);
+            }
+            if (Math.abs(net) >= AMOUNT_TOLERANCE) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} ขาเข้ากับขาออกต่างกัน ${formatAmount(Math.abs(net))} — จับชนไม่ได้`);
+            }
+          } else if (g.bankLineIds.length > 0) {
+            const result = await new sql.Request(transaction).query(`
+              SELECT SUM(${bSigned}) AS Net,
+                     SUM(CASE WHEN Credit IS NOT NULL AND Credit > 0 THEN 1 ELSE 0 END) AS InCount,
+                     SUM(CASE WHEN Debit IS NOT NULL AND Debit > 0 THEN 1 ELSE 0 END) AS OutCount,
+                     SUM(CASE WHEN (Credit IS NULL OR Credit = 0) AND (Debit IS NULL OR Debit = 0) THEN 1 ELSE 0 END) AS ZeroCount,
+                     COUNT(DISTINCT BankAccountNo) AS AccountCount
+              FROM BankStatementLine WHERE LineId IN (${g.bankLineIds.join(',')})
+            `);
+            const row = result.recordset[0] ?? {};
+            const net = Number(row.Net ?? 0);
+            if (Number(row.AccountCount ?? 0) > 1) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการจากหลายบัญชี — หักล้างข้ามบัญชีไม่ได้`);
+            }
+            if (Number(row.ZeroCount ?? 0) > 0) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} มีรายการยอด 0 บาท — หักล้างไม่ได้`);
+            }
+            if (Number(row.InCount ?? 0) === 0 || Number(row.OutCount ?? 0) === 0) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} ต้องมีทั้งรายการเงินเข้า (IN) และเงินออก (OUT) — หักล้างไม่ได้`);
+            }
+            if (Math.abs(net) >= AMOUNT_TOLERANCE) {
+              throw new Error(`กลุ่มย่อยที่ ${i + 1} ยอดเงินเข้ากับเงินออกต่างกัน ${formatAmount(Math.abs(net))} — หักล้างไม่ได้`);
+            }
           }
         }
       }

@@ -75,7 +75,7 @@ export default function DeleteImportModal({
             <div className="min-w-0">
               <p className="text-sm font-semibold text-gray-900 break-all">{batch.FileName}</p>
               <p className="text-xs text-gray-500 mt-0.5">
-                {batch.BankCode} · {formatDate(batch.PeriodStart)} – {formatDate(batch.PeriodEnd)} ·{" "}
+                {batch.BankCode} · {formatDate(batch.PeriodStart)} ถึง {formatDate(batch.PeriodEnd)} ·{" "}
                 {batch.ImportedRowCount.toLocaleString()} รายการ
               </p>
               <p className="text-xs text-gray-400 mt-0.5">นำเข้าเมื่อ {formatDateTime(batch.ImportedAt)}</p>

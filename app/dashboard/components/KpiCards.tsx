@@ -2,6 +2,7 @@
 
 import { SourceTag } from './SourceTag';
 import StatCard from './StatCard';
+import HelpTooltip from '../../../components/HelpTooltip';
 import {
   formatAmount,
   formatCount,
@@ -80,7 +81,7 @@ export default function KpiCards({ data }: { data: DashboardData }) {
         <StatCard
           title="จับคู่แล้ว"
           value={formatCount(matched.lines)}
-          sub={`${formatCount(matched.matches)} คู่การจับคู่`}
+          sub={`${formatCount(matched.matches)} กลุ่ม`}
           delta={relDelta(matched.lines, prev?.matched)}
         />
 
@@ -132,17 +133,18 @@ export default function KpiCards({ data }: { data: DashboardData }) {
           ไม่ใช่ยอดที่กระทบแล้วไม่ตรง */}
       {pendingImport.length > 0 && data.coverage && (
         <div className="mt-3 rounded-[20px] border border-amber-200 bg-amber-50/70 px-6 py-3.5">
-          <p className="text-xs font-semibold text-amber-800">
-            ยังไม่ได้นำเข้ารายการเดินบัญชีของเดือนนี้ · {pendingImport.length} ธนาคาร
-          </p>
-          <p className="mt-1 text-[11px] leading-relaxed text-amber-700">
+          <div className="flex flex-wrap items-center gap-1 text-xs font-semibold text-amber-800">
+            <span>
+            รอนำเข้าไฟล์ธนาคาร · {pendingImport.length} ธนาคาร
+            </span>
+            <span>รวม {formatAmount(data.coverage.pendingImportNet)} บาท</span>
+            <HelpTooltip label="รายละเอียดยอดรอนำเข้า">
             {pendingImport
               .map((p) => `${p.bankCode} ${formatAmount(p.glNet)} (${p.glLines.toLocaleString()} บรรทัด)`)
               .join(' · ')}
-            {' — รวม '}
-            {formatAmount(data.coverage.pendingImportNet)} บาท เป็นยอดฝั่ง BC365 ที่ยังไม่มีคู่เทียบ
-            ไม่ได้นับรวมในผลต่างด้านบน
-          </p>
+            {' เป็นยอด BC365 ที่ยังไม่มีไฟล์ธนาคารเทียบ จึงไม่นับรวมในผลต่างด้านบน'}
+            </HelpTooltip>
+          </div>
         </div>
       )}
     </div>

@@ -65,7 +65,7 @@ export default function WorkRoleModal({ assignment, onDismiss, onSaved }: {
       <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600"><ShieldCheck size={20} /></div>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-1.5">
-          <h2 id="work-role-modal-title" className="text-lg font-semibold">{assignment ? 'เปลี่ยนสิทธิ์พนักงาน' : 'เพิ่มหรือเปลี่ยนสิทธิ์'}</h2>
+          <h2 id="work-role-modal-title" className="text-lg font-semibold">{assignment ? 'เปลี่ยนสิทธิ์พนักงาน' : 'กำหนดสิทธิ์'}</h2>
           <HelpTooltip label="วิธีกำหนดสิทธิ์พนักงาน">เลือกพนักงาน สิทธิ์ และสถานะ พร้อมระบุเหตุผล เปิดสิทธิ์ได้เมื่อพบ EMP code ในทะเบียนกลาง ส่วนสิทธิ์เดิมยังปิดได้แม้ทะเบียนกลางไม่พร้อมใช้งาน</HelpTooltip>
         </div>
       </div>
@@ -83,7 +83,7 @@ export default function WorkRoleModal({ assignment, onDismiss, onSaved }: {
           </label>
           <label className="min-w-0 text-sm font-medium text-slate-600">สิทธิ์
             <select value={role} onChange={(event) => { setRole(event.target.value as WorkRole); setAcknowledged(false); }} className={`${inputClass} max-w-full truncate`}>
-              {WORK_ROLES.map((code) => <option key={code} value={code}>{code} — {WORK_ROLE_LABELS[code]}</option>)}
+              {WORK_ROLES.map((code) => <option key={code} value={code}>{code === 'MASTER' ? 'MASTER (ผู้ดูแลระบบ)' : WORK_ROLE_LABELS[code]}</option>)}
             </select>
           </label>
           <label className="min-w-0 text-sm font-medium text-slate-600">สถานะ
@@ -93,7 +93,7 @@ export default function WorkRoleModal({ assignment, onDismiss, onSaved }: {
           </label>
         </fieldset>
         <label className="block text-sm font-medium text-slate-600">เหตุผล <span className="text-red-500">*</span>
-          <textarea required disabled={saving} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} className={`${inputClass} min-h-24 resize-y`} placeholder="ระบุเหตุผลในการเพิ่มหรือเปลี่ยนสิทธิ์" />
+          <textarea required disabled={saving} maxLength={500} value={reason} onChange={(event) => setReason(event.target.value)} className={`${inputClass} min-h-24 resize-y`} placeholder="ระบุเหตุผลในการกำหนดสิทธิ์" />
           <span className="mt-1.5 flex justify-between gap-3 text-xs font-normal text-slate-400"><span>อย่างน้อย 5 ตัวอักษร</span><span>{reason.length}/500</span></span>
         </label>
         <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-blue-100 bg-blue-50/50 p-3 text-sm leading-relaxed text-slate-700">

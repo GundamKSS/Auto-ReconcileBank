@@ -468,7 +468,7 @@ export default function MatchAssistantModal({
                 </p>
                 <p className="max-w-sm text-xs text-gray-500">
                   {matchedPairs > 0
-                    ? "รายการที่เหลืออยู่ไม่มีคู่ที่ยอดตรงกันในช่วงวันที่เลือกแล้ว คุณสามารถปิดหน้าต่างนี้เพื่อกลับสู่ตารางหลัก"
+                    ? "ไม่พบคู่เพิ่มเติมในช่วงวันที่ที่เลือก"
                     : "ลองขยายช่วงวันที่หรือจับคู่เองในตาราง"}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
@@ -497,7 +497,7 @@ export default function MatchAssistantModal({
               <div className="flex flex-col gap-3 px-4 py-4 sm:px-5">
                 <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-gray-500">
                   <p>
-                    <span className="font-semibold text-gray-900">พบ {allSuggestions.length} กลุ่มที่น่าจะเป็น</span>
+                    <span className="font-semibold text-gray-900">พบ {allSuggestions.length} คู่แนะนำ</span>
                     {" · "}
                     <span className="text-green-700">สูง {levels.high}</span>
                     {" · "}

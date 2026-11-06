@@ -251,7 +251,7 @@ export function buildReportCte(f: ReportFilters, { allSides = false }: { allSide
       CAST(CONCAT('M', p.MatchId, '-', p.GroupNum) AS NVARCHAR(60)) AS GroupKey,
       CAST(p.MatchType AS VARCHAR(10)) AS Status,
       CAST(CASE
-             WHEN p.MatchType = 'OFFSET' THEN FIRST_VALUE(p.GLDirection) OVER (
+             WHEN p.MatchType = 'OFFSET' THEN FIRST_VALUE(COALESCE(p.GLDirection, p.BankDirection)) OVER (
                PARTITION BY p.MatchId, p.GroupNum ORDER BY p.PairRn
                ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
              ELSE COALESCE(p.BankDirection, p.GLDirection)

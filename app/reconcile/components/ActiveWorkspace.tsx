@@ -20,10 +20,13 @@ import {
   ListChecks,
   Scale,
   Lock,
+  Repeat,
+  Search,
 } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { ReconcileSession } from "./types";
 import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
+import { matchesWorkspaceItem } from "../../../lib/workspaceSearch";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
 import { suspenseSelectionProblem } from "../../../lib/suspenseSelection";
@@ -32,6 +35,8 @@ import BalanceBadge from "./BalanceBadge";
 import BalanceModal from "./BalanceModal";
 import RemarkActionModal from "./RemarkActionModal";
 import OffsetConfirmModal from "./OffsetConfirmModal";
+import BankOffsetModal from "./BankOffsetModal";
+import PanelSkeleton from "./PanelSkeleton";
 import type { BalanceData } from "./balanceTypes";
 import type { WorkApprovalAction } from "./PeriodWorkflowPanel";
 import { workLabel } from "../../../lib/periodWorkflow";
@@ -307,7 +312,7 @@ function FilterTabs({ value, onChange, blocked = [] }: { value: Direction; onCha
           key={opt}
           onClick={() => onChange(opt)}
           disabled={blocked.includes(opt)}
-          title={blocked.includes(opt) ? `ไม่มีสิทธิ์ ${directionWorkRole(opt)} — เปิดได้เฉพาะฝั่งที่ได้รับสิทธิ์` : undefined}
+          title={blocked.includes(opt) ? `ไม่มีสิทธิ์ ${directionWorkRole(opt)} เปิดได้เฉพาะฝั่งที่ได้รับสิทธิ์` : undefined}
           className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 ${
             value === opt
               ? opt === "IN"
@@ -447,7 +452,7 @@ function DateGroupRow({
   dateClusterNumbering: Map<string, Map<number, number>>;
   lumpClusterIds: Set<number>;
 }) {
-  const total = items.reduce((sum, i) => sum + i.amount, 0);
+  const total = items.reduce((sum, i) => sum + (i.amount ?? 0), 0);
   const selectedInGroup = items.filter((i) => selected.has(i.id)).length;
   const allSelected = selectedInGroup === items.length && items.length > 0;
   const someSelected = selectedInGroup > 0 && !allSelected;
@@ -556,7 +561,7 @@ function DateGroupRow({
                       {rawCluster !== undefined && lumpClusterIds.has(rawCluster) && (
                         <span
                           className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700"
-                          title="กลุ่มรวมยอด (1:N / N:1) — ยอดอาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"
+                          title="กลุ่มรวมยอด กรุณาตรวจสอบก่อนจับคู่"
                         >
                           รวมยอด
                         </span>
@@ -574,7 +579,7 @@ function DateGroupRow({
                       </p>
                     )}
                   </div>
-                  <span className="text-sm text-gray-700 tabular-nums whitespace-nowrap">{formatAmount(item.amount)}</span>
+                  <span className="text-sm text-gray-700 tabular-nums whitespace-nowrap">{formatAmount(item.amount ?? 0)}</span>
                 </label>
               );
             })}
@@ -614,6 +619,7 @@ function Panel({
   extraActions,
   scrollRef,
   onScroll,
+  searchQuery = "",
 }: {
   title: string;
   // ระบุฝั่งของ panel ใน shared frame — ใช้กำหนดเส้นแบ่งกลางและการจัดหัวข้อให้สมมาตร
@@ -646,16 +652,25 @@ function Panel({
   extraActions?: React.ReactNode;
   scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
+  searchQuery?: string;
 }) {
   const byGroup = groupTab === "ALL" ? allItems : allItems.filter((i) => i.groupKey === groupTab);
-  const filtered = byGroup.filter((item) => item.direction === filter);
+  const inDirection = byGroup.filter((item) => item.direction === filter);
+
+  // กรองตามคำค้นหาแบบเรียลไทม์ (ถ้ารายการถูกติ๊กเลือกไว้แล้ว จะคงไว้เสมอ)
+  const isSearching = Boolean(searchQuery && searchQuery.trim().length > 0);
+  const filtered = useMemo(() => {
+    if (!isSearching || !searchQuery) return inDirection;
+    return inDirection.filter((item) => selected.has(item.id) || matchesWorkspaceItem(item, searchQuery));
+  }, [inDirection, isSearching, searchQuery, selected]);
+
   // นับ "selected" เฉพาะฝั่งทิศทางที่กำลังดูอยู่ (filter) — ไม่ใช่ selected.size ดิบซึ่งรวมอีกฝั่งที่ไม่เกี่ยวด้วย
-  const selectedInDirection = filtered.filter((item) => selected.has(item.id)).length;
+  const selectedInDirection = inDirection.filter((item) => selected.has(item.id)).length;
   const { byDate, pendingTotal } = useMemo(() => {
     const map = new Map<string, LineItem[]>();
     let total = 0;
     for (const item of filtered) {
-      total += item.amount;
+      total += (item.amount ?? 0);
       const d = formatDate(item.date);
       if (!map.has(d)) map.set(d, []);
       map.get(d)!.push(item);
@@ -684,14 +699,16 @@ function Panel({
         >
           <h2 className="whitespace-nowrap text-[15px] font-semibold text-gray-900">{title}</h2>
           <span className="whitespace-nowrap text-xs text-gray-400">
-            เลือกแล้ว {selectedInDirection} · รอจับคู่ {filtered.length}
+            {isSearching
+              ? `พบ ${filtered.length} จาก ${inDirection.length} รายการ (เลือก ${selectedInDirection})`
+              : `เลือกแล้ว ${selectedInDirection} · รอจับคู่ ${filtered.length}`}
           </span>
           <p
             className={`whitespace-nowrap text-[11px] font-medium tracking-wide text-gray-400 ${
               notchSide === "left" ? "lg:order-first lg:mr-auto lg:text-left" : "lg:ml-auto lg:text-right"
             }`}
           >
-            {totalLabel}{" "}
+            {isSearching ? "ยอดรวมที่ค้นพบ" : totalLabel}{" "}
             <span className="text-sm font-semibold tracking-normal text-gray-900 tabular-nums">
               {loading ? "—" : formatAmount(pendingTotal)}
             </span>{" "}
@@ -724,13 +741,33 @@ function Panel({
         onScroll={onScroll}
         className="flex flex-col overflow-y-auto max-h-[55vh] lg:max-h-none lg:flex-1 lg:min-h-0"
       >
-        {loading && (
-          <div className="px-4 py-10 text-center text-sm text-gray-400 flex items-center justify-center gap-2">
-            <Loader2 size={16} className="animate-spin" /> กำลังโหลด...
-          </div>
-        )}
+        {loading && <PanelSkeleton />}
         {!loading && byDate.length === 0 && (
-          <div className="px-4 py-10 text-center text-sm text-gray-400">ไม่พบรายการรอจับคู่ตามเงื่อนไขที่เลือก</div>
+          isSearching ? (
+            <div className="px-4 py-12 text-center text-sm text-gray-400">
+              ไม่พบรายการที่ตรงกับ &quot;{searchQuery}&quot;
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center my-auto min-h-[220px]">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-600 flex items-center justify-center mb-3 shadow-xs">
+                <CheckCircle2 size={24} strokeWidth={2.2} />
+              </div>
+              <h3 className="text-sm font-semibold text-gray-800">
+                ยอด{filter === "IN" ? "เงินเข้า (IN)" : "เงินออก (OUT)"} ไม่มีรายการรอจับคู่ 🎉
+              </h3>
+              <p className="text-xs text-gray-500 mt-1 max-w-xs leading-relaxed">
+                รายการในฝั่งนี้ได้รับการจับคู่หรือพักรายการเรียบร้อยแล้ว
+              </p>
+              <button
+                type="button"
+                onClick={() => onFilterChange(filter === "IN" ? "OUT" : "IN")}
+                className="mt-3.5 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 transition-colors"
+              >
+                <span>สลับไปดูรายการ{filter === "IN" ? "เงินออก (OUT)" : "เงินเข้า (IN)"}</span>
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          )
         )}
         {!loading &&
           byDate.map(([date, items]) => (
@@ -738,7 +775,7 @@ function Panel({
               key={date}
               date={date}
               items={items}
-              expanded={expandedDates.has(date)}
+              expanded={isSearching || expandedDates.has(date)}
               onToggleExpand={() => onToggleExpand(date)}
               selected={selected}
               onToggle={onToggle}
@@ -906,6 +943,8 @@ export default function ActiveWorkspace({
   const [remarkModal, setRemarkModal] = useState<"match" | "exclude" | null>(null);
   // จับชนขาเข้ากับขาออกฝั่ง GL จากรายการที่ติ๊กไว้บนตารางหลัก (ข้ามแท็บ IN/OUT ได้)
   const [offsetConfirmOpen, setOffsetConfirmOpen] = useState(false);
+  // หักล้างรายการฝั่ง Bank Statement (เช็คเด้ง / ปรับปรุงยอด)
+  const [bankOffsetOpen, setBankOffsetOpen] = useState(false);
   const [remarkError, setRemarkError] = useState("");
 
   // ยอดคงเหลือ Bank เทียบ GL ของทั้งงวด — โหลดใหม่ทุกครั้งที่ตารางโหลดใหม่ (หลัง Match/พัก/ยกเลิก)
@@ -927,6 +966,34 @@ export default function ActiveWorkspace({
   const [expandedGlDates, setExpandedGlDates] = useState<Set<string>>(new Set());
   // วันที่ที่คลี่ดูล่าสุด — ตีกรอบน้ำเงินค้างไว้ทั้ง 2 ฝั่ง จนกว่าจะไปคลี่วันอื่น
   const [activeDate, setActiveDate] = useState<string | null>(null);
+
+  // ช่องค้นหาแบบเรียลไทม์ (Omni-search ค้นหายอดเงิน, ชื่อ, เลขเอกสาร, วันที่)
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (
+        e.key === "/" &&
+        document.activeElement?.tagName !== "INPUT" &&
+        document.activeElement?.tagName !== "TEXTAREA"
+      ) {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        searchInputRef.current?.select();
+      }
+      if (e.key === "Escape" && document.activeElement === searchInputRef.current) {
+        if (searchQuery) {
+          setSearchQuery("");
+        } else {
+          searchInputRef.current?.blur();
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [searchQuery]);
+
   const draftKey = useMemo(() => tabStorageKey(workspaceDraftKey(session)), [session]);
   const draftReadyRef = useRef(false);
   const bankScrollRef = useRef<HTMLDivElement>(null);
@@ -1130,7 +1197,7 @@ export default function ActiveWorkspace({
     selectedGl,
   ]);
 
-  const balanceUnavailable = session.bankAccountNo ? null : "งานเดิมนี้ไม่ได้ระบุเลขบัญชี — กดแก้ไขเงื่อนไขแล้วเลือกบัญชีก่อน";
+  const balanceUnavailable = session.bankAccountNo ? null : "กรุณาเลือกบัญชีในเงื่อนไขกระทบยอด";
 
   const loadBalance = useCallback(async () => {
     if (!session.bankAccountNo) return;
@@ -1298,7 +1365,7 @@ export default function ActiveWorkspace({
       }
       setToast({
         title: "โหลดข้อมูลใหม่แล้ว",
-        message: "ยังอยู่หน้าเดิม — รายการที่ถูกจับคู่หรือพักไปแล้วหลุดออกจากตารางให้เอง",
+        message: "อัปเดตรายการจับคู่และรายการพักแล้ว",
       });
     });
   }
@@ -1322,7 +1389,7 @@ export default function ActiveWorkspace({
           description: l.description,
           senderInfo,
           senderHint: l.senderHint ?? null,
-          amount: l.amount,
+          amount: Number(l.amount ?? 0),
         };
       }),
     [bankLinesRaw]
@@ -1339,7 +1406,7 @@ export default function ActiveWorkspace({
         // ฝั่ง GL ref กับ description เป็น Document_No ตัวเดียวกัน (แถวแสดง ref อยู่แล้ว)
         // จึงแสดงชื่อบัญชีแทน — เดิมต่อเป็น "Document_No · ชื่อบัญชี" ทำให้เลขเอกสารขึ้นซ้ำ 2 ครั้งทุกแถว
         description: l.accountName ?? l.description,
-        amount: l.amount,
+        amount: Number(l.amount ?? 0),
       })),
     [glLinesRaw]
   );
@@ -1519,9 +1586,9 @@ export default function ActiveWorkspace({
   const noOffsetRole = Boolean(missingWorkSide(workPermissions, ["IN", "OUT"], "any"));
   const periodClosed = finalPeriodClosed || Boolean(sideApproval) || noSideRole;
   const anyWorkLocked = finalPeriodClosed || Boolean(balanceData?.workApproval?.approvals.length);
-  const lockMessage = finalPeriodClosed ? "ปิดงวดรวมแล้ว — เปิดงวดอีกครั้งที่หน้ายอดคงเหลือก่อนแก้ไข"
-    : sideApproval ? `งาน ${workLabel(directionFilter)} ยืนยันแล้ว — เปิดงานฝั่งนี้อีกครั้งที่หน้ายอดคงเหลือก่อนแก้ไข`
-      : `ไม่มีสิทธิ์ ${directionWorkRole(directionFilter)} — ดูได้อย่างเดียว แก้ไขได้เฉพาะฝั่งที่ได้รับสิทธิ์`;
+  const lockMessage = finalPeriodClosed ? "ปิดงวดรวมแล้ว เปิดงวดอีกครั้งที่หน้ายอดคงเหลือก่อนแก้ไข"
+    : sideApproval ? `งาน ${workLabel(directionFilter)} ยืนยันแล้ว เปิดงานฝั่งนี้อีกครั้งที่หน้ายอดคงเหลือก่อนแก้ไข`
+      : `ไม่มีสิทธิ์ ${directionWorkRole(directionFilter)} ดูได้อย่างเดียว แก้ไขได้เฉพาะฝั่งที่ได้รับสิทธิ์`;
   const lockLabel = finalPeriodClosed ? "ปิดงวดรวมแล้ว"
     : sideApproval ? `ยืนยัน ${directionWorkRole(directionFilter)} แล้ว` : `ไม่มีสิทธิ์ ${directionWorkRole(directionFilter)}`;
 
@@ -1860,11 +1927,7 @@ export default function ActiveWorkspace({
     () => glLinesRaw.filter((l) => selectedGl.has(l.id)),
     [glLinesRaw, selectedGl]
   );
-  const offsetCounts = useMemo(() => {
-    const inCount = offsetSelection.filter((l) => l.direction === "IN").length;
-    return { inCount, outCount: offsetSelection.length - inCount };
-  }, [offsetSelection]);
-  async function handleOffsetSelection(groups: number[][]) {
+  async function handleOffsetSelection(groups: number[][], reason: string) {
     if (groups.length === 0 || busy || syncingGl || anyWorkLocked || noOffsetRole) return;
     setBusy(true);
     setError("");
@@ -1876,6 +1939,7 @@ export default function ActiveWorkspace({
           bankCode: session.bankCode,
           bankAccountNo: session.bankAccountNo,
           matchType: "OFFSET",
+          remark: reason || undefined,
           groups: groups.map((entryNos) => ({ bankLineIds: [], glEntryNos: entryNos })),
         }),
       });
@@ -1896,6 +1960,42 @@ export default function ActiveWorkspace({
       await loadData();
     } catch {
       setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleBankOffset(sourceLineId: number, targetLineId: number, reason: string) {
+    if (busy || syncingGl || anyWorkLocked || noOffsetRole) return;
+    setBusy(true);
+    setError("");
+    try {
+      const res = await fetch("/api/reconcile/match", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bankCode: session.bankCode,
+          bankAccountNo: session.bankAccountNo,
+          matchType: "OFFSET",
+          remark: reason,
+          groups: [
+            {
+              bankLineIds: [sourceLineId, targetLineId],
+              glEntryNos: [],
+            },
+          ],
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "หักล้างรายการธนาคารไม่สำเร็จ");
+      }
+      setBankOffsetOpen(false);
+      setToast({
+        title: "หักล้างรายการธนาคารแล้ว",
+        message: `หักล้างรายการแล้ว 2 รายการ (เลขอ้างอิง #${data.matchId})`,
+      });
+      await loadData();
     } finally {
       setBusy(false);
     }
@@ -2126,12 +2226,38 @@ export default function ActiveWorkspace({
               ref: l.ref,
               direction: l.direction,
               amount: l.amount,
+              description: l.accountName ?? l.description,
+              accountNo: l.accountNo,
+              accountName: l.accountName,
             }))}
             initialSelectedIds={offsetSelection.map((l) => l.id)}
+            sourceDirection={directionFilter}
+            isMaster={visibleDirections.length > 1}
+            finalPeriodClosed={finalPeriodClosed}
+            approvals={balanceData?.workApproval?.approvals ?? []}
             busy={busy}
             error={error}
             onCancel={() => setOffsetConfirmOpen(false)}
             onConfirm={handleOffsetSelection}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {bankOffsetOpen && (
+          <BankOffsetModal
+            key="bank-offset-modal"
+            isOpen={bankOffsetOpen}
+            sourceDirection={directionFilter}
+            onClose={() => setBankOffsetOpen(false)}
+            initialLine={
+              selectedBankItems.length === 1
+                ? selectedBankItems[0]
+                : null
+            }
+            availableLines={bankLinesRaw}
+            isMaster={visibleDirections.length > 1}
+            busy={busy}
+            onConfirm={handleBankOffset}
           />
         )}
       </AnimatePresence>
@@ -2219,9 +2345,35 @@ export default function ActiveWorkspace({
             floating
             onOpen={() => setBalanceOpen(true)}
           />
-          <div className="ml-auto flex shrink-0 items-center gap-1.5">
-              {/* จอ lg: อยู่กลุ่มปุ่มขวา — ถ้าวางต่อจากข้อความซ้ายจะโดน BalanceBadge ที่ลอยกลางแถบบังมิด */}
-              {periodClosed && (
+          <div className="ml-auto flex flex-wrap items-center gap-1.5">
+            {/* ช่องค้นหาแบบเรียลไทม์ (Omni-search ค้นหา ยอดเงิน, ชื่อ, เลขเอกสาร, วันที่) */}
+            <div className="relative flex items-center">
+              <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="ค้นหา (ยอดเงิน, ชื่อ, เลขเอกสาร)..."
+                className="h-9 w-40 sm:w-52 lg:w-56 xl:w-64 rounded-xl border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-7 text-xs text-slate-800 placeholder:text-slate-400 transition-all focus:border-blue-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery("");
+                    searchInputRef.current?.focus();
+                  }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700"
+                  title="ล้างคำค้นหา (Esc)"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+
+            {/* จอ lg: อยู่กลุ่มปุ่มขวา — ถ้าวางต่อจากข้อความซ้ายจะโดน BalanceBadge ที่ลอยกลางแถบบังมิด */}
+            {periodClosed && (
                 <button
                   type="button"
                   onClick={() => setBalanceOpen(true)}
@@ -2236,10 +2388,10 @@ export default function ActiveWorkspace({
                 onClick={handleReloadData}
                 disabled={loading || busy || syncingGl}
                 className="flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
-                title="โหลดรายการล่าสุดโดยยังอยู่หน้าเดิม — แท็บ กลุ่มวันที่ที่คลี่ไว้ ตำแหน่งที่เลื่อน และรายการที่ติ๊กไว้ยังอยู่"
+                title="อัปเดตรายการโดยคงตัวกรอง ตำแหน่ง และรายการที่เลือกไว้"
               >
                 <RotateCcw size={14} />
-                <span className="hidden 2xl:inline">โหลดข้อมูลใหม่</span>
+                <span className="hidden xl:inline">โหลดข้อมูลใหม่</span>
               </button>
               <button
                 type="button"
@@ -2261,7 +2413,7 @@ export default function ActiveWorkspace({
                   size={14}
                   className="shrink-0 text-indigo-600 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12"
                 />
-                <span className="hidden 2xl:inline tracking-tight">ผู้ช่วยจับคู่</span>
+                <span className="hidden sm:inline tracking-tight">ผู้ช่วยจับคู่</span>
               </button>
               <button
                 type="button"
@@ -2274,12 +2426,12 @@ export default function ActiveWorkspace({
                 }`}
                 title={
                   linkDates
-                    ? "เปิดอยู่ — สองตารางกางวันเดียวกันและเลื่อนตามกัน กดเพื่อให้แยกกัน"
-                    : "ปิดอยู่ — สองตารางเลื่อนแยกกัน กดเพื่อให้เลื่อนตามกัน"
+                    ? "เปิดอยู่ สองตารางกางวันเดียวกันและเลื่อนตามกัน กดเพื่อให้แยกกัน"
+                    : "ปิดอยู่ สองตารางเลื่อนแยกกัน กดเพื่อให้เลื่อนตามกัน"
                 }
               >
                 <Link2 size={14} />
-                <span className="hidden 2xl:inline">เลื่อนตามกัน</span>
+                <span className="hidden lg:inline">เลื่อนตามกัน</span>
                 <span
                   className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
                     linkDates ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
@@ -2295,7 +2447,7 @@ export default function ActiveWorkspace({
                 title="เปลี่ยนธนาคาร บัญชี หรือช่วงวันที่"
               >
                 <Pencil size={14} />
-                <span className="hidden 2xl:inline">แก้ไขเงื่อนไข</span>
+                <span className="hidden xl:inline">แก้ไขเงื่อนไข</span>
               </button>
           </div>
         </div>
@@ -2328,6 +2480,7 @@ export default function ActiveWorkspace({
             lumpClusterIds={lumpClusterIds}
             scrollRef={bankScrollRef}
             onScroll={(event) => persistScroll("bank", event.currentTarget.scrollTop)}
+            searchQuery={searchQuery}
           />
           {/* จอเล็กที่ตารางเรียงซ้อนกัน ไม่มีรอยต่อให้คร่อม จึงแทรกเป็นชิ้นปกติระหว่างสองตารางแทน */}
           <BalanceBadge
@@ -2394,6 +2547,7 @@ export default function ActiveWorkspace({
             }
             scrollRef={glScrollRef}
             onScroll={(event) => persistScroll("gl", event.currentTarget.scrollTop)}
+            searchQuery={searchQuery}
           />
         </div>
       </div>
@@ -2401,7 +2555,7 @@ export default function ActiveWorkspace({
       <div className="shrink-0 border-t border-gray-100 bg-white px-4 py-2 sm:px-6">
         {/* ยอดและปุ่มอยู่คนละแถวเสมอ เพื่อไม่ให้ตารางหด/ขยายเมื่อยอดหรือจำนวนที่เลือกเปลี่ยน */}
         <div className="flex flex-col gap-2">
-          <div className="grid grid-cols-3 gap-4 lg:grid-cols-[repeat(3,minmax(0,12rem))_minmax(0,1fr)]">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4 lg:grid-cols-[repeat(3,minmax(0,11.5rem))_minmax(0,1fr)] items-center">
             {/* เดิมเป็นเลข 3 ตัวลอยๆ ไม่มีป้ายบอกว่าเลขไหนคืออะไร */}
             <div className="min-w-0">
               <p className="text-[10px] font-medium text-gray-400">ยอดธนาคารที่เลือก</p>
@@ -2418,109 +2572,142 @@ export default function ActiveWorkspace({
               </p>
             </div>
 
-            {/* บอกตรงๆ ว่าทำไมปุ่ม Match ยังกดไม่ได้ — เดิมปุ่มเทาเฉยๆ โดยไม่มีคำอธิบาย */}
-            <div className="col-span-3 flex h-10 min-w-0 items-center lg:col-span-1">
-              {matchPlan.problem && (
-                <p title={matchPlan.problem} className="line-clamp-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
-                  {matchPlan.problem}
-                </p>
-              )}
+            {/* ย้าย 3 ปุ่มเคสพิเศษ (หักล้างธนาคาร, หักล้าง BC365, ระบุเป็น JV ปรับปรุง) มาไว้ที่คอลัมน์ฝั่งขวาของยอดเงิน */}
+            <div className="col-span-3 flex min-w-0 flex-wrap items-center justify-start gap-2 lg:col-span-1 lg:justify-end">
+              <button
+                onClick={() => {
+                  setError("");
+                  setBankOffsetOpen(true);
+                }}
+                disabled={loading || busy || syncingGl || bankLinesRaw.length === 0 || anyWorkLocked || noOffsetRole}
+                title={
+                  noOffsetRole
+                    ? "ต้องมีสิทธิ์ AP หรือ AR ฝั่งใดฝั่งหนึ่งจึงจะหักล้างรายการได้"
+                    : anyWorkLocked
+                    ? "รายการหักล้างกระทบทั้งเงินเข้าและเงินออก ต้องเปิดงานทั้งสองฝั่งก่อน"
+                    : "หักล้างเงินเข้าและเงินออกในบัญชีเดียวกัน เช่น เช็คเด้งหรือรายการตัดคืน ต้องระบุเหตุผล"
+                }
+                className="flex items-center gap-1.5 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+              >
+                <Repeat size={13} /> หักล้างธนาคาร
+                {selectedBankItems.length === 1 && (
+                  <span className="inline-block rounded-full bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">
+                    1
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setError("");
+                  setOffsetConfirmOpen(true);
+                }}
+                disabled={loading || busy || syncingGl || glLinesRaw.length === 0 || anyWorkLocked || noOffsetRole}
+                title={
+                  noOffsetRole
+                    ? "ต้องมีสิทธิ์ AP หรือ AR ฝั่งใดฝั่งหนึ่งจึงจะหักล้างรายการได้"
+                    : anyWorkLocked
+                    ? "รายการหักล้างกระทบทั้งเงินเข้าและเงินออก ต้องเปิดงานทั้งสองฝั่งก่อน"
+                    : "รายการ BC365 เงินเข้ากับเงินออกที่ล้างกันเอง ไม่มีคู่ในธนาคาร เปิดหน้าต่างเลือกได้ทั้งสองฝั่งในที่เดียว"
+                }
+                className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+              >
+                <Scale size={13} /> หักล้างรายการ BC365
+                {selectedGlItems.length === 1 && (
+                  <span className="inline-block rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700">
+                    1
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setRemarkError("");
+                  setRemarkModal("exclude");
+                }}
+                disabled={selectedGlItems.length === 0 || busy || syncingGl || periodClosed}
+                title={
+                  periodClosed
+                    ? lockMessage
+                    : "ใช้กับ JV ปรับปรุงที่บันทึกใน BC365 แล้ว รายการที่เลือกจะไม่นำไปจับคู่กับธนาคาร และจะใช้คำนวณยอดพักโอน"
+                }
+                className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 shadow-sm"
+              >
+                <Ban size={13} /> ระบุเป็น JV ปรับปรุง
+                {selectedGlItems.length > 0 && (
+                  <span className="inline-block rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">
+                    {selectedGlItems.length}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
 
-          {/* กันปุ่มขึ้นบรรทัดใหม่เมื่อจำนวนเปลี่ยน จอแคบเลื่อนแถบปุ่มได้โดยความสูงคงเดิม */}
-          <div className="h-14 overflow-x-auto">
-            <div className="flex h-10 min-w-max items-center gap-2">
-            <ClusterKindToggle
-              label="ยอดตรงกันพอดี"
-              count={clusterKinds.oneToOne.count}
-              checked={isKindSelected(clusterKinds.oneToOne)}
-              tone="green"
-              title={noSideRole ? lockMessage : "เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ธนาคาร 1 รายการ ยอดตรงกับ BC365 1 รายการ ในวันเดียวกัน"}
-              disabled={noSideRole}
-              onClick={() => toggleKind(clusterKinds.oneToOne)}
-            />
-            <ClusterKindToggle
-              label="ต้องรวมหลายรายการ"
-              count={clusterKinds.lumpSum.count}
-              checked={isKindSelected(clusterKinds.lumpSum)}
-              tone="amber"
-              title={noSideRole ? lockMessage : "เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ต้องรวมหลายรายการเข้าด้วยกันยอดจึงเท่า อาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"}
-              disabled={noSideRole}
-              onClick={() => toggleKind(clusterKinds.lumpSum)}
-            />
-            <button onClick={handleClear} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 px-3 py-2">
-              <X size={14} /> ล้างการเลือก
-            </button>
-            <button
-              onClick={() => {
-                setError("");
-                setOffsetConfirmOpen(true);
-              }}
-              disabled={loading || busy || syncingGl || glLinesRaw.length === 0 || anyWorkLocked || noOffsetRole}
-              title={
-                noOffsetRole
-                  ? "ต้องมีสิทธิ์ AP หรือ AR ฝั่งใดฝั่งหนึ่งจึงจะหักล้างรายการได้"
-                  : anyWorkLocked
-                  ? "รายการหักล้างกระทบทั้งเงินเข้าและเงินออก ต้องเปิดงานทั้งสองฝั่งก่อน"
-                  : "รายการ BC365 เงินเข้ากับเงินออกที่ล้างกันเอง ไม่มีคู่ในธนาคาร — เปิดหน้าต่างเลือกได้ทั้งสองฝั่งในที่เดียว"
-              }
-              className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Scale size={14} /> หักล้างรายการ BC365
-              <span aria-hidden={offsetSelection.length === 0} className={`inline-block w-[11ch] text-right text-xs tabular-nums ${offsetSelection.length === 0 ? "invisible" : ""}`}>
-                ({offsetCounts.inCount}:{offsetCounts.outCount})
-              </span>
-            </button>
-            <button
-              onClick={() => {
-                setRemarkError("");
-                setRemarkModal("exclude");
-              }}
-              disabled={selectedGlItems.length === 0 || busy || syncingGl || periodClosed}
-              title={
-                periodClosed
-                  ? lockMessage
-                  : "ใช้กับ JV ปรับปรุงที่บันทึกใน BC365 แล้ว รายการที่เลือกจะไม่นำไปจับคู่กับธนาคาร และจะใช้คำนวณยอดพักโอน"
-              }
-              className="flex items-center gap-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
-            >
-              <Ban size={14} /> ระบุเป็น JV ปรับปรุง
-            </button>
-            <button
-              onClick={() => {
-                if (canMoveToSuspense && !busy && !syncingGl && !periodClosed) {
-                  setConfirmSuspenseOpen(true);
+          {/* แถบปุ่มจับคู่และกรองรายการหลัก */}
+          <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <ClusterKindToggle
+                label="ยอดตรงกันพอดี"
+                count={clusterKinds.oneToOne.count}
+                checked={isKindSelected(clusterKinds.oneToOne)}
+                tone="green"
+                title={noSideRole ? lockMessage : "เลือกหรือยกเลิกการเลือกทั้งหมด คู่ที่ธนาคาร 1 รายการ ยอดตรงกับ BC365 1 รายการ ในวันเดียวกัน"}
+                disabled={noSideRole}
+                onClick={() => toggleKind(clusterKinds.oneToOne)}
+              />
+              <ClusterKindToggle
+                label="ต้องรวมหลายรายการ"
+                count={clusterKinds.lumpSum.count}
+                checked={isKindSelected(clusterKinds.lumpSum)}
+                tone="amber"
+                title={noSideRole ? lockMessage : "เลือกหรือยกเลิกการเลือกทั้งหมด คู่ที่ต้องรวมหลายรายการเข้าด้วยกันยอดจึงเท่า อาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"}
+                disabled={noSideRole}
+                onClick={() => toggleKind(clusterKinds.lumpSum)}
+              />
+              <button onClick={handleClear} className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-700 px-2.5 py-1.5">
+                <X size={14} /> ล้างการเลือก
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {/* บอกตรงๆ ว่าทำไมปุ่ม Match ยังกดไม่ได้ ย้ายมาไว้ใกล้ปุ่มจับคู่โดยตรง */}
+              {matchPlan.problem && (
+                <p title={matchPlan.problem} className="line-clamp-1 max-w-sm rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700">
+                  {matchPlan.problem}
+                </p>
+              )}
+              <button
+                onClick={() => {
+                  if (canMoveToSuspense && !busy && !syncingGl && !periodClosed) {
+                    setConfirmSuspenseOpen(true);
+                  }
+                }}
+                disabled={!canMoveToSuspense || busy || syncingGl || periodClosed}
+                title={
+                  periodClosed
+                    ? lockMessage
+                    : suspenseProblem ?? "พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
                 }
-              }}
-              disabled={!canMoveToSuspense || busy || syncingGl || periodClosed}
-              title={
-                periodClosed
-                  ? lockMessage
-                  : suspenseProblem ?? "พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
-              }
-              className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
-            >
-              พักรายการ
-            </button>
-            <button
-              onClick={handleMatchClick}
-              disabled={!canMatch || busy || syncingGl || periodClosed}
-              title={
-                periodClosed
-                  ? lockMessage
-                  : matchPlan.problem ??
-                    (matchPlan.needsRemark
-                      ? "ยอดทั้งสองฝั่งไม่เท่ากัน ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง โดยต้องระบุหมายเหตุ"
-                      : matchPlan.groups.length > 1
-                        ? `จะบันทึกแยกเป็น ${matchPlan.groups.length} กลุ่ม (แยกตามวันที่)`
-                        : undefined)
-              }
-              className="flex w-64 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-blue-600 px-4 py-2 text-sm font-medium tabular-nums text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
-              {matchPlan.needsRemark ? "จับคู่และพักส่วนต่าง" : "จับคู่"} {selectedBankItems.length}:{selectedGlItems.length}
-            </button>
+                className="text-xs sm:text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
+              >
+                พักรายการ
+              </button>
+              <button
+                onClick={handleMatchClick}
+                disabled={!canMatch || busy || syncingGl || periodClosed}
+                title={
+                  periodClosed
+                    ? lockMessage
+                    : matchPlan.problem ??
+                      (matchPlan.needsRemark
+                        ? "ยอดทั้งสองฝั่งไม่เท่ากัน ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง โดยต้องระบุหมายเหตุ"
+                        : matchPlan.groups.length > 1
+                          ? `จะบันทึกแยกเป็น ${matchPlan.groups.length} กลุ่ม (แยกตามวันที่)`
+                          : undefined)
+                }
+                className="flex min-w-[10rem] sm:w-64 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full bg-blue-600 px-4 py-2 text-xs sm:text-sm font-medium tabular-nums text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
+                {matchPlan.needsRemark ? "จับคู่และพักส่วนต่าง" : "จับคู่"} {selectedBankItems.length}:{selectedGlItems.length}
+              </button>
             </div>
           </div>
         </div>

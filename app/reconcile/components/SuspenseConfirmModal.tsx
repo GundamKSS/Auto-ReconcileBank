@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from "../../../components/HelpTooltip";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
 import { Loader2, TriangleAlert, X } from "lucide-react";
@@ -74,9 +75,9 @@ export default function SuspenseConfirmModal({
           <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             <TriangleAlert size={14} className="mt-0.5 shrink-0" />
             <span>
-              มี <b>{autoMatchedCount}</b> รายการที่ระบบพบคู่แนะนำและเลือกไว้ให้อัตโนมัติ แต่ยังไม่ได้บันทึกการจับคู่
-              หากต้องการจับคู่ ให้กดยกเลิกเพื่อตรวจสอบ แล้วใช้ปุ่ม &quot;จับคู่&quot;
+              มีคู่แนะนำ <b>{autoMatchedCount}</b> รายการที่ยังไม่บันทึก ต้องการพักแทนหรือไม่?
             </span>
+            <HelpTooltip label="วิธีใช้คู่แนะนำ">ระบบเลือกคู่แนะนำไว้ให้อัตโนมัติ หากต้องการจับคู่ ให้กดยกเลิกเพื่อตรวจสอบ แล้วใช้ปุ่มจับคู่</HelpTooltip>
           </div>
         )}
 

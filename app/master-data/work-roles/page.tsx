@@ -70,7 +70,7 @@ export default function WorkRolesPage() {
 
   const tabs = [
     { key: 'roles', label: 'สิทธิ์ที่กำหนดไว้', icon: Users },
-    { key: 'history', label: 'ประวัติเปลี่ยนสิทธิ์ล่าสุด', icon: History },
+    { key: 'history', label: 'ประวัติเปลี่ยนสิทธิ์', icon: History },
   ] as const;
 
   return <MainContent className="min-h-screen bg-[#f8fafc]">
@@ -83,7 +83,7 @@ export default function WorkRolesPage() {
             <ShieldCheck size={22} className="text-white" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5"><h1 className="break-words text-xl font-bold tracking-tight text-slate-900 sm:text-3xl">สิทธิ์ยืนยันงานพนักงาน</h1>
+            <div className="flex items-center gap-1.5"><h1 className="break-words text-xl font-bold tracking-tight text-slate-900 sm:text-3xl">สิทธิ์พนักงาน</h1>
               <HelpTooltip label="เกี่ยวกับสิทธิ์ยืนยันงาน">สำหรับผู้ใช้ที่เป็น User ในระบบกลาง: AP = เงินออก, AR = เงินเข้า, MASTER = ทำได้ทุกอย่าง (รวมเปิดงวดและให้สิทธิ์) ไม่ได้รับสิทธิ์ = ดูภาพรวม/รายงานเท่านั้น · Dev และ Admin ระบบกลางทำได้ทุกอย่างโดยไม่ต้องกำหนดที่นี่ · AP และ AR ยืนยันงานครบ = ปิดงวดทันที</HelpTooltip>
             </div>
           </div>
@@ -92,7 +92,7 @@ export default function WorkRolesPage() {
           <button type="button" onClick={reload} disabled={loading} aria-label="โหลดข้อมูลใหม่"
             className="flex size-11 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 disabled:opacity-40"><RefreshCw size={17} className={loading ? 'animate-spin' : ''} /></button>
           <button type="button" onClick={() => openEditor()}
-            className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-600"><Plus size={17} />เพิ่มหรือเปลี่ยนสิทธิ์</button>
+            className="flex min-h-11 items-center justify-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-600"><Plus size={17} />กำหนดสิทธิ์</button>
         </div>
       </header>
 
@@ -147,12 +147,12 @@ export default function WorkRolesPage() {
                 <td className="px-3 py-4 text-right"><button onClick={() => openEditor(assignment)} aria-label={`เปลี่ยนสิทธิ์ ${assignment.employeeCode} ${assignment.roleCode}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-3 text-xs font-medium text-blue-500 transition-colors hover:bg-blue-50"><Pencil size={13} />เปลี่ยนสิทธิ์</button></td>
               </tr>)}</tbody>
             </table></div>
-            {!roles.length && <EmptyState icon="roles" text="ไม่พบสิทธิ์ที่กำหนดไว้" detail="ค้นหาด้วย EMP code หรือกดเพิ่มหรือเปลี่ยนสิทธิ์เพื่อกำหนดสิทธิ์พนักงาน" />}
+            {!roles.length && <EmptyState icon="roles" text="ไม่พบสิทธิ์ที่กำหนดไว้" detail="ค้นหาด้วย EMP code หรือกดกำหนดสิทธิ์เพื่อกำหนดสิทธิ์พนักงาน" />}
           </>}
         </div>
 
         <div id="work-roles-panel-history" role="tabpanel" aria-labelledby="work-roles-tab-history" hidden={view !== 'history'} tabIndex={0} className="pt-5">
-          <div className="mb-5 flex items-center gap-2"><h2 className="font-semibold text-slate-800">ประวัติเปลี่ยนสิทธิ์ล่าสุด</h2><span className="text-xs text-slate-400">สูงสุด 50 รายการ</span></div>
+          <div className="mb-5 flex items-center gap-2"><h2 className="font-semibold text-slate-800">ประวัติเปลี่ยนสิทธิ์</h2><span className="text-xs text-slate-400">สูงสุด 50 รายการ</span></div>
           {loading ? <LoadingState /> : history.length ? <div className="space-y-3">{history.map((event) => <article key={event.eventId} className="flex min-w-0 items-start gap-3 rounded-2xl border border-slate-100 p-4 transition-colors hover:bg-slate-50/50 sm:gap-4">
             <div className={`flex size-9 shrink-0 items-center justify-center rounded-full ${event.isActive ? 'bg-emerald-50 text-emerald-500' : 'bg-slate-100 text-slate-400'}`}><History size={17} /></div>
             <div className="min-w-0 flex-1">
@@ -161,7 +161,7 @@ export default function WorkRolesPage() {
               <p className="mt-3 whitespace-pre-wrap break-words rounded-xl bg-slate-50 px-3 py-2.5 text-sm leading-relaxed text-slate-600">{event.reason}</p>
               <p className="mt-2 break-words text-xs text-slate-400">แก้ไขโดย {event.actor}</p>
             </div>
-          </article>)}</div> : <EmptyState icon="history" text="ยังไม่มีประวัติเปลี่ยนสิทธิ์" detail="เมื่อมีการเพิ่มหรือเปลี่ยนสิทธิ์ ระบบจะแสดงประวัติที่นี่" />}
+          </article>)}</div> : <EmptyState icon="history" text="ยังไม่มีประวัติเปลี่ยนสิทธิ์" detail="เมื่อมีการกำหนดสิทธิ์ ระบบจะแสดงประวัติที่นี่" />}
         </div>
       </section>
     </main>
