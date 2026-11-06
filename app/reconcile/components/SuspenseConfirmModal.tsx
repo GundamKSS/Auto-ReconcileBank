@@ -57,7 +57,7 @@ export default function SuspenseConfirmModal({
               ยืนยันพักรายการ
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              พักรายการ BC365 {lines.length} รายการ · {direction === "IN" ? "เงินเข้า" : "เงินออก"} เพื่อรอจับคู่ภายหลัง โดยไม่พักรายการธนาคารที่เลือกไว้
+              พักรายการ BC365 {lines.length} รายการ · {direction === "IN" ? "เงินเข้า" : "เงินออก"} เพื่อรอจับคู่กับธนาคารภายหลัง
             </p>
           </div>
           <button

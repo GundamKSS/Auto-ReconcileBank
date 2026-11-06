@@ -1,10 +1,12 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
-import { AlertTriangle, CheckCircle2, Loader2, Lock, Pencil, Undo2, Unlock, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, Pencil, Undo2, X } from "lucide-react";
 import type { BalanceData } from "./balanceTypes";
+import PeriodWorkflowPanel, { type WorkApprovalAction } from "./PeriodWorkflowPanel";
 import OpeningBalanceInput, { parseAmountInput } from "./OpeningBalanceInput";
 
 import { formatAmount } from '../../../lib/formatAmount';
@@ -37,6 +39,7 @@ export default function BalanceModal({
   onClose,
   onSaveOpening,
   onUndoExcluded,
+  onWorkApproval,
   onClosePeriod,
   onReopenPeriod,
 }: {
@@ -47,6 +50,7 @@ export default function BalanceModal({
   onClose: () => void;
   onSaveOpening: (amount: number) => Promise<string | null>;
   onUndoExcluded: (matchId: number, num: number, reason: string) => Promise<string | null>;
+  onWorkApproval: (action: WorkApprovalAction) => Promise<string | null>;
   onClosePeriod: () => Promise<string | null>;
   onReopenPeriod: (reason: string) => Promise<string | null>;
 }) {
@@ -58,15 +62,13 @@ export default function BalanceModal({
   const [undoKey, setUndoKey] = useState<string | null>(null);
   const [undoReason, setUndoReason] = useState("");
   const [undoing, setUndoing] = useState(false);
-  const [closingPeriod, setClosingPeriod] = useState(false);
-  const [reopenOpen, setReopenOpen] = useState(false);
-  const [reopenReason, setReopenReason] = useState("");
-  const [reopening, setReopening] = useState(false);
 
   const needsOpening = data !== null && data.extrasReady && data.gl.opening === null;
-  const showOpeningInput = needsOpening || editingOpening;
+  const openingLocked = data?.periodClose?.status === 'CLOSED' || Boolean(data?.workApproval?.approvals.length);
+  const showOpeningInput = !openingLocked && (needsOpening || editingOpening);
 
   async function saveOpening() {
+    if (openingLocked) return;
     const amount = parseAmountInput(openingText);
     if (amount === null) return;
     setSavingOpening(true);
@@ -87,27 +89,6 @@ export default function BalanceModal({
     else {
       setUndoKey(null);
       setUndoReason("");
-    }
-  }
-
-  async function closePeriod() {
-    setClosingPeriod(true);
-    setActionError("");
-    const problem = await onClosePeriod();
-    setClosingPeriod(false);
-    if (problem) setActionError(problem);
-  }
-
-  async function reopenPeriod() {
-    if (!reopenReason.trim()) return;
-    setReopening(true);
-    setActionError("");
-    const problem = await onReopenPeriod(reopenReason.trim());
-    setReopening(false);
-    if (problem) setActionError(problem);
-    else {
-      setReopenOpen(false);
-      setReopenReason("");
     }
   }
 
@@ -218,97 +199,21 @@ export default function BalanceModal({
                 </Notice>
               )}
               {data.bank.lineCount === 0 && <Notice>ไม่พบรายการธนาคารในช่วงวันที่นี้ กรุณาตรวจสอบช่วงวันที่และไฟล์ที่นำเข้า</Notice>}
-              {data.bank.lineCount > 0 && !data.bank.chainOk && (
+              {data.bank.lineCount > 0 && !data.bank.chainOk && (data.bank.totalIn === 0 || data.bank.totalOut === 0) ? (
+                // AP นำเข้าเฉพาะเงินออก AR เฉพาะเงินเข้า — ฝั่งเดียวเข้ามาแล้ว สาย Balance ยังขาดเป็นช่วงๆ
                 <Notice>
-                  ยอดคงเหลือในไฟล์ statement ต่อกันไม่ครบทุกบรรทัด (ไฟล์อาจขาดบางรายการ หรือธนาคารไม่ส่งยอดคงเหลือมา) —
+                  statement ช่วงนี้ยังนำเข้าไม่ครบสองฝั่ง (มีแต่{data.bank.totalIn === 0 ? "เงินออก — รอ AR นำเข้าเงินเข้า" : "เงินเข้า — รอ AP นำเข้าเงินออก"}) —
+                  ยอดยกมาและยอดคงเหลือฝั่งธนาคารจะถูกต้องเมื่อนำเข้าครบทั้งสองฝั่ง
+                </Notice>
+              ) : data.bank.lineCount > 0 && !data.bank.chainOk && (
+                <Notice>
+                  ยอดคงเหลือในไฟล์ statement ต่อกันไม่ครบทุกบรรทัด (ไฟล์อาจขาดบางรายการ อีกฝั่งยังนำเข้าไม่ครบ หรือธนาคารไม่ส่งยอดคงเหลือมา) —
                   ยอดยกมาฝั่งธนาคารอาจไม่ถูกต้อง
                 </Notice>
               )}
 
-              {data.periodClose && data.periodClose.status !== "OPEN" && (
-                <div
-                  className={`mb-3 rounded-xl border px-3 py-2.5 text-xs ${
-                    data.periodClose.status === "CLOSED"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : "border-amber-200 bg-amber-50 text-amber-800"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      {data.periodClose.status === "CLOSED" ? <Lock size={14} /> : <Unlock size={14} />}
-                      {data.periodClose.status === "CLOSED" ? (
-                        <span>
-                          ปิดงวดแล้ว โดย {data.periodClose.closedBy} เมื่อ {formatDMY(data.periodClose.closedAt as string)}
-                        </span>
-                      ) : (
-                        <span>
-                          เปิดงวดคืนโดย {data.periodClose.reopenedBy} เมื่อ {formatDMY(data.periodClose.reopenedAt as string)}
-                          {data.periodClose.reopenReason && ` · เหตุผล: ${data.periodClose.reopenReason}`}
-                        </span>
-                      )}
-                    </div>
-                    {data.periodClose.status === "CLOSED" ? (
-                      <button
-                        onClick={() => setReopenOpen((v) => !v)}
-                        className="shrink-0 rounded-full border border-emerald-300 bg-white px-3 py-1 font-medium text-emerald-700 hover:bg-emerald-100"
-                      >
-                        เปิดงวดอีกครั้ง
-                      </button>
-                    ) : (
-                      <button
-                        onClick={closePeriod}
-                        disabled={!settled || closingPeriod}
-                        title={!settled ? "ยอดต้องเท่ากันก่อนปิดงวด" : undefined}
-                        className="flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1 font-medium text-amber-700 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {closingPeriod && <Loader2 size={12} className="animate-spin" />}
-                        ปิดงวด
-                      </button>
-                    )}
-                  </div>
-                  {reopenOpen && (
-                    <div className="mt-2 flex items-center gap-2">
-                      <input
-                        value={reopenReason}
-                        onChange={(e) => setReopenReason(e.target.value)}
-                        placeholder="เหตุผลที่เปิดงวดคืน (จำเป็น)"
-                        className="flex-1 rounded-lg border border-emerald-200 bg-white px-2.5 py-1.5 text-xs focus:border-emerald-400 focus:outline-none"
-                      />
-                      <button
-                        onClick={reopenPeriod}
-                        disabled={!reopenReason.trim() || reopening}
-                        className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 font-medium text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        {reopening && <Loader2 size={12} className="animate-spin" />}
-                        ยืนยัน
-                      </button>
-                      <button
-                        onClick={() => {
-                          setReopenOpen(false);
-                          setReopenReason("");
-                        }}
-                        className="shrink-0 text-gray-500 hover:text-gray-700"
-                      >
-                        ยกเลิก
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-              {data.periodClose && data.periodClose.status === "OPEN" && (
-                <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-600">
-                  <span>งวดนี้ยังไม่ปิด — แก้ไขรายการได้ตามปกติ</span>
-                  <button
-                    onClick={closePeriod}
-                    disabled={!settled || closingPeriod}
-                    title={!settled ? "ยอดต้องเท่ากันก่อนปิดงวด" : undefined}
-                    className="flex shrink-0 items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 font-medium text-gray-700 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {closingPeriod && <Loader2 size={12} className="animate-spin" />}
-                    ปิดงวด
-                  </button>
-                </div>
-              )}
+              <PeriodWorkflowPanel data={data} onWorkApproval={onWorkApproval}
+                onClosePeriod={onClosePeriod} onReopenPeriod={onReopenPeriod} />
 
               {tab === "summary" && (
                 <>
@@ -333,7 +238,7 @@ export default function BalanceModal({
                           : "ต้องกรอกเอง"
                       }
                       openingAction={
-                        data.extrasReady && data.gl.opening !== null && !editingOpening ? (
+                        data.extrasReady && data.gl.opening !== null && !editingOpening && !openingLocked ? (
                           <button
                             onClick={() => {
                               setOpeningText(formatAmount(data.gl.opening as number));
@@ -399,8 +304,8 @@ export default function BalanceModal({
                             </p>
                           ) : data.adjustment.count === 0 ? (
                             <p className="mt-2 text-xs text-amber-800">
-                              ยอดพักโอนที่ยังไม่มี JV รองรับ {formatAmount(Math.abs(data.difference))} บาท หากต้องการปรับปรุง
-                              ให้ตรวจสอบและบันทึก JV ใน BC365 แล้วดึงข้อมูลใหม่ จากนั้นเลือกรายการและกด &quot;ระบุเป็น JV ปรับปรุง&quot;
+                              ยังไม่มี JV รองรับ {formatAmount(Math.abs(data.difference))} บาท
+                              <HelpTooltip label="วิธีปรับปรุงยอดพักโอน">บันทึก JV ใน BC365 แล้วดึงข้อมูลใหม่ จากนั้นเลือกรายการและกดระบุเป็น JV ปรับปรุง</HelpTooltip>
                             </p>
                           ) : (
                             <p className="mt-2 text-xs font-medium text-rose-700">
@@ -422,8 +327,7 @@ export default function BalanceModal({
                             .map((r) => (
                               <tr key={r.label}>
                                 <td className="py-2 pr-3">
-                                  <p className="text-gray-800">{r.label}</p>
-                                  <p className="text-[11px] text-gray-400">{r.hint}</p>
+                                  <div className="flex items-center gap-1"><span className="text-gray-800">{r.label}</span><HelpTooltip label={`เกี่ยวกับ${r.label}`}>{r.hint}</HelpTooltip></div>
                                 </td>
                                 <td className="py-2 text-right tabular-nums text-gray-900 whitespace-nowrap">
                                   {formatSigned(r.value as number)}

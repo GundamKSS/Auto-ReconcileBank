@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from '../../../../components/HelpTooltip';
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { AlertTriangle, FileSpreadsheet, Loader2, Trash2, X } from "lucide-react";
@@ -52,7 +53,7 @@ export default function DeleteImportModal({
                 ยืนยันลบไฟล์ Bank Statement
               </h2>
               <p className="text-xs text-gray-400 mt-0.5">
-                ลบทั้งไฟล์ — ทุกรายการในไฟล์นี้จะหายจากหน้ากระทบยอด รายงาน และภาพรวม ทันที
+                ลบทั้งไฟล์ รายการจะหายจากหน้ากระทบยอดและรายงานทันที
               </p>
             </div>
           </div>
@@ -81,9 +82,10 @@ export default function DeleteImportModal({
             </div>
           </div>
 
-          <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-            ข้อมูลเดิมยังเก็บไว้ในฐานข้อมูลเพื่อตรวจสอบย้อนหลัง และนำเข้าไฟล์ที่ถูกต้อง (หรือไฟล์เดิม) ใหม่ได้ที่หน้านำเข้าข้อมูล
-          </p>
+          <div className="mb-4 flex items-center gap-1 text-xs text-gray-500">
+            เก็บประวัติการลบไว้ตรวจสอบ
+            <HelpTooltip label="หลังลบไฟล์ธนาคาร">ข้อมูลเดิมยังเก็บไว้ตรวจสอบย้อนหลัง และนำเข้าไฟล์เดิมหรือไฟล์ที่แก้ไขแล้วได้ที่หน้านำเข้าข้อมูล</HelpTooltip>
+          </div>
 
           <label htmlFor="delete-import-reason" className="block text-xs font-medium text-gray-600 mb-1.5">
             เหตุผลที่ลบ <span className="text-red-500">*</span>
@@ -99,7 +101,7 @@ export default function DeleteImportModal({
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none transition-colors focus:border-blue-400 focus:outline-none disabled:opacity-50"
           />
           <div className="flex justify-between gap-3 text-[11px] text-gray-400 mt-1">
-            <span>จำเป็นต้องระบุ — บันทึกไว้ในประวัติการลบพร้อมชื่อผู้ลบ วันที่ และเวลา</span>
+            <span>บันทึกเหตุผลไว้ในประวัติการลบ</span>
             <span className="tabular-nums shrink-0">
               {reason.length}/{MAX_REASON_LENGTH}
             </span>

@@ -5,6 +5,8 @@ import { requireRole } from '../../../../lib/session';
 import { VIEWER_ROLES } from '../../../../lib/roles';
 import { resolveAccountFilter } from '../../../../lib/bankAccountDb';
 import { loadBanksWithStatement, splitByCoverage } from '../../../../lib/statementCoverage';
+import { readWorkPermissions } from '../../../../lib/workRolesDb';
+import { visibleWorkSides } from '../../../../lib/workRoles';
 import {
   PAGE_SIZE,
   ORDER_BY,
@@ -14,6 +16,7 @@ import {
   mapRow,
   parseFilters,
   summarizeBySide,
+  type ReportSide,
 } from './query';
 
 // ข้อมูลต้องสดทุกครั้ง ช่วงวันที่/เกณฑ์วันที่/สถานะเปลี่ยนได้ตลอด
@@ -43,6 +46,11 @@ export async function GET(req: NextRequest) {
   try {
     const filters = parseFilters(req.nextUrl.searchParams);
     const offset = Math.max(0, Number(req.nextUrl.searchParams.get('offset') ?? '0') || 0);
+    // สิทธิ์ AP หรือ AR ฝั่งเดียวเห็นเฉพาะฝั่งของตัวเอง (กติกาเดียวกับ Dashboard/หน้ากระทบยอด)
+    // ขออีกฝั่งมาก็ได้ฝั่งของตัวเองกลับไป — Viewer, Master, Admin และ Dev เห็นทั้งสองฝั่ง
+    const visibleSides = visibleWorkSides(await readWorkPermissions(auth.session));
+    const ownSide: ReportSide | null = visibleSides.length === 1 ? (visibleSides[0] === 'IN' ? 'AR' : 'AP') : null;
+    if (ownSide) filters.side = ownSide;
 
     if (filters.from > filters.to) {
       return NextResponse.json({ error: 'ช่วงวันที่ไม่ถูกต้อง (วันเริ่มต้นอยู่หลังวันสิ้นสุด)' }, { status: 400 });
@@ -78,6 +86,9 @@ export async function GET(req: NextRequest) {
       ${SUMMARY_QUERY}
     `);
     const { summary, sideCounts } = summarizeBySide(summaryResult.recordset, filters.side);
+    // ฝั่งที่ไม่มีสิทธิ์ไม่ส่งจำนวนออกไป — แท็บนั้นถูกล็อกอยู่แล้ว
+    const lockedSides: ReportSide[] = ownSide ? [ownSide === 'AR' ? 'AP' : 'AR'] : [];
+    for (const locked of lockedSides) sideCounts[locked] = 0;
 
     // ธนาคารที่ยังไม่ได้นำเข้า statement ของงวดนี้ไม่ใช่ "กระทบยอดแล้วไม่ตรง" แต่คือ "ยังไม่ได้เริ่ม"
     // แยกออกจากตัวเลขผลต่างหลัก ไม่งั้นพาดหัวจะใหญ่เกินจริงจนไล่หาสาเหตุผิดที่
@@ -100,6 +111,7 @@ export async function GET(req: NextRequest) {
       total: summary.total,
       summary,
       sideCounts,
+      lockedSides,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
       filters,
       // บอกหน้าจอเมื่อขอกรองรายบัญชีมาแต่ฐานข้อมูลยังไม่พร้อม จะได้ไม่เข้าใจว่าตัวเลขนี้คือของบัญชีเดียว

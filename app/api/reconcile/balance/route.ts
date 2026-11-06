@@ -7,7 +7,10 @@ import { badRequest, parseIsoDateParam } from '../../../../lib/apiInput';
 import { bankAccountColumnsReady, MIGRATION_HINT, resolveBankAccount } from '../../../../lib/bankAccountDb';
 import { EXTRAS_MIGRATION_HINT, reconcileExtrasReady } from '../../../../lib/reconcileExtrasDb';
 import { computeBalanceProof } from '../../../../lib/balanceProof';
+import { evaluatePeriodChecks } from '../../../../lib/periodCloseChecks';
 import { assertDatesOpen, isoDate, reconcilePeriodCloseReady, PeriodClosedError } from '../../../../lib/periodClose';
+import { readWorkApprovals, workApprovalReady } from '../../../../lib/periodWorkflowDb';
+import { readWorkPermissions } from '../../../../lib/workRolesDb';
 
 export const dynamic = 'force-dynamic';
 
@@ -63,15 +66,41 @@ export async function GET(req: NextRequest) {
       reopenedBy: string | null;
       reopenedAt: Date | null;
       reopenReason: string | null;
+      periodStart: string | null;
+      periodEnd: string | null;
     } | null = null;
+    // งวดก่อนที่ปิดแล้ว — ใช้ตรวจความต่อเนื่องของยอดยกมา (สเปกข้อ 27 กับ 28) ในโหมดเตือน
+    let previousClose: { periodEnd: string; bankClosing: number | null; glClosing: number | null } | null = null;
     if (await reconcilePeriodCloseReady()) {
-      const closeResult = await pool
+      const previousResult = await pool
         .request()
         .input('acc', sql.NVarChar, account.bankAccountNo)
         .input('from', sql.Date, from)
         .query(`
-          SELECT Status, ClosedBy, ClosedAt, ReopenedBy, ReopenedAt, ReopenReason
-          FROM ReconciliationPeriodClose WHERE BankAccountNo = @acc AND PeriodStart = @from
+          SELECT TOP 1 PeriodEnd, BankClosingBalance, GlClosingBalance
+          FROM ReconciliationPeriodClose
+          WHERE BankAccountNo = @acc AND Status = 'CLOSED' AND PeriodEnd < @from
+          ORDER BY PeriodEnd DESC
+        `);
+      const previousRow = previousResult.recordset[0];
+      if (previousRow) {
+        previousClose = {
+          periodEnd: isoDate(previousRow.PeriodEnd),
+          bankClosing: previousRow.BankClosingBalance === null ? null : Number(previousRow.BankClosingBalance),
+          glClosing: previousRow.GlClosingBalance === null ? null : Number(previousRow.GlClosingBalance),
+        };
+      }
+      const closeResult = await pool
+        .request()
+        .input('acc', sql.NVarChar, account.bankAccountNo)
+        .input('from', sql.Date, from)
+        .input('to', sql.Date, to)
+        .query(`
+          SELECT TOP 1 Status, ClosedBy, ClosedAt, ReopenedBy, ReopenedAt, ReopenReason, PeriodStart, PeriodEnd
+          FROM ReconciliationPeriodClose WHERE BankAccountNo = @acc
+            AND ((Status='CLOSED' AND PeriodStart<=@to AND PeriodEnd>=@from)
+              OR (PeriodStart=@from AND PeriodEnd=@to))
+          ORDER BY CASE WHEN Status='CLOSED' THEN 0 ELSE 1 END, PeriodStart
         `);
       const row = closeResult.recordset[0];
       periodClose = {
@@ -81,10 +110,37 @@ export async function GET(req: NextRequest) {
         reopenedBy: row?.ReopenedBy ?? null,
         reopenedAt: row?.ReopenedAt ?? null,
         reopenReason: row?.ReopenReason ?? null,
+        periodStart: row ? isoDate(row.PeriodStart) : null,
+        periodEnd: row ? isoDate(row.PeriodEnd) : null,
       };
     }
 
-    return NextResponse.json({ ...proof, periodClose });
+    const workflowReady = Boolean(periodClose) && await workApprovalReady(pool);
+    const approvals = workflowReady ? await readWorkApprovals(pool, account.bankAccountNo) : [];
+    const workApproval = {
+      ready: workflowReady,
+      permissions: await readWorkPermissions(auth.session, pool),
+      approvals: approvals.filter((a) => a.periodStart <= isoDate(to) && a.periodEnd >= isoDate(from))
+        .map((a) => ({ direction: a.direction, periodStart: a.periodStart, periodEnd: a.periodEnd,
+          confirmedBy: a.confirmedBy, confirmedAt: a.confirmedAt, note: a.note })),
+    };
+    // เงื่อนไขปิดงวดตามสเปกใหม่ — โหมดเตือนอย่างเดียว ไม่ได้บล็อกการยืนยันงานหรือการปิดงวด
+    const checks = evaluatePeriodChecks({
+      period: proof.period,
+      bank: {
+        opening: proof.bank.opening,
+        closing: proof.bank.closing,
+        statementClosing: proof.bank.statementClosing,
+        chainOk: proof.bank.chainOk,
+        lineCount: proof.bank.lineCount,
+        lastDateIn: proof.bank.lastDateIn,
+        lastDateOut: proof.bank.lastDateOut,
+      },
+      gl: { opening: proof.gl.opening },
+      bankUnmatched: proof.breakdown.bankUnmatchedByDirection,
+      previousClose,
+    });
+    return NextResponse.json({ ...proof, periodClose, workApproval, checks });
   } catch (err) {
     console.error('Balance API error:', err);
     return NextResponse.json({ error: 'คำนวณยอดคงเหลือไม่สำเร็จ' }, { status: 500 });
@@ -112,27 +168,34 @@ export async function PUT(req: NextRequest) {
     if (!account) return badRequest('ไม่พบบัญชีธนาคารนี้');
 
     const pool = await getPool();
-    if (await reconcilePeriodCloseReady()) {
-      await assertDatesOpen(pool, account.bankAccountNo, [isoDate(periodStart)]);
-    }
-    await pool
-      .request()
-      .input('acc', sql.NVarChar, account.bankAccountNo)
-      .input('periodStart', sql.Date, periodStart)
-      .input('amount', sql.Decimal(18, 2), round2(amount))
-      .input('by', sql.NVarChar(100), auditActor(auth.session))
-      .query(`
-        MERGE ReconciliationOpeningBalance WITH (HOLDLOCK) AS t
-        USING (SELECT @acc AS BankAccountNo, @periodStart AS PeriodStart) AS s
-          ON t.BankAccountNo = s.BankAccountNo AND t.PeriodStart = s.PeriodStart
-        WHEN MATCHED THEN
-          UPDATE SET GlOpeningBalance = @amount, UpdatedBy = @by, UpdatedAt = SYSDATETIMEOFFSET()
-        WHEN NOT MATCHED THEN
-          INSERT (BankAccountNo, PeriodStart, GlOpeningBalance, CreatedBy)
-          VALUES (@acc, @periodStart, @amount, @by);
-      `);
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      if (await reconcilePeriodCloseReady()) {
+        await assertDatesOpen(transaction, account.bankAccountNo, [isoDate(periodStart)]);
+      }
+      await new sql.Request(transaction)
+        .input('acc', sql.NVarChar, account.bankAccountNo)
+        .input('periodStart', sql.Date, periodStart)
+        .input('amount', sql.Decimal(18, 2), round2(amount))
+        .input('by', sql.NVarChar(100), auditActor(auth.session))
+        .query(`
+          MERGE ReconciliationOpeningBalance WITH (HOLDLOCK) AS t
+          USING (SELECT @acc AS BankAccountNo, @periodStart AS PeriodStart) AS s
+            ON t.BankAccountNo = s.BankAccountNo AND t.PeriodStart = s.PeriodStart
+          WHEN MATCHED THEN
+            UPDATE SET GlOpeningBalance = @amount, UpdatedBy = @by, UpdatedAt = SYSDATETIMEOFFSET()
+          WHEN NOT MATCHED THEN
+            INSERT (BankAccountNo, PeriodStart, GlOpeningBalance, CreatedBy)
+            VALUES (@acc, @periodStart, @amount, @by);
+        `);
 
-    return NextResponse.json({ success: true });
+      await transaction.commit();
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      await transaction.rollback();
+      throw err;
+    }
   } catch (err) {
     if (err instanceof PeriodClosedError) {
       return NextResponse.json({ error: err.message }, { status: 409 });

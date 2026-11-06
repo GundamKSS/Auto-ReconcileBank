@@ -7,9 +7,11 @@ import {
   ArrowDownLeft,
   ArrowLeftRight,
   ArrowUpRight,
+  Check,
   CheckCircle2,
   ChevronDown,
   CircleCheck,
+  Copy,
   EyeOff,
   Info,
   Loader2,
@@ -36,6 +38,7 @@ function formatDMY(iso: string) {
   return `${d}/${m}/${y}`;
 }
 function gapLabel(dayGap: number) {
+  if (dayGap === 0) return "วันเดียวกัน";
   return `${dayGap > 0 ? "+" : "−"}${Math.abs(dayGap)} วัน`;
 }
 
@@ -152,6 +155,11 @@ function BankGroupBox({ banks }: { banks: AssistantSuggestion["banks"] }) {
               <p className="truncate text-[11px] text-gray-400" title={bank.description}>
                 {bank.description || "-"}
               </p>
+              {[bank.senderBank, bank.senderAccountNo, bank.senderAccountName].some(Boolean) && (
+                <p className="truncate text-[10px] text-sky-700 font-mono">
+                  {[bank.senderBank, bank.senderAccountNo, bank.senderAccountName].filter(Boolean).join(" · ")}
+                </p>
+              )}
             </div>
             <span className="shrink-0 text-xs font-semibold tabular-nums text-gray-800">
               {formatAmount(bank.amount)}
@@ -167,10 +175,12 @@ function BankGroupBox({ banks }: { banks: AssistantSuggestion["banks"] }) {
   );
 }
 
-// การ์ด 1 ใบ = Bank 1 รายการหรือหลายรายการ กับ GL ที่ยอดรวมตรงกันแต่คนละวัน
+// การ์ด 1 ใบ = Bank 1 รายการหรือหลายรายการ กับ GL ที่ยอดรวมตรงกันแต่คนละวัน (หรือคนละบัญชี)
 export default function AssistantSuggestionCard({
   suggestion,
   index,
+  bankCode,
+  bankAccountNo,
   selectedEntryNo,
   consumedGl,
   consumedBank,
@@ -185,6 +195,8 @@ export default function AssistantSuggestionCard({
 }: {
   suggestion: AssistantSuggestion;
   index: number;
+  bankCode?: string;
+  bankAccountNo?: string | null;
   selectedEntryNo: number | null;
   consumedGl: Set<number>; // GL ที่ถูกจับคู่ไปแล้วในรอบนี้ (จากการ์ดใบอื่น)
   consumedBank: Set<number>; // Bank ที่ถูกใช้โดยการ์ด 1:1 หรือ N:1 ใบอื่นแล้ว
@@ -198,6 +210,7 @@ export default function AssistantSuggestionCard({
   onUndoSkip: () => void;
 }) {
   const [showAlternatives, setShowAlternatives] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { banks } = suggestion;
   const bank = banks[0];
   const matched = status === "matched";
@@ -208,6 +221,54 @@ export default function AssistantSuggestionCard({
     ? suggestion.candidates
     : suggestion.candidates.filter((c) => !consumedGl.has(c.gl.entryNo));
   const selected = available.find((c) => c.gl.entryNo === selectedEntryNo) ?? available[0];
+  const isCrossDirection = Boolean(selected?.crossDirection);
+  const isCrossAccountBank = Boolean(suggestion.crossAccountBank);
+  const isCrossAccountGl = Boolean(selected?.crossAccount);
+  const isCrossAccount = isCrossAccountGl || isCrossAccountBank;
+  const isBlocked = isCrossAccount || isCrossDirection;
+
+  async function copyIssueNotice() {
+    if (!selected) return;
+    const activeAcc = [bankCode, bankAccountNo].filter(Boolean).join(" · ") || "บัญชีปัจจุบัน";
+    let text = "";
+
+    if (isCrossDirection) {
+      const bankDir = bank.direction === "IN" ? "เงินเข้า (CR)" : "เงินออก (DR)";
+      const glDir = selected.gl.direction === "IN" ? "เงินเข้า (CR)" : "เงินออก (DR)";
+      text = [
+        `แจ้งตรวจสอบรายการ BC365 อาจบันทึกผิดฝั่ง (เดบิต/เครดิตสลับด้าน):`,
+        `- รายการ Statement (${activeAcc}): วันที่ ${formatDMY(bank.date)} ยอด ${formatAmount(bank.amount)} บาท [${bankDir}] ${bank.description ? `(${bank.description})` : ""}`.trim(),
+        `- พบใน BC365 บันทึกเป็น [${glDir}]: เลขที่เอกสาร ${selected.gl.documentNo || "-"} (Entry #${selected.gl.entryNo}) วันที่ ${formatDMY(selected.gl.date)} ยอด ${formatAmount(selected.gl.amount)} บาท`,
+        `กรุณาตรวจสอบว่ามีการลงบัญชีกลับด้าน (สลับ DR/CR) หรือไม่ หากผิดกรุณา Reverse/ปรับปรุงใน BC365 ให้ถูกต้อง`,
+      ].join("\n");
+    } else if (isCrossAccountBank) {
+      text = [
+        `แจ้งตรวจสอบรายการ BC365 พบ Statement อยู่ต่างบัญชี:`,
+        `- ใน BC365 ลงไว้ที่บัญชีนี้ (${activeAcc}): เลขที่เอกสาร ${selected.gl.documentNo || "-"} (Entry #${selected.gl.entryNo}) วันที่ ${formatDMY(selected.gl.date)} ยอด ${formatAmount(selected.gl.amount)} บาท (${selected.gl.direction})`,
+        `- แต่พบยอดตรงกันใน Statement ของบัญชี ${bank.accountNo ?? "ต่างบัญชี"}: วันที่ ${formatDMY(bank.date)} ยอด ${formatAmount(bank.amount)} บาท (${bank.direction}) ${bank.description ? `(${bank.description})` : ""}`.trim(),
+        `กรุณาตรวจสอบว่าใน BC365 ลงบัญชีธนาคารผิด หรือ Statement เข้าผิดบัญชี`,
+      ].join("\n");
+    } else if (isCrossAccountGl) {
+      const wrongAcc = [selected.gl.bankCode, selected.gl.accountNo, selected.gl.accountName]
+        .filter(Boolean)
+        .join(" · ");
+      text = [
+        `แจ้งตรวจสอบรายการ BC365 อาจลงผิดบัญชีธนาคาร:`,
+        `- รายการ Statement (${activeAcc}): วันที่ ${formatDMY(bank.date)} ยอด ${formatAmount(bank.amount)} บาท (${bank.direction}) ${bank.description ? `(${bank.description})` : ""}`.trim(),
+        `- พบใน BC365 บัญชี ${wrongAcc}: เลขที่เอกสาร ${selected.gl.documentNo || "-"} (Entry #${selected.gl.entryNo}) วันที่ ${formatDMY(selected.gl.date)} ยอด ${formatAmount(selected.gl.amount)} บาท`,
+        `กรุณาตรวจสอบและแก้ไขรหัสธนาคารใน BC365 ให้ตรงกับ Statement แล้วดึงข้อมูลใหม่`,
+      ].join("\n");
+    }
+
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Ignore clipboard failure silently
+    }
+  }
 
   if (status === "skipped") {
     return (
@@ -240,11 +301,18 @@ export default function AssistantSuggestionCard({
 
   return (
     <motion.div
+      layout="position"
       initial={{ opacity: 0, y: 14, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
-      transition={{ type: "spring", stiffness: 380, damping: 30, delay: Math.min(index * 0.06, 0.5) }}
+      transition={{ type: "spring", stiffness: 380, damping: 30, delay: Math.min(index * 0.04, 0.3) }}
       className={`rounded-2xl border p-4 shadow-sm transition-colors ${
-        matched ? "border-green-200 bg-green-50/70" : "border-gray-200 bg-white hover:shadow-md"
+        matched
+          ? "border-green-200 bg-green-50/70"
+          : isCrossDirection
+          ? "border-rose-200 bg-rose-50/20 hover:shadow-md"
+          : isCrossAccount
+          ? "border-amber-200 bg-amber-50/20 hover:shadow-md"
+          : "border-gray-200 bg-white hover:shadow-md"
       }`}
     >
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -253,7 +321,21 @@ export default function AssistantSuggestionCard({
         ) : (
           <span className="text-xs text-gray-400">ไม่มีตัวเลือกเหลือ</span>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {isCrossDirection && selected && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-semibold text-rose-800 ring-1 ring-inset ring-rose-300">
+              <TriangleAlert size={11} className="shrink-0" />
+              บันทึกผิดฝั่ง ({selected.gl.direction === "IN" ? "BC365 เงินเข้า" : "BC365 เงินออก"})
+            </span>
+          )}
+          {isCrossAccount && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-inset ring-amber-300">
+              <TriangleAlert size={11} className="shrink-0" />
+              {isCrossAccountBank
+                ? `Statement อยู่ต่างบัญชี · ${bank.accountNo ?? "อื่น"}`
+                : `BC365 อยู่ต่างบัญชี · ${selected?.gl.accountNo}`}
+            </span>
+          )}
           {suggestion.kind === "N:1" && (
             <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-inset ring-amber-200">
               รวมยอด {banks.length}:1
@@ -289,19 +371,53 @@ export default function AssistantSuggestionCard({
             date={formatDMY(bank.date)}
             refText={bank.ref}
             detail={bank.description || "-"}
-            sub={bank.channel ? `ช่องทาง ${bank.channel}` : null}
+            sub={[
+              [bank.senderBank, bank.senderAccountNo, bank.senderAccountName].filter(Boolean).join(" · ") || null,
+              bank.channel ? `ช่องทาง ${bank.channel}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || null}
             amount={bank.amount}
+            badge={
+              isCrossAccountBank ? (
+                <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                  ต่างบัญชี: {bank.accountNo}
+                </span>
+              ) : undefined
+            }
           />
         )}
         <div className="flex sm:flex-col items-center justify-center gap-1.5 py-1">
           <span
             className="flex size-8 items-center justify-center rounded-full text-white shadow-[0_0_16px_rgba(139,92,246,0.35)]"
-            style={{ background: matched ? "#16a34a" : "linear-gradient(135deg,#8b5cf6,#3b82f6,#22d3ee)" }}
+            style={{
+              background: matched
+                ? "#16a34a"
+                : isCrossDirection
+                ? "#e11d48"
+                : isCrossAccount
+                ? "#d97706"
+                : "linear-gradient(135deg,#8b5cf6,#3b82f6,#22d3ee)",
+            }}
           >
-            {matched ? <CheckCircle2 size={15} /> : <ArrowLeftRight size={14} />}
+            {matched ? (
+              <CheckCircle2 size={15} />
+            ) : isBlocked ? (
+              <TriangleAlert size={14} />
+            ) : (
+              <ArrowLeftRight size={14} />
+            )}
           </span>
           {selected && (
-            <span className="text-[11px] font-semibold text-violet-700 tabular-nums whitespace-nowrap">
+            <span
+              className={`text-[11px] font-semibold tabular-nums whitespace-nowrap ${
+                isCrossDirection
+                  ? "text-rose-700"
+                  : isCrossAccount
+                  ? "text-amber-700"
+                  : "text-violet-700"
+              }`}
+            >
               {banks.length > 1 ? `สูงสุด ${Math.abs(selected.dayGap)} วัน` : gapLabel(selected.dayGap)}
             </span>
           )}
@@ -312,13 +428,27 @@ export default function AssistantSuggestionCard({
             date={formatDMY(selected.gl.date)}
             refText={selected.gl.documentNo || `#${selected.gl.entryNo}`}
             detail={
-              selected.gl.accountName ? `${selected.gl.accountNo} · ${selected.gl.accountName}` : selected.gl.accountNo
+              [selected.gl.bankCode, selected.gl.accountNo, selected.gl.accountName].filter(Boolean).join(" · ")
             }
             amount={selected.gl.amount}
             badge={
-              selected.outsidePeriod ? (
-                <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">นอกงวด</span>
-              ) : null
+              <div className="flex items-center gap-1">
+                {selected.crossDirection && (
+                  <span className="text-[10px] font-semibold text-rose-800 bg-rose-100 border border-rose-200 px-1.5 py-0.5 rounded">
+                    ผิดฝั่ง ({selected.gl.direction})
+                  </span>
+                )}
+                {selected.crossAccount && (
+                  <span className="text-[10px] font-semibold text-amber-800 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded">
+                    ต่างบัญชี
+                  </span>
+                )}
+                {selected.outsidePeriod && (
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded">
+                    นอกงวด
+                  </span>
+                )}
+              </div>
             }
           />
         ) : (
@@ -364,7 +494,19 @@ export default function AssistantSuggestionCard({
                       }`}
                     />
                     <span className="w-20 shrink-0 font-medium text-gray-800">{formatDMY(c.gl.date)}</span>
-                    <span className="flex-1 min-w-0 truncate text-gray-500">{c.gl.documentNo}</span>
+                    <span className="flex-1 min-w-0 truncate text-gray-500">
+                      {c.gl.documentNo}
+                      {c.crossDirection && (
+                        <span className="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800">
+                          ผิดฝั่ง ({c.gl.direction})
+                        </span>
+                      )}
+                      {c.crossAccount && (
+                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                          ต่างบัญชี: {c.gl.accountNo}
+                        </span>
+                      )}
+                    </span>
                     <span className="shrink-0 text-violet-700 tabular-nums">{gapLabel(c.dayGap)}</span>
                     <span
                       className={`shrink-0 w-10 text-right font-semibold tabular-nums ${
@@ -387,6 +529,36 @@ export default function AssistantSuggestionCard({
           <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-700">
             <CheckCircle2 size={16} /> จับคู่แล้ว · MatchId {matchId}
           </span>
+        ) : isCrossDirection ? (
+          <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50/80 px-3 py-2">
+            <p className="text-xs font-medium text-rose-800">
+              ⚠️ ห้ามจับคู่ข้ามฝั่ง — Statement กับ BC365 ลงทิศทางตรงกันข้าม (เดบิต/เครดิตสลับด้าน) กรุณาตรวจสอบและปรับปรุงใน BC365
+            </p>
+            <button
+              type="button"
+              onClick={copyIssueNotice}
+              className="inline-flex items-center gap-1.5 rounded-full border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold text-rose-800 shadow-xs transition-colors hover:bg-rose-100"
+            >
+              {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
+              {copied ? "คัดลอกแล้ว" : "คัดลอกแจ้งแก้ BC365"}
+            </button>
+          </div>
+        ) : isCrossAccount ? (
+          <div className="flex w-full flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2">
+            <p className="text-xs font-medium text-amber-800">
+              {isCrossAccountBank
+                ? "⚠️ ห้ามจับคู่ — รายการ Statement นี้อยู่ต่างบัญชีธนาคาร กรุณาตรวจสอบว่าลง BC365 ถูกบัญชีหรือไม่"
+                : "⚠️ ห้ามจับคู่ข้ามบัญชี — กรุณาแก้รหัสธนาคารใน BC365 ให้ตรงก่อนแล้วกดดึงข้อมูลใหม่"}
+            </p>
+            <button
+              type="button"
+              onClick={copyIssueNotice}
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-xs transition-colors hover:bg-amber-100"
+            >
+              {copied ? <Check size={13} className="text-green-600" /> : <Copy size={13} />}
+              {copied ? "คัดลอกแล้ว" : "คัดลอกแจ้งแก้ BC365"}
+            </button>
+          </div>
         ) : (
           <button
             onClick={() => selected && onMatch(selected.gl.entryNo)}

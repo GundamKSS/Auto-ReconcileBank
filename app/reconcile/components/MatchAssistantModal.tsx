@@ -1,9 +1,10 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
-import { CircleCheck, Loader2, RefreshCw, ScanSearch, TriangleAlert, X } from "lucide-react";
+import { CircleCheck, Loader2, RefreshCw, ScanSearch, Sparkles, TriangleAlert, X } from "lucide-react";
 import {
   ASSISTANT_WINDOW_OPTIONS,
   DEFAULT_ASSISTANT_WINDOW,
@@ -12,7 +13,7 @@ import {
   type AssistantSuggestion,
   type Direction,
 } from "../../../lib/matchAssistant";
-import AuraOrb, { AURA_GRADIENT } from "./AuraOrb";
+import AuraOrb from "./AuraOrb";
 import AssistantSuggestionCard, { type CardStatus } from "./AssistantSuggestionCard";
 
 import { formatAmount } from '../../../lib/formatAmount';
@@ -36,47 +37,41 @@ function formatDMY(iso: string) {
 
 function SearchingView({ step, windowDays, amount }: { step: number; windowDays: number; amount: number | null }) {
   return (
-    <div className="flex h-full min-h-[400px] flex-col items-center justify-center gap-7 overflow-hidden px-6 py-6">
+    <div className="flex h-full min-h-[380px] flex-col items-center justify-center gap-6 overflow-hidden px-6 py-8">
       <AuraOrb />
       <div className="text-center">
-        <p
-          className="bg-clip-text text-base font-semibold text-transparent animate-aura-shimmer"
-          style={{
-            backgroundImage: "linear-gradient(90deg,#7c3aed,#2563eb,#06b6d4,#c026d3,#7c3aed)",
-            backgroundSize: "200% 100%",
-          }}
-        >
+        <p className="text-base font-semibold tracking-tight text-slate-900">
           กำลังค้นหารายการที่น่าจะเป็นคู่กัน…
         </p>
-        <p className="mt-1 h-5 text-sm text-gray-500 tabular-nums">
+        <p className="mt-1.5 h-5 text-sm text-slate-500 tabular-nums">
           {amount !== null ? (
             <>
-              กำลังเทียบยอด <span className="font-semibold text-gray-800">{formatAmount(amount)}</span>
+              กำลังเทียบยอด <span className="font-semibold text-indigo-700">{formatAmount(amount)}</span>
             </>
           ) : (
             `ช่วงวันที่ ±${windowDays} วัน`
           )}
         </p>
       </div>
-      <ul className="flex flex-col gap-2 text-sm">
+      <ul className="w-full max-w-xs space-y-2.5 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3.5 text-sm shadow-xs">
         {SEARCH_STEPS.map((label, i) => {
           const done = i < step;
           const current = i === step;
           return (
             <li
               key={label}
-              className={`flex items-center gap-2 transition-colors duration-300 ${
-                done ? "text-gray-700" : current ? "font-medium text-violet-700" : "text-gray-300"
+              className={`flex items-center gap-2.5 transition-colors duration-300 ${
+                done ? "text-slate-700" : current ? "font-semibold text-indigo-700" : "text-slate-400"
               }`}
             >
               {done ? (
-                <CircleCheck size={16} className="text-green-500" />
+                <CircleCheck size={16} className="shrink-0 text-emerald-500" />
               ) : current ? (
-                <Loader2 size={16} className="animate-spin" />
+                <Loader2 size={16} className="shrink-0 animate-spin text-indigo-600" />
               ) : (
-                <span className="size-4 rounded-full border-2 border-current" />
+                <span className="size-4 shrink-0 rounded-full border-2 border-slate-200" />
               )}
-              {i === 1 ? `${label} ±${windowDays} วัน` : label}
+              <span className="truncate">{i === 1 ? `${label} ±${windowDays} วัน` : label}</span>
             </li>
           );
         })}
@@ -127,9 +122,12 @@ export default function MatchAssistantModal({
   const [consumedGl, setConsumedGl] = useState<Set<number>>(new Set());
   const [consumedBank, setConsumedBank] = useState<Set<number>>(new Set());
   const [matchedPairs, setMatchedPairs] = useState(0);
+  const [filterTab, setFilterTab] = useState<"all" | "matchable" | "crossAccount" | "crossDirection">("all");
+  const [recalculating, setRecalculating] = useState(false);
+  const [skippedKeys, setSkippedKeys] = useState<Set<string>>(new Set());
   const abortRef = useRef<AbortController | null>(null);
 
-  const busy = Object.values(cards).some((c) => c.status === "matching");
+  const busy = Object.values(cards).some((c) => c.status === "matching") || recalculating;
 
   const runSearch = useCallback(
     async (win: number, minDurationMs: number) => {
@@ -163,13 +161,15 @@ export default function MatchAssistantModal({
         setResult(next);
         setSelection(
           Object.fromEntries(
-            next.suggestions.map((s) => [s.banks[0].lineId, s.suggestedEntryNo ?? s.candidates[0].gl.entryNo])
+            next.suggestions.map((s) => [suggestionKey(s), s.suggestedEntryNo ?? s.candidates[0].gl.entryNo])
           )
         );
         // ผลใหม่มาจาก DB แล้ว — คู่ที่จับไปก่อนหน้าหายไปจากผลเอง ไม่ต้องจำ GL ที่ใช้ไปแล้วอีก
         setCards({});
         setConsumedGl(new Set());
         setConsumedBank(new Set());
+        setSkippedKeys(new Set());
+        setFilterTab("all");
         setPhase("results");
       } catch {
         if (controller.signal.aborted) return;
@@ -212,6 +212,7 @@ export default function MatchAssistantModal({
 
   function searchWith(win: number) {
     setWindowDays(win);
+    setSkippedKeys(new Set());
     runSearch(win, RESEARCH_MS);
   }
 
@@ -219,8 +220,39 @@ export default function MatchAssistantModal({
     setCards((prev) => ({ ...prev, [key]: state }));
   }
 
+  const silentRecalculate = useCallback(async () => {
+    setRecalculating(true);
+    try {
+      const qs = new URLSearchParams({
+        bankCode,
+        from: periodStart,
+        to: periodEnd,
+        windowDays: String(windowDays),
+        direction,
+      });
+      if (bankAccountNo) qs.set("bankAccountNo", bankAccountNo);
+      const res = await fetch(`/api/reconcile/assistant?${qs.toString()}`);
+      if (!res.ok) return;
+      const next = (await res.json()) as AssistantResult;
+      setResult(next);
+      setSelection((prev) => ({
+        ...Object.fromEntries(
+          next.suggestions.map((s) => [suggestionKey(s), s.suggestedEntryNo ?? s.candidates[0].gl.entryNo])
+        ),
+        ...prev,
+      }));
+      setCards({});
+      setConsumedGl(new Set());
+      setConsumedBank(new Set());
+    } catch {
+      // ละเว้น error ของการคำนวณเบื้องหลัง และคงการ์ดเดิมไว้
+    } finally {
+      setRecalculating(false);
+    }
+  }, [bankCode, bankAccountNo, periodStart, periodEnd, windowDays, direction]);
+
   async function handleMatch(s: AssistantSuggestion, entryNo: number) {
-    if (busy) return;
+    if (busy || recalculating) return;
     const key = suggestionKey(s);
     setCard(key, { status: "matching" });
     try {
@@ -248,12 +280,52 @@ export default function MatchAssistantModal({
         return next;
       });
       setMatchedPairs((n) => n + 1);
+
+      // หน่วงเวลาสั้นๆ ~650ms เพื่อให้ผู้ใช้เห็นสถานะ "จับคู่แล้ว" บนการ์ดอย่างชัดเจน
+      await new Promise((resolve) => setTimeout(resolve, 650));
+
+      // คำนวณหาคู่รอบใหม่ในเบื้องหลังทันที (Auto-Recalculate)
+      await silentRecalculate();
     } catch {
       setCard(key, { status: "open", error: "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ" });
     }
   }
 
-  const visible = useMemo(() => result?.suggestions ?? [], [result]);
+  const allSuggestions = useMemo(() => result?.suggestions ?? [], [result]);
+
+  const { matchableCount, crossAccountCount, crossDirectionCount } = useMemo(() => {
+    let matchable = 0;
+    let crossAccount = 0;
+    let crossDirection = 0;
+    for (const s of allSuggestions) {
+      const key = suggestionKey(s);
+      const selEntry = selection[key];
+      const chosen = s.candidates.find((c) => c.gl.entryNo === selEntry) ?? s.candidates[0];
+      if (chosen?.crossDirection) {
+        crossDirection += 1;
+      } else if (chosen?.crossAccount || s.crossAccountBank) {
+        crossAccount += 1;
+      } else {
+        matchable += 1;
+      }
+    }
+    return { matchableCount: matchable, crossAccountCount: crossAccount, crossDirectionCount: crossDirection };
+  }, [allSuggestions, selection]);
+
+  const visible = useMemo(() => {
+    if (filterTab === "all") return allSuggestions;
+    return allSuggestions.filter((s) => {
+      const key = suggestionKey(s);
+      const selEntry = selection[key];
+      const chosen = s.candidates.find((c) => c.gl.entryNo === selEntry) ?? s.candidates[0];
+      const isCrossDirection = Boolean(chosen?.crossDirection);
+      const isCrossAccount = Boolean(chosen?.crossAccount || s.crossAccountBank);
+      if (filterTab === "matchable") return !isCrossDirection && !isCrossAccount;
+      if (filterTab === "crossAccount") return isCrossAccount;
+      if (filterTab === "crossDirection") return isCrossDirection;
+      return true;
+    });
+  }, [allSuggestions, filterTab, selection]);
 
   const levels = useMemo(() => {
     const counts = { high: 0, medium: 0, low: 0 };
@@ -285,34 +357,25 @@ export default function MatchAssistantModal({
         className="relative h-[90vh] w-full max-w-4xl"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* แสงฟุ้งรอบ popup — สว่างตอนค้นหา แล้วค่อยหรี่ลงเมื่อได้ผล */}
+        {/* แสงเงารอบ popup แบบสุขุม */}
         <div
           aria-hidden
-          className={`pointer-events-none absolute -inset-6 rounded-[32px] blur-2xl transition-opacity duration-700 ${
-            searching ? "opacity-50" : "opacity-15"
+          className={`pointer-events-none absolute -inset-4 rounded-[28px] bg-indigo-500/10 blur-2xl transition-opacity duration-700 ${
+            searching ? "opacity-80" : "opacity-30"
           }`}
-          style={{ background: AURA_GRADIENT }}
         />
-        {/* ขอบเรืองแสง: gradient สี่เหลี่ยมใหญ่หมุนอยู่หลังกรอบขาว เหลือโผล่ให้เห็นแค่เส้นขอบ 2px */}
-        <div aria-hidden className="pointer-events-none absolute -inset-[2px] overflow-hidden rounded-[18px]">
-          <div
-            className={`absolute left-1/2 top-1/2 aspect-square w-[160%] -translate-x-1/2 -translate-y-1/2 transition-opacity duration-700 animate-aura-spin ${
-              searching ? "opacity-100" : "opacity-40"
-            }`}
-            style={{ background: AURA_GRADIENT }}
-          />
-        </div>
 
-        <div className="relative flex h-full flex-col overflow-hidden rounded-2xl bg-white/95 shadow-2xl backdrop-blur-2xl">
+        <div className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/95 shadow-2xl backdrop-blur-2xl">
           <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
             <div className="flex min-w-0 items-center gap-3">
               <AuraOrb size="sm" active={searching} />
               <div className="min-w-0">
-                <h2 id="match-assistant-title" className="text-base font-semibold text-gray-900">
-                  ผู้ช่วยจับคู่
-                </h2>
+                <div className="flex items-center gap-1.5">
+                  <h2 id="match-assistant-title" className="text-base font-semibold text-gray-900">ผู้ช่วยจับคู่</h2>
+                  <HelpTooltip label="วิธีแนะนำคู่">ค้นหารายการเดี่ยวหรือหลายรายการที่ยอดรวมตรงกัน ทิศทางเดียวกัน และวันที่อยู่ในช่วงที่เลือก ระบบไม่บันทึกให้จนกว่าจะกดจับคู่</HelpTooltip>
+                </div>
                 <p className="text-xs text-gray-500">
-                  แนะนำคู่แบบ 1 ต่อ 1 หรือรวมรายการธนาคารต่างวันที่ให้ตรงกับ BC365 · {bankCode} {formatDMY(periodStart)} -{" "}
+                  {bankCode} {formatDMY(periodStart)} -{" "}
                   {formatDMY(periodEnd)}
                 </p>
               </div>
@@ -338,6 +401,12 @@ export default function MatchAssistantModal({
                 {direction}
                 {result && !searching ? ` · ${visible.length}` : ""}
               </span>
+              {recalculating && (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 border border-indigo-200/80 px-2.5 py-0.5 text-[11px] font-medium text-indigo-700 animate-pulse">
+                  <Sparkles size={12} className="text-indigo-600 animate-spin" />
+                  กำลังคำนวณคู่ที่เหลือใหม่…
+                </span>
+              )}
             </span>
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-xs text-gray-500">วันที่ห่างกันได้</span>
@@ -362,7 +431,7 @@ export default function MatchAssistantModal({
                 aria-label="ค้นหาใหม่"
                 className="rounded-full border border-gray-200 p-1.5 text-gray-500 hover:bg-gray-50 disabled:opacity-50"
               >
-                <RefreshCw size={13} className={searching ? "animate-spin" : ""} />
+                <RefreshCw size={13} className={searching || recalculating ? "animate-spin" : ""} />
               </button>
             </div>
           </div>
@@ -383,36 +452,52 @@ export default function MatchAssistantModal({
               </div>
             )}
 
-            {phase === "results" && result && visible.length === 0 && (
+            {phase === "results" && result && allSuggestions.length === 0 && (
               <div className="flex h-full min-h-[360px] flex-col items-center justify-center gap-3 px-6 text-center">
-                <span className="flex size-14 items-center justify-center rounded-full bg-violet-50 text-violet-500">
-                  <ScanSearch size={26} />
+                <span
+                  className={`flex size-14 items-center justify-center rounded-full ${
+                    matchedPairs > 0 ? "bg-emerald-50 text-emerald-600" : "bg-violet-50 text-violet-500"
+                  }`}
+                >
+                  {matchedPairs > 0 ? <CircleCheck size={28} /> : <ScanSearch size={26} />}
                 </span>
-                <p className="text-sm font-medium text-gray-800">
-                  ไม่พบคู่ที่น่าจะเป็นฝั่ง {direction} ในช่วง ±{windowDays} วัน
+                <p className="text-sm font-semibold text-gray-800">
+                  {matchedPairs > 0
+                    ? `จับคู่สำเร็จทั้งหมด ${matchedPairs} คู่แล้ว!`
+                    : `ไม่พบคู่ที่น่าจะเป็นฝั่ง ${direction} ในช่วง ±${windowDays} วัน`}
                 </p>
                 <p className="max-w-sm text-xs text-gray-500">
-                  รายการที่เหลืออาจยอดไม่ตรงกัน เช่น ถูกหักค่าธรรมเนียม หรือมีจำนวนรายการในกลุ่มมากกว่า 5 รายการ —
-                  ลองขยายช่วงวันที่หรือจับคู่เองในตาราง
+                  {matchedPairs > 0
+                    ? "รายการที่เหลืออยู่ไม่มีคู่ที่ยอดตรงกันในช่วงวันที่เลือกแล้ว คุณสามารถปิดหน้าต่างนี้เพื่อกลับสู่ตารางหลัก"
+                    : "ลองขยายช่วงวันที่หรือจับคู่เองในตาราง"}
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2">
-                  {widerWindow && (
+                  {matchedPairs > 0 ? (
                     <button
-                      onClick={() => searchWith(widerWindow)}
-                      className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100"
+                      onClick={close}
+                      className="rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-xs hover:bg-emerald-700 transition-colors"
                     >
-                      ลองขยายเป็น ±{widerWindow} วัน
+                      เสร็จสิ้นและกลับสู่ตาราง
                     </button>
+                  ) : (
+                    widerWindow && (
+                      <button
+                        onClick={() => searchWith(widerWindow)}
+                        className="rounded-full border border-violet-200 bg-violet-50 px-4 py-2 text-sm font-medium text-violet-700 hover:bg-violet-100"
+                      >
+                        ลองขยายเป็น ±{widerWindow} วัน
+                      </button>
+                    )
                   )}
                 </div>
               </div>
             )}
 
-            {phase === "results" && result && visible.length > 0 && (
+            {phase === "results" && result && allSuggestions.length > 0 && (
               <div className="flex flex-col gap-3 px-4 py-4 sm:px-5">
-                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-500">
+                <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs text-gray-500">
                   <p>
-                    <span className="font-semibold text-gray-900">พบ {visible.length} กลุ่มที่น่าจะเป็น</span>
+                    <span className="font-semibold text-gray-900">พบ {allSuggestions.length} กลุ่มที่น่าจะเป็น</span>
                     {" · "}
                     <span className="text-green-700">สูง {levels.high}</span>
                     {" · "}
@@ -425,14 +510,82 @@ export default function MatchAssistantModal({
                     (เลือกไว้ในตารางแล้ว ยังไม่บันทึกการจับคู่)
                   </p>
                 </div>
+
+                {(crossAccountCount > 0 || crossDirectionCount > 0) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50/70 px-3.5 py-2">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-amber-900">
+                      <TriangleAlert size={14} className="shrink-0 text-amber-600" />
+                      {crossDirectionCount > 0 && crossAccountCount > 0
+                        ? `พบ ${crossDirectionCount} รายการอาจบันทึกผิดฝั่ง (IN/OUT) และ ${crossAccountCount} รายการต่างบัญชี (ระบบล็อกไม่ให้จับคู่ เพื่อความปลอดภัย)`
+                        : crossDirectionCount > 0
+                        ? `พบ ${crossDirectionCount} รายการที่ยอดตรงกันแต่บันทึกผิดฝั่ง (Statement กับ BC365 สลับด้าน)`
+                        : `พบ ${crossAccountCount} รายการที่ยอดตรงกันแต่อยู่คนละบัญชี (อาจลงผิดบัญชี)`}
+                    </span>
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab("all")}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          filterTab === "all"
+                            ? "bg-slate-800 text-white"
+                            : "bg-white/80 text-slate-700 hover:bg-white"
+                        }`}
+                      >
+                        ทั้งหมด ({allSuggestions.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab("matchable")}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                          filterTab === "matchable"
+                            ? "bg-slate-800 text-white"
+                            : "bg-white/80 text-slate-700 hover:bg-white"
+                        }`}
+                      >
+                        จับคู่ได้ ({matchableCount})
+                      </button>
+                      {crossAccountCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterTab("crossAccount")}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            filterTab === "crossAccount"
+                              ? "bg-amber-800 text-white"
+                              : "bg-white/80 text-amber-900 hover:bg-white"
+                          }`}
+                        >
+                          ต่างบัญชี ({crossAccountCount})
+                        </button>
+                      )}
+                      {crossDirectionCount > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterTab("crossDirection")}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors ${
+                            filterTab === "crossDirection"
+                              ? "bg-rose-800 text-white"
+                              : "bg-white/80 text-rose-900 hover:bg-white"
+                          }`}
+                        >
+                          บันทึกผิดฝั่ง ({crossDirectionCount})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {visible.map((s, i) => {
                   const cardKey = suggestionKey(s);
-                  const card = cards[cardKey] ?? { status: "open" as const };
+                  const card = cards[cardKey] ?? {
+                    status: (skippedKeys.has(cardKey) ? "skipped" : "open") as CardStatus,
+                  };
                   return (
                     <AssistantSuggestionCard
                       key={cardKey}
                       suggestion={s}
                       index={i}
+                      bankCode={bankCode}
+                      bankAccountNo={bankAccountNo}
                       selectedEntryNo={selection[cardKey] ?? null}
                       consumedGl={consumedGl}
                       consumedBank={consumedBank}
@@ -442,8 +595,18 @@ export default function MatchAssistantModal({
                       busy={busy}
                       onSelect={(entryNo) => setSelection((prev) => ({ ...prev, [cardKey]: entryNo }))}
                       onMatch={(entryNo) => handleMatch(s, entryNo)}
-                      onSkip={() => setCard(cardKey, { status: "skipped" })}
-                      onUndoSkip={() => setCard(cardKey, { status: "open" })}
+                      onSkip={() => {
+                        setSkippedKeys((prev) => new Set(prev).add(cardKey));
+                        setCard(cardKey, { status: "skipped" });
+                      }}
+                      onUndoSkip={() => {
+                        setSkippedKeys((prev) => {
+                          const next = new Set(prev);
+                          next.delete(cardKey);
+                          return next;
+                        });
+                        setCard(cardKey, { status: "open" });
+                      }}
                     />
                   );
                 })}
@@ -453,8 +616,7 @@ export default function MatchAssistantModal({
 
           <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-100 bg-white px-5 py-3">
             <p className="max-w-lg text-[11px] text-gray-400">
-              แนะนำจากกติกา: ยอดเดี่ยวหรือยอดรวมตรงกันพอดี · ทิศทางเดียวกัน · วันที่ห่างไม่เกินช่วงที่เลือก — ระบบไม่บันทึกเอง
-              ตรวจรายละเอียดก่อนกดจับคู่ ทุกครั้ง
+ตรวจรายละเอียดก่อนยืนยันจับคู่
             </p>
             <div className="flex items-center gap-3">
               {matchedPairs > 0 && (

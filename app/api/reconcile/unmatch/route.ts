@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { auditActor, requireRole } from '../../../../lib/session';
+import { assertWorkSides, WorkPermissionError } from '../../../../lib/workRolesDb';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { assertDatesOpen, isoDate, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
+import { glSignedSql } from '../../../../lib/glAmount';
 
 // ยกเลิกการจับคู่ (Unmatch) แบบเลือกได้หลายรายการพร้อมกัน โดยใช้เหตุผลเดียวร่วมกันทั้งชุด
 // เลือกได้ถึงระดับ "กลุ่มย่อย (Num)" ภายใน MatchId เดียวกัน — กลุ่มย่อยอื่นที่ไม่ได้เลือกยังจับคู่อยู่ตามเดิม
@@ -143,19 +145,21 @@ export async function POST(req: NextRequest) {
         // Match นี้ไม่มีมิติบัญชี (สร้างก่อนมี BankAccountNo คอลัมน์) เหมือนด่านอื่นๆ ที่ใช้มิติบัญชี
         if (BankAccountNo && (await reconcilePeriodCloseReady())) {
           const datesResult = await new sql.Request(transaction).input('matchId', sql.Int, matchId).query(`
-            SELECT b.TranDate AS Dt FROM ReconciliationMatchLine rml
+            SELECT b.TranDate AS Dt, CASE WHEN b.Credit IS NOT NULL THEN 'IN' ELSE 'OUT' END AS Direction FROM ReconciliationMatchLine rml
               JOIN BankStatementLine b ON b.LineId = rml.BankLineId
               WHERE rml.MatchId = @matchId AND rml.SourceType = 'BANK' AND rml.Num IN (${numsCsv})
             UNION ALL
-            SELECT g.Posting_Date AS Dt FROM ReconciliationMatchLine rml
+            SELECT g.Posting_Date AS Dt, CASE WHEN ${glSignedSql('g')} > 0 THEN 'IN' ELSE 'OUT' END AS Direction FROM ReconciliationMatchLine rml
               JOIN BankAccountLedgerEntries g ON g.Entry_No = rml.GLEntryNo
               WHERE rml.MatchId = @matchId AND rml.SourceType = 'GL' AND rml.Num IN (${numsCsv})
           `);
           await assertDatesOpen(
             transaction,
             BankAccountNo,
-            datesResult.recordset.map((r) => isoDate(r.Dt))
+            datesResult.recordset.map((r) => ({ date: isoDate(r.Dt), direction: r.Direction }))
           );
+          await assertWorkSides(auth.session, datesResult.recordset.map((r) => r.Direction), transaction,
+            MatchType === 'OFFSET' ? 'any' : 'all');
         }
 
         const bankLinesRequest = new sql.Request(transaction);
@@ -222,6 +226,7 @@ export async function POST(req: NextRequest) {
       await transaction.rollback();
       // เงื่อนไขที่เราตรวจเองข้างบน (ไม่พบ Match / ยกเลิกไปแล้ว / ไม่ใช่ MATCHED) เป็นเรื่องของ
       // ข้อมูลที่ผู้ใช้เลือกมา ไม่ใช่ระบบพัง จึงตอบ 409 พร้อมข้อความตรงๆ ให้แก้ที่เลือกแล้วลองใหม่
+      if (err instanceof WorkPermissionError) return NextResponse.json({ error: err.message }, { status: err.status });
       if (err instanceof Error) {
         return NextResponse.json({ error: err.message }, { status: 409 });
       }

@@ -137,6 +137,16 @@ export async function computeBalanceProof(
   const bankOut = bankRows.reduce((s, l) => s + Math.max(-l.signed, 0), 0);
   const bankUnmatched = bankRows.filter((l) => l.status === 'UNMATCHED');
   const bankMatchedNet = bankRows.filter((l) => l.status !== 'UNMATCHED').reduce((s, l) => s + l.signed, 0);
+  // แยกฝั่งตามคนที่รับผิดชอบ (เงินเข้า = AR, เงินออก = AP) ใช้ตรวจเงื่อนไขปิดงวดข้อ 46 ก และข้อ 33
+  // ดู lib/periodCloseChecks.ts — วันที่ล่าสุดของแต่ละฝั่งบอกว่าไฟล์ของฝั่งนั้นนำเข้าถึงวันสิ้นงวดแล้วหรือยัง
+  const sideOf = (rows: typeof bankRows, direction: 'IN' | 'OUT') =>
+    rows.filter((l) => (direction === 'IN' ? l.signed >= 0 : l.signed < 0));
+  const lastDateOf = (rows: typeof bankRows) =>
+    rows.reduce<string | null>((max, l) => (max === null || l.date > max ? l.date : max), null);
+  const sideCount = (direction: 'IN' | 'OUT') => {
+    const rows = sideOf(bankUnmatched, direction);
+    return { count: rows.length, net: round2(rows.reduce((s, l) => s + l.signed, 0)) };
+  };
 
   // ── ฝั่ง GL ───────────────────────────────────────────────────────────────
   const glRows = (glResult.recordset as GlRow[]).map((r) => ({
@@ -258,6 +268,8 @@ export async function computeBalanceProof(
       statementClosing: stmt.closing,
       chainOk: stmt.chainOk,
       lineCount: bankRows.length,
+      lastDateIn: lastDateOf(sideOf(bankRows, 'IN')),
+      lastDateOut: lastDateOf(sideOf(bankRows, 'OUT')),
     },
     gl: {
       opening: glOpening,
@@ -283,6 +295,7 @@ export async function computeBalanceProof(
       openingDifference:
         stmt.opening !== null && glOpening !== null ? round2(stmt.opening - glOpening) : null,
       bankUnmatched: { count: bankUnmatched.length, net: round2(bankUnmatched.reduce((s, l) => s + l.signed, 0)) },
+      bankUnmatchedByDirection: { IN: sideCount('IN'), OUT: sideCount('OUT') },
       glUnmatched: { count: countOf(null), net: round2(sumOf(null)) },
       glSuspense: { count: countOf('SUSPENSE'), net: round2(sumOf('SUSPENSE')) },
       glOffset: { count: countOf('OFFSET'), net: round2(sumOf('OFFSET')) },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toISODate, toNumber, findColumnIndex, parseBankStatement } from '../lib/bankParsers';
+import { toISODate, toNumber, findColumnIndex, parseBankStatement, extractSenderFromText } from '../lib/bankParsers';
 
 describe('toISODate — แปลงวันที่จากไฟล์ statement', () => {
   it('อ่าน DD/MM/YYYY แบบไทย ไม่สลับเป็น MM/DD/YYYY แบบอเมริกัน', () => {
@@ -113,6 +113,9 @@ describe('parseBankStatement — BBL', () => {
         chequeNo: null,
         channel: 'ATM',
         rawDescription: 'BBL.CARD',
+        senderBank: null,
+        senderAccountNo: null,
+        senderAccountName: null,
       },
       {
         tranDate: '2026-08-17',
@@ -123,6 +126,88 @@ describe('parseBankStatement — BBL', () => {
         chequeNo: '00123',
         channel: 'BAHTNET',
         rawDescription: 'TRANSFER OUT',
+        senderBank: null,
+        senderAccountNo: null,
+        senderAccountName: null,
+      },
+    ]);
+  });
+
+  it('อ่าน Sender Bank / Sender Account Number / Sender Account Name / Remarks และรวมลง rawDescription', () => {
+    const fullHeader = [
+      ...header,
+      'Terminal Id',
+      'Branch',
+      'Sender Bank',
+      'Sender Branch',
+      'Sender Account Number',
+      'Sender Account Name',
+      'Remarks',
+    ];
+    const result = parseBankStatement('BBL', [
+      fullHeader,
+      [
+        '01/08/2026',
+        'Transfer from Other Bank Account via i-Banking',
+        'TRF',
+        '00000000',
+        '',
+        '7,177.35',
+        '42,743.21',
+        'iBank',
+        '001101I',
+        'Self Service',
+        'TTB',
+        '',
+        '9061XXX100',
+        'GHL  EPAYMENTS  CO.LTD',
+        '   ',
+      ],
+      [
+        '05/08/2026',
+        'PAYMENT ON GOODS',
+        ' bill',
+        '',
+        '',
+        '201,145.00',
+        '243,888.21',
+        'iPay',
+        '',
+        '',
+        '000',
+        '',
+        '0000000000',
+        'บจ. ไอดี โฮม 2015',
+        'ค่าสินค้า',
+      ],
+    ]);
+
+    expect(result.lines).toEqual([
+      {
+        tranDate: '2026-08-01',
+        description: 'Transfer from Other Bank Account via i-Banking',
+        debit: null,
+        credit: 7177.35,
+        balance: 42743.21,
+        chequeNo: '00000000',
+        channel: 'iBank',
+        rawDescription: 'Transfer from Other Bank Account via i-Banking | TTB | 9061XXX100 | GHL EPAYMENTS CO.LTD',
+        senderBank: 'TTB',
+        senderAccountNo: '9061XXX100',
+        senderAccountName: 'GHL EPAYMENTS CO.LTD',
+      },
+      {
+        tranDate: '2026-08-05',
+        description: 'PAYMENT ON GOODS',
+        debit: null,
+        credit: 201145,
+        balance: 243888.21,
+        chequeNo: null,
+        channel: 'iPay',
+        rawDescription: 'PAYMENT ON GOODS | บจ. ไอดี โฮม 2015 | ค่าสินค้า',
+        senderBank: null,
+        senderAccountNo: null,
+        senderAccountName: 'บจ. ไอดี โฮม 2015',
       },
     ]);
   });
@@ -173,7 +258,31 @@ describe('parseBankStatement — SCB', () => {
       chequeNo: null,
       channel: 'MOBILE',
       rawDescription: 'รายละเอียดเพิ่มเติม',
+      senderBank: null,
+      senderAccountNo: null,
+      senderAccountName: null,
     });
+  });
+
+  it('แกะธนาคาร เลขบัญชี และชื่อผู้โอนจากคอลัมน์ Description ของ SCB ได้ด้วย regex', () => {
+    const result = parseBankStatement('SCB', [
+      header,
+      [
+        '06/08/2026',
+        '10:15',
+        'Transfer Deposit',
+        'ENET',
+        '',
+        '',
+        '15,577.90',
+        '120,000.00',
+        'ORFT จาก KBANK 139-8-XXX43-4 บจก. จินหลง มอเตอร์',
+      ],
+    ]);
+
+    expect(result.lines[0].senderBank).toBe('KBANK');
+    expect(result.lines[0].senderAccountNo).toBe('139-8-XXX43-4');
+    expect(result.lines[0].senderAccountName).toBe('บจก. จินหลง มอเตอร์');
   });
 
   it('โยน error เมื่อขาดคอลัมน์ที่จำเป็น', () => {
@@ -198,6 +307,26 @@ describe('parseBankStatement — KBank', () => {
     expect(result.lines[0].chequeNo).toBeNull();
   });
 
+  it('แกะธนาคาร เลขบัญชี และชื่อผู้โอนจากคอลัมน์ รายละเอียด ของ KBank ได้', () => {
+    const result = parseBankStatement('KBANK', [
+      header,
+      [
+        '03/08/2026',
+        '14:20',
+        'รับโอนเงิน',
+        '',
+        '78,420.00',
+        '189,420.00',
+        'K BIZ',
+        'จาก TMB 2241xxx180 ชื่อบัญชี บจก. ชิพเชพ ซี สโตร์',
+      ],
+    ]);
+
+    expect(result.lines[0].senderBank).toBe('TTB');
+    expect(result.lines[0].senderAccountNo).toBe('2241XXX180');
+    expect(result.lines[0].senderAccountName).toBe('บจก. ชิพเชพ ซี สโตร์');
+  });
+
   it('ข้ามแถว "ยอดยกมา" ซึ่งไม่ใช่ธุรกรรมจริง', () => {
     const result = parseBankStatement('KBANK', [
       header,
@@ -211,6 +340,30 @@ describe('parseBankStatement — KBank', () => {
 
   it('โยน error เมื่อหาหัวตารางไม่เจอ', () => {
     expect(() => parseBankStatement('KBANK', [['a', 'b'], ['c', 'd']])).toThrow(/ไม่พบหัวตารางในไฟล์ KBank/);
+  });
+});
+
+describe('extractSenderFromText — แกะผู้โอนด้วย RegExp', () => {
+  it('รองรับเลขบัญชีทั้งแบบมีขีด แบบ mask ด้วย X และแบบตัวเลข 10 หลักหลังคำบ่งชี้', () => {
+    expect(extractSenderFromText('โอนจากธนาคารกรุงไทย 021-7-6XXX69-7 นาย สมชาย ใจดี')).toEqual({
+      senderBank: 'KTB',
+      senderAccountNo: '021-7-6XXX69-7',
+      senderAccountName: 'นาย สมชาย ใจดี',
+    });
+
+    expect(extractSenderFromText('FROM SCB A/C 0373029725 บริษัท ไทยพัฒนา จำกัด')).toEqual({
+      senderBank: 'SCB',
+      senderAccountNo: '0373029725',
+      senderAccountName: 'บริษัท ไทยพัฒนา จำกัด',
+    });
+  });
+
+  it('ไม่จับเลขศูนย์ล้วนหรือข้อความทั่วไปที่ไม่มีข้อมูลผู้โอน', () => {
+    expect(extractSenderFromText('ค่าธรรมเนียมรายปี 0000000000')).toEqual({
+      senderBank: null,
+      senderAccountNo: null,
+      senderAccountName: null,
+    });
   });
 });
 

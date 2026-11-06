@@ -1,4 +1,5 @@
 import { NormalizedStatementLine, ParseResult, toISODate, toNumber, findColumnIndex } from './types';
+import { extractSenderFromText } from './senderExtractor';
 
 // KBank (ของจริง): หัวตารางอยู่แถวแรกพอดี เป็นภาษาไทย ไม่มี header info แทรกนำหน้าเหมือนที่เคยเข้าใจผิดไว้
 // คอลัมน์: วันที่, เวลา/วันที่ ทำรายการ, รายการ, ถอนเงิน, ฝากเงิน, ยอดคงเหลือ, ช่องทาง, รายละเอียด
@@ -49,6 +50,9 @@ export function parseKBank(rows: unknown[][]): ParseResult {
     const description = String(row[idx.description] ?? '').trim();
     if (description === 'ยอดยกมา') continue; // ข้ามแถวยอดยกมาต้นงวด ไม่ใช่ธุรกรรมจริง
 
+    const rawDescription = idx.details !== -1 && row[idx.details] ? String(row[idx.details]).trim() : null;
+    const sender = extractSenderFromText(rawDescription);
+
     lines.push({
       tranDate,
       description,
@@ -57,7 +61,10 @@ export function parseKBank(rows: unknown[][]): ParseResult {
       balance: toNumber(row[idx.balance]),
       chequeNo: null,
       channel: idx.channel !== -1 && row[idx.channel] ? String(row[idx.channel]).trim() : null,
-      rawDescription: idx.details !== -1 && row[idx.details] ? String(row[idx.details]).trim() : null,
+      rawDescription,
+      senderBank: sender.senderBank,
+      senderAccountNo: sender.senderAccountNo,
+      senderAccountName: sender.senderAccountName,
     });
   }
 

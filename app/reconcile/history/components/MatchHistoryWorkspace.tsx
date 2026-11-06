@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
   ChevronRight,
   ChevronLeft,
   Loader2,
@@ -12,13 +14,16 @@ import {
   X,
 } from "lucide-react";
 import { getCurrentUsername } from "../../../../lib/currentUser";
+import { missingWorkSide, visibleWorkSides, type WorkPermissions } from "../../../../lib/workRoles";
 import { useSidebar } from "../../../../components/SidebarContext";
+import { SIDE_FILTER_ACTIVE_CLASS, SIDE_FILTER_INACTIVE_CLASS } from '../../../../components/sideFilterStyles';
 import UnmatchConfirmModal, { UnmatchTarget } from "./UnmatchConfirmModal";
 import HistoryTable, { HISTORY_TYPE_LABELS } from "./HistoryTable";
 import { useInitialPeriod } from '../../../../hooks/useInitialPeriod';
 import { useSessionState } from '../../../../hooks/useSessionState';
 import { isNullableString, oneOf } from '../../../../lib/tabWorkspace';
 import {
+  appendHistoryPage,
   MATCH_TYPE_META,
   MATCH_TYPE_ORDER,
   MatchRecord,
@@ -137,7 +142,13 @@ export default function MatchHistoryWorkspace() {
 
   const [bankFilter, setBankFilter] = useSessionState("history:bankCode", "ALL");
   const [typeFilter, setTypeFilter] = useSessionState<TypeFilter>("history:type", "ALL", oneOf('ALL', 'MATCHED', 'SUSPENSE', 'OFFSET', 'EXCLUDED'));
-  const [side, setSide] = useSessionState<Side>("history:side", "ALL", oneOf('ALL', 'AP', 'AR'));
+  const [pickedSide, setSide] = useSessionState<Side>("history:side", "ALL", oneOf('ALL', 'AP', 'AR'));
+  // สิทธิ์ AP/AR ของผู้ใช้ — มากับหน้าแรกของ /api/history ซึ่งกรองข้อมูลตามสิทธิ์ไว้แล้วฝั่ง server
+  const [workPermissions, setWorkPermissions] = useState<WorkPermissions | undefined>(undefined);
+  const visibleSides = visibleWorkSides(workPermissions);
+  // แท็บฝั่งที่ไม่มีสิทธิ์กดไม่ได้ — ค้างค่าเดิมจาก session มาก็กลับไป "ทั้งหมด" (ซึ่ง server ตัดเหลือฝั่งของตัวเองแล้ว)
+  const blockedSides: Side[] = [...(visibleSides.includes("IN") ? [] : ["AR" as const]), ...(visibleSides.includes("OUT") ? [] : ["AP" as const])];
+  const side: Side = blockedSides.includes(pickedSide) ? "ALL" : pickedSide;
   // จำนวน Match ของแต่ละแท็บภายใต้เงื่อนไขอื่นที่เลือกอยู่ — null ระหว่างรอโหลดครั้งแรก
   const [sideCounts, setSideCounts] = useState<Record<Side, number> | null>(null);
   const [typeCounts, setTypeCounts] = useState<Record<TypeFilter, number> | null>(null);
@@ -158,6 +169,8 @@ export default function MatchHistoryWorkspace() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [loadMoreError, setLoadMoreError] = useState("");
   const [error, setError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
 
@@ -171,13 +184,15 @@ export default function MatchHistoryWorkspace() {
   const requestIdRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
-  const inFlightRef = useRef(false);
+  const moreControllerRef = useRef<AbortController | null>(null);
+  const loadedQueryRef = useRef("");
+  const scrollRef = useRef<HTMLDivElement | null>(null);
 
   const sideApplies = typeHasBankSide(typeFilter);
   const bankDateApplies = typeHasBankSide(typeFilter);
 
   const params = useMemo(() => {
-    const p = new URLSearchParams({ from, to, dateBasis });
+    const p = new URLSearchParams({ from, to, dateBasis, pageBy: "group" });
     if (typeFilter !== "ALL") p.set("matchType", typeFilter);
     if (bankFilter !== "ALL") p.set("bankCode", bankFilter);
     if (sideApplies && side !== "ALL") p.set("side", side);
@@ -191,101 +206,122 @@ export default function MatchHistoryWorkspace() {
     if (!initialPeriod.ready) return;
 
     const reqId = ++requestIdRef.current;
-    let cancelled = false;
+    const controller = new AbortController();
+    moreControllerRef.current?.abort();
+    moreControllerRef.current = null;
 
     async function loadFirstPage() {
       setLoading(true);
       setError("");
+      setLoadMoreError("");
+      setLoadingMore(false);
+      setNextOffset(null);
+      scrollRef.current?.scrollTo({ top: 0 });
       try {
-        const res = await fetch(`/api/history?${params}&offset=0`);
+        const res = await fetch(`/api/history?${params}&offset=0`, { signal: controller.signal });
         const data = await res.json();
-        if (cancelled || reqId !== requestIdRef.current) return;
+        if (controller.signal.aborted || reqId !== requestIdRef.current) return;
         if (!res.ok) {
           setError(data.error || "โหลดข้อมูลไม่สำเร็จ");
           setMatches([]);
           setTotal(0);
           return;
         }
+        loadedQueryRef.current = params;
         setMatches(data.matches);
+        setNextOffset(data.hasMore && Number.isInteger(data.nextOffset) && data.nextOffset > 0 ? data.nextOffset : null);
         setTotal(data.total ?? data.matches.length);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
         if (data.sideCounts) setSideCounts(data.sideCounts);
         if (data.typeCounts) setTypeCounts(data.typeCounts);
+        if (data.workPermissions) setWorkPermissions(data.workPermissions);
       } catch {
-        if (!cancelled && reqId === requestIdRef.current) {
+        if (!controller.signal.aborted && reqId === requestIdRef.current) {
           setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
           setMatches([]);
           setTotal(0);
         }
       } finally {
-        if (!cancelled && reqId === requestIdRef.current) setLoading(false);
+        if (!controller.signal.aborted && reqId === requestIdRef.current) setLoading(false);
       }
     }
 
     // โหลดข้อมูลจาก server ตอน filter เปลี่ยน/mount เท่านั้น — ไม่มีทาง derive ระหว่าง render ได้
     loadFirstPage();
     return () => {
-      cancelled = true;
+      controller.abort();
+      moreControllerRef.current?.abort();
     };
   }, [params, initialPeriod.ready, reloadToken]);
 
-  const hasMore = matches.length < total;
+  const hasMore = nextOffset !== null;
 
-  const loadMore = useCallback(async () => {
-    if (loading || inFlightRef.current || !hasMore) return;
+  const loadMore = useCallback(async (retry = false) => {
+    if (loading || moreControllerRef.current || nextOffset === null || loadedQueryRef.current !== params || (loadMoreError && !retry)) return;
     const reqId = requestIdRef.current;
-    inFlightRef.current = true;
+    const controller = new AbortController();
+    moreControllerRef.current = controller;
     setLoadingMore(true);
+    setLoadMoreError("");
     try {
-      const res = await fetch(`/api/history?${params}&offset=${matches.length}`);
+      const res = await fetch(`/api/history?${params}&offset=${nextOffset}`, { signal: controller.signal });
       const data = await res.json();
-      // filter เปลี่ยนระหว่างรอ response — ทิ้งผลลัพธ์ชุดนี้ไป ไม่งั้นแถวจะปนกันคนละ filter
-      if (reqId !== requestIdRef.current) return;
+      if (controller.signal.aborted || reqId !== requestIdRef.current) return;
       if (!res.ok) {
-        setError(data.error || "โหลดเพิ่มไม่สำเร็จ");
+        setLoadMoreError(data.error || "โหลดเพิ่มไม่สำเร็จ");
         return;
       }
-      setMatches((prev) => [...prev, ...data.matches]);
+      setMatches((prev) => appendHistoryPage(prev, data.matches));
+      setNextOffset(data.hasMore && Number.isInteger(data.nextOffset) && data.nextOffset > nextOffset ? data.nextOffset : null);
     } catch {
-      if (reqId === requestIdRef.current) setError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+      if (!controller.signal.aborted && reqId === requestIdRef.current) setLoadMoreError("โหลดเพิ่มไม่สำเร็จ กรุณาลองอีกครั้ง");
     } finally {
-      inFlightRef.current = false;
+      if (moreControllerRef.current === controller) moreControllerRef.current = null;
       if (reqId === requestIdRef.current) setLoadingMore(false);
     }
-  }, [loading, hasMore, params, matches.length]);
+  }, [loading, nextOffset, params, loadMoreError]);
 
-  // infinite scroll: โหลดชุดถัดไปเมื่อท้ายรายการใกล้เข้ามาในจอ
-  // ใช้ IntersectionObserver เป็นหลัก + ผูก scroll/resize ไว้ด้วย เผื่อ observer ไม่ส่ง callback
+  // Desktop เลื่อนภายในตาราง; mobile เลื่อนทั้งหน้า — ตรวจเฉพาะท้ายรายการที่ใกล้พื้นที่มองเห็นจริง
   useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el || !hasMore) return;
-
-    const nearViewport = () => el.getBoundingClientRect().top < window.innerHeight + 300;
-    // อ่าน layout แค่เฟรมละครั้ง — scroll event ยิงถี่กว่าเฟรม ถ้าเรียก getBoundingClientRect ทุกครั้งจะบังคับ reflow ซ้ำจนเลื่อนกระตุก
+    const sentinel = sentinelRef.current;
+    const table = scrollRef.current;
+    if (!sentinel || !table || loading || !hasMore || loadMoreError) return;
+    let observer: IntersectionObserver | undefined;
     let frame = 0;
+    let root: HTMLDivElement | null = null;
     const check = () => {
       if (frame) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        if (nearViewport()) loadMore();
+        const bounds = sentinel.getBoundingClientRect();
+        const tableBounds = table.getBoundingClientRect();
+        const bottom = Math.min(window.innerHeight, root ? tableBounds.bottom : window.innerHeight);
+        if (tableBounds.top < window.innerHeight && tableBounds.bottom > 0 && bounds.top < bottom + 300 && bounds.bottom > 0) void loadMore();
       });
     };
-
-    const io = new IntersectionObserver((entries) => {
-      if (entries[0]?.isIntersecting) loadMore();
-    });
-    io.observe(el);
+    const observe = () => {
+      observer?.disconnect();
+      root = window.matchMedia('(min-width: 1024px)').matches ? table : null;
+      if (typeof IntersectionObserver !== 'undefined') {
+        observer = new IntersectionObserver((entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) check();
+        }, { root, rootMargin: '0px 0px 300px 0px' });
+        observer.observe(sentinel);
+      }
+      check();
+    };
+    observe();
+    table.addEventListener("scroll", check, { passive: true });
     window.addEventListener("scroll", check, { passive: true });
-    window.addEventListener("resize", check);
-    check();
-
+    window.addEventListener("resize", observe);
     return () => {
-      io.disconnect();
+      observer?.disconnect();
+      table.removeEventListener("scroll", check);
       window.removeEventListener("scroll", check);
-      window.removeEventListener("resize", check);
+      window.removeEventListener("resize", observe);
       cancelAnimationFrame(frame);
     };
-  }, [loadMore, hasMore]);
+  }, [loadMore, hasMore, loading, loadMoreError]);
 
   function updateTypeFilter(next: TypeFilter) {
     setTypeFilter(next);
@@ -349,13 +385,25 @@ export default function MatchHistoryWorkspace() {
 
   const matchById = useMemo(() => new Map(matches.map((m) => [m.matchId, m])), [matches]);
 
+  // ส่งกลับได้เฉพาะกลุ่มของฝั่งที่มีสิทธิ์ — หักล้างกันเองมีทั้งขาเข้า/ขาออก ใช้สิทธิ์ฝั่งใดฝั่งหนึ่งก็พอ
+  // (กติกาเดียวกับ /api/reconcile/unmatch)
+  const canEditGroup = useCallback(
+    (match: MatchRecord, group: SubGroup) =>
+      !missingWorkSide(
+        workPermissions,
+        [...group.bankLines, ...group.glLines].map((l) => l.direction),
+        match.matchType === "OFFSET" ? "any" : "all"
+      ),
+    [workPermissions]
+  );
+
   // รายการพักโอน (SUSPENSE) ยกเลิกจากหน้านี้ไม่ได้ — ใช้ /api/reconcile/unsuspend ที่หน้า /suspense
   const eligibleGroups = useMemo(
     () =>
       matches
         .filter((m) => MATCH_TYPE_META[m.matchType].revertable)
-        .flatMap((m) => (groupsByMatchId.get(m.matchId) ?? []).filter((g) => g.status === "ACTIVE")),
-    [matches, groupsByMatchId]
+        .flatMap((m) => (groupsByMatchId.get(m.matchId) ?? []).filter((g) => g.status === "ACTIVE" && canEditGroup(m, g))),
+    [matches, groupsByMatchId, canEditGroup]
   );
   const allEligibleSelected = eligibleGroups.length > 0 && eligibleGroups.every((g) => selectedKeys.has(g.key));
 
@@ -503,7 +551,6 @@ export default function MatchHistoryWorkspace() {
 
       <div className="mb-5">
         <h1 className="text-xl font-bold text-gray-900 sm:text-2xl">ประวัติการจับคู่</h1>
-        <p className="mt-1 text-sm text-slate-500">เทียบธนาคารกับ BC365 ได้ทีละแถว</p>
       </div>
 
       <section aria-label="ค้นหาและกรองประวัติ" className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
@@ -548,27 +595,26 @@ export default function MatchHistoryWorkspace() {
         <div aria-label="กรองฝั่งธนาคาร" className="mb-4 grid grid-cols-3 gap-2">
           {SIDE_TABS.map((tab) => {
             const active = side === tab.value;
-            const count = sideCounts?.[tab.value] ?? null;
-            const activeClass = tab.value === "AR"
-              ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-              : tab.value === "AP"
-                ? "border-rose-300 bg-rose-50 text-rose-700"
-                : "border-blue-300 bg-blue-50 text-blue-700";
+            const blocked = blockedSides.includes(tab.value);
+            const count = blocked ? null : sideCounts?.[tab.value] ?? null;
             return (
               <button
                 key={tab.value}
                 type="button"
                 onClick={() => updateSide(tab.value)}
+                disabled={blocked}
+                title={blocked ? `ไม่มีสิทธิ์ ${tab.value} — เห็นได้เฉพาะฝั่งที่ได้รับสิทธิ์` : undefined}
                 aria-pressed={active}
-                className={`flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 ${
-                  active ? activeClass : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                className={`flex min-h-14 flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+                  active ? SIDE_FILTER_ACTIVE_CLASS[tab.value] : SIDE_FILTER_INACTIVE_CLASS
                 }`}
               >
+                {tab.value === 'AR' ? <ArrowDownLeft size={16} className="shrink-0" aria-hidden="true" /> : tab.value === 'AP' ? <ArrowUpRight size={16} className="shrink-0" aria-hidden="true" /> : null}
                 {tab.label}
                 <span className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
-                  active ? "bg-gray-900/5 text-gray-700" : "bg-gray-100 text-gray-500"
+                  active ? "bg-white/20 text-white" : "bg-slate-200/70 text-slate-500"
                 }`}>
-                  {count === null ? "…" : count.toLocaleString()}
+                  {blocked ? "—" : count === null ? "…" : count.toLocaleString()}
                 </span>
               </button>
             );
@@ -623,22 +669,24 @@ export default function MatchHistoryWorkspace() {
 
       {matches.length > 0 && (
         <>
-          <HistoryTable matches={matches} groupsByMatchId={groupsByMatchId} selectedKeys={selectedKeys} onToggleGroup={toggleGroup} onRequestUnmatch={requestUnmatch} loading={loading} onLoadMore={loadMore}>
+          <HistoryTable matches={matches} groupsByMatchId={groupsByMatchId} canEditGroup={canEditGroup} selectedKeys={selectedKeys} onToggleGroup={toggleGroup} onRequestUnmatch={requestUnmatch} loading={loading} scrollRef={scrollRef}>
 
           <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
             {loadingMore ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
               </span>
+            ) : loadMoreError ? (
+              <span role="alert" className="inline-flex items-center gap-2 text-red-600">{loadMoreError}<button type="button" onClick={() => void loadMore(true)} className="font-medium underline underline-offset-2">ลองอีกครั้ง</button></span>
             ) : hasMore ? (
               <span className="inline-flex items-center gap-2">
-                แสดง {matches.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
-                <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+                แสดง {[...groupsByMatchId.values()].reduce((count, groups) => count + groups.length, 0).toLocaleString()} แถว · เลื่อนลงเพื่อโหลดเพิ่มครั้งละ 50 แถว
+                <button type="button" onClick={() => void loadMore()} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
                   โหลดเพิ่ม
                 </button>
               </span>
             ) : (
-              `ครบทั้งหมด ${total.toLocaleString()} รายการ`
+              `ครบทั้งหมด ${[...groupsByMatchId.values()].reduce((count, groups) => count + groups.length, 0).toLocaleString()} แถว`
             )}
           </div>
           </HistoryTable>

@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
@@ -441,12 +442,10 @@ export default function GlOffsetModal({
               <Scale size={18} />
             </span>
             <div className="min-w-0">
-              <h2 id="gl-offset-title" className="text-base font-semibold text-gray-900">
-                หักล้างรายการ BC365
-              </h2>
-              <p className="text-xs text-gray-500">
-                รายการใน BC ที่ยกเลิกกันเองจนยอดสุทธิเป็น 0 ไม่มีเงินผ่านธนาคาร จึงไม่ต้องจับคู่กับธนาคาร Statement
-              </p>
+              <div className="flex items-center gap-1.5">
+                <h2 id="gl-offset-title" className="text-base font-semibold text-gray-900">หักล้างรายการ BC365</h2>
+                <HelpTooltip label="เกี่ยวกับการหักล้าง BC365">รายการเงินเข้าและเงินออกที่หักล้างกันจนสุทธิเป็นศูนย์ ไม่มีเงินผ่านธนาคาร จึงไม่ต้องจับคู่กับ statement</HelpTooltip>
+              </div>
               <p className="mt-0.5 truncate text-[11px] text-gray-400" title={accountLabel}>
                 {accountLabel} · {formatDMY(periodStart)} - {formatDMY(periodEnd)}
               </p>
@@ -492,10 +491,10 @@ export default function GlOffsetModal({
         <div className="min-h-0 flex-1 overflow-y-auto bg-gray-50/60 px-4 py-4 sm:px-5">
           {tab === "auto" && (
             <div className="flex flex-col gap-3">
-              <p className="text-xs leading-relaxed text-gray-500">
-                ระบบแนะนำคู่ระหว่างรายการกลับรายการใน BC365 กับรายการเดิมที่<b>เลขเอกสารเดียวกัน</b>
-                และยอดตรงข้ามกันพอดี รายการเหล่านี้ถูกซ่อนจากตารางหลัก กรุณาตรวจสอบและยืนยันเพื่อบันทึกประวัติ
-              </p>
+              <div className="flex items-center gap-1 text-xs text-gray-500">
+                ตรวจสอบคู่กลับรายการก่อนยืนยัน
+                <HelpTooltip label="เกณฑ์แนะนำคู่กลับรายการ">รายการเดิมและรายการกลับรายการต้องใช้เลขเอกสารเดียวกันและมียอดตรงข้ามกันพอดี คู่เหล่านี้ซ่อนจากตารางกระทบยอด</HelpTooltip>
+              </div>
               {visiblePairs.length === 0 ? (
                 <div className="flex min-h-[260px] flex-col items-center justify-center gap-2 text-center">
                   <CircleCheck size={28} className="text-teal-500" />
@@ -564,8 +563,8 @@ export default function GlOffsetModal({
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                 <TriangleAlert size={14} className="mt-0.5 shrink-0" />
                 <span>
-                  ใช้กับรายการหักล้างใน BC365 เช่น การแก้ไขด้วย JV โดยยอดเงินเข้าและเงินออกที่เลือกต้องเท่ากัน
-                  หากมีเงินผ่านธนาคารจริง ให้กลับไปจับคู่กับรายการธนาคารในหน้ากระทบยอด
+                  เงินเข้าและเงินออกต้องเท่ากัน และไม่มีเงินผ่านธนาคาร
+                  <HelpTooltip label="เมื่อใดควรหักล้างรายการ">ใช้กับรายการหักล้างใน BC365 เช่น JV หากมีเงินผ่านธนาคาร ให้จับคู่กับ statement ที่หน้ากระทบยอด</HelpTooltip>
                 </span>
               </div>
               <div className="flex flex-wrap items-center gap-3">

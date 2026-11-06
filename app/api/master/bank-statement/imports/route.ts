@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { readWorkPermissions } from '../../../../../lib/workRolesDb';
 import sql from 'mssql';
 import { getPool } from '../../../../../lib/db';
 
@@ -35,12 +36,18 @@ export async function GET(req: NextRequest) {
                -- ImportedAt เป็น datetime เวลาไทยของเครื่อง DB แบบไม่มี offset ซึ่ง mssql อ่านเป็น UTC
                -- ทำให้หน้าเว็บแสดงเวลาเลื่อนไป 7 ชั่วโมง จึงแนบ offset ของเครื่อง DB ให้เป็นเวลาจริงก่อนส่งออก
                TODATETIMEOFFSET(i.ImportedAt, DATEPART(TZOFFSET, SYSDATETIMEOFFSET())) AS ImportedAt,
-               COALESCE(lk.LockedCount, 0) AS LockedCount
+               COALESCE(lk.LockedCount, 0) AS LockedCount,
+               -- ฝั่งของรายการในไฟล์ — AP นำเข้าเฉพาะเงินออก AR เฉพาะเงินเข้า (ไฟล์เก่ามีทั้งสองฝั่ง)
+               -- ลบไฟล์ได้ต่อเมื่อมีสิทธิ์ทุกฝั่งที่อยู่ในไฟล์ (ดู [importId]/route.ts)
+               COALESCE(lk.InCount, 0) AS InCount,
+               COALESCE(lk.OutCount, 0) AS OutCount
         FROM BankStatementImport i
         LEFT JOIN (
-          SELECT ImportId, COUNT(*) AS LockedCount
+          SELECT ImportId,
+                 SUM(CASE WHEN MatchStatus <> 'UNMATCHED' THEN 1 ELSE 0 END) AS LockedCount,
+                 SUM(CASE WHEN Credit IS NOT NULL THEN 1 ELSE 0 END) AS InCount,
+                 SUM(CASE WHEN Credit IS NULL THEN 1 ELSE 0 END) AS OutCount
           FROM BankStatementLine
-          WHERE MatchStatus <> 'UNMATCHED'
           GROUP BY ImportId
         ) lk ON lk.ImportId = i.ImportId
         WHERE i.BankCode = @bankCode AND i.Status = 'SUCCESS'
@@ -48,7 +55,12 @@ export async function GET(req: NextRequest) {
         ORDER BY i.ImportedAt DESC
       `);
 
-    return NextResponse.json({ imports: result.recordset, accountDimensionReady: ready });
+    return NextResponse.json({
+      imports: result.recordset,
+      accountDimensionReady: ready,
+      // ปุ่มลบของไฟล์ฝั่งที่ไม่มีสิทธิ์ถูกปิด — server ตรวจซ้ำตอนลบ
+      workPermissions: await readWorkPermissions(auth.session, pool),
+    });
   } catch (err) {
     console.error('Master bank-statement imports GET error:', err);
     return NextResponse.json({ error: 'โหลดรายการไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });

@@ -53,6 +53,8 @@ export type DashboardData = {
   side: Side;
   /** จำนวนบรรทัดของแต่ละฝั่ง ไม่ขึ้นกับฝั่งที่เลือก — ใช้เป็นป้ายบนแท็บ */
   sideCounts: { AR: number; AP: number };
+  /** แท็บที่ไม่มีสิทธิ์ AP/AR (สิทธิ์ฝั่งเดียว) — server ส่งฝั่งของตัวเองกลับมาใน side แทน */
+  lockedSides?: Side[];
   /** ไม่มีใน response เวอร์ชันเก่า — หน้าจอต้องถอยไปใช้ผลต่างรวมได้ */
   coverage?: Coverage;
   summary: {

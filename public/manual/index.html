@@ -1,0 +1,849 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>คู่มือการใช้งาน Auto Reconcile Bank</title>
+<link rel="icon" href="/logo.svg">
+<style>
+  :root {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-2: #f1f5f9;
+    --border: #e2e8f0;
+    --text: #0f172a;
+    --text-2: #475569;
+    --text-3: #94a3b8;
+    --brand: #2563eb;
+    --brand-soft: #eff6ff;
+    --brand-border: #bfdbfe;
+    --ap: #e11d48;
+    --ap-soft: #fff1f2;
+    --ap-border: #fecdd3;
+    --ar: #059669;
+    --ar-soft: #ecfdf5;
+    --ar-border: #a7f3d0;
+    --admin: #7c3aed;
+    --admin-soft: #f5f3ff;
+    --admin-border: #ddd6fe;
+    --master: #0369a1;
+    --master-soft: #f0f9ff;
+    --master-border: #bae6fd;
+    --warn-soft: #fffbeb;
+    --warn-border: #fde68a;
+    --radius: 14px;
+    --shadow: 0 10px 30px rgba(30, 64, 175, 0.08);
+    --accent: var(--brand);
+    --accent-soft: var(--brand-soft);
+    --accent-border: var(--brand-border);
+  }
+  body[data-role="ap"] { --accent: var(--ap); --accent-soft: var(--ap-soft); --accent-border: var(--ap-border); }
+  body[data-role="ar"] { --accent: var(--ar); --accent-soft: var(--ar-soft); --accent-border: var(--ar-border); }
+  body[data-role="admin"] { --accent: var(--admin); --accent-soft: var(--admin-soft); --accent-border: var(--admin-border); }
+  body[data-role="master"] { --accent: var(--master); --accent-soft: var(--master-soft); --accent-border: var(--master-border); }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; scroll-padding-top: 84px; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Sarabun", "Noto Sans Thai", "Leelawadee UI", "Thonburi", "Tahoma", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+  a { color: var(--brand); }
+  .btn-name {
+    display: inline-block;
+    padding: 0 7px;
+    border: 1px solid var(--border);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: var(--surface);
+    font-size: 0.9em;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+
+  /* ---------- Header ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+  }
+  .topbar-inner {
+    max-width: 1120px; margin: 0 auto; padding: 12px 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--text); min-width: 0; }
+  .brand img { width: 38px; height: 38px; border-radius: 11px; box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25); }
+  .brand b { display: block; font-size: 15px; line-height: 1.2; }
+  .brand span { display: block; font-size: 12px; color: var(--text-2); line-height: 1.2; }
+  .topbar-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 10px;
+    border: 1px solid var(--border); background: var(--surface);
+    color: var(--text); font: inherit; font-size: 14px; font-weight: 600;
+    text-decoration: none; cursor: pointer; transition: all .15s;
+  }
+  .btn:hover { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); }
+  .btn-primary {
+    background: linear-gradient(90deg, #0ea5e9, #2563eb); color: #fff; border-color: transparent;
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.25);
+  }
+  .btn-primary:hover { color: #fff; background: linear-gradient(90deg, #0284c7, #1d4ed8); border-color: transparent; }
+  .btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+  main { max-width: 1120px; margin: 0 auto; padding: 24px 16px 80px; }
+
+  /* ---------- Hero / role picker ---------- */
+  .hero h1 { margin: 8px 0 4px; font-size: clamp(26px, 4vw, 34px); letter-spacing: -0.02em; line-height: 1.25; }
+  .hero p { margin: 0; color: var(--text-2); }
+  .roles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }
+  .role-card {
+    position: relative; text-align: left; cursor: pointer;
+    padding: 18px; border-radius: var(--radius);
+    background: var(--surface); border: 2px solid var(--border);
+    font: inherit; color: var(--text); transition: all .18s;
+  }
+  .role-card:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
+  .role-card .tag {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 13px; font-weight: 700; letter-spacing: .02em;
+  }
+  .role-card h3 { margin: 10px 0 2px; font-size: 18px; }
+  .role-card p { margin: 0; font-size: 14px; color: var(--text-2); line-height: 1.55; }
+  .role-card .pick { margin-top: 12px; font-size: 13px; font-weight: 600; color: var(--text-3); }
+  .role-card[data-role="ap"] .tag { background: var(--ap-soft); color: var(--ap); }
+  .role-card[data-role="ar"] .tag { background: var(--ar-soft); color: var(--ar); }
+  .role-card[data-role="admin"] .tag { background: var(--admin-soft); color: var(--admin); }
+  .role-card[data-role="master"] .tag { background: var(--master-soft); color: var(--master); }
+  .role-card[aria-pressed="true"][data-role="ap"] { border-color: var(--ap); background: var(--ap-soft); }
+  .role-card[aria-pressed="true"][data-role="ar"] { border-color: var(--ar); background: var(--ar-soft); }
+  .role-card[aria-pressed="true"][data-role="admin"] { border-color: var(--admin); background: var(--admin-soft); }
+  .role-card[aria-pressed="true"][data-role="master"] { border-color: var(--master); background: var(--master-soft); }
+  .role-card[aria-pressed="true"] .pick { color: var(--text); }
+
+  /* ---------- Sections ---------- */
+  section.block { margin-top: 36px; }
+  .block > h2 { font-size: 22px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .block > .sub { margin: 0 0 16px; color: var(--text-2); font-size: 15px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px;
+  }
+  .note {
+    border-radius: 12px; padding: 12px 14px; font-size: 14.5px;
+    border: 1px solid var(--warn-border); background: var(--warn-soft); color: #78350f;
+  }
+  .note.info { border-color: var(--brand-border); background: var(--brand-soft); color: #1e3a8a; }
+
+  .who { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .who .card h4 { margin: 0 0 4px; font-size: 15px; }
+  .who .card p { margin: 0; font-size: 14px; color: var(--text-2); }
+
+  /* ---------- Permission matrix ---------- */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+  table.matrix { width: 100%; border-collapse: collapse; font-size: 14.5px; min-width: 620px; }
+  .matrix th, .matrix td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: center; vertical-align: top; }
+  .matrix th:first-child, .matrix td:first-child { text-align: left; }
+  .matrix thead th { background: var(--surface-2); font-size: 13.5px; }
+  .matrix tbody tr:last-child td { border-bottom: 0; }
+  .matrix .col-active { background: var(--accent-soft); }
+  .matrix thead .col-active { color: var(--accent); }
+  .yes { color: var(--ar); font-weight: 700; }
+  .no { color: var(--text-3); }
+  .part { color: #b45309; font-weight: 600; }
+
+  /* ---------- Guide ---------- */
+  .guide-head {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    padding: 18px; border-radius: var(--radius);
+    background: var(--accent-soft); border: 1px solid var(--accent-border);
+  }
+  .guide-head h2 { margin: 0; font-size: 22px; color: var(--accent); }
+  .guide-head p { margin: 2px 0 0; color: var(--text-2); font-size: 14.5px; }
+  .progress { margin-left: auto; min-width: 200px; }
+  .progress-label { font-size: 13px; color: var(--text-2); display: flex; justify-content: space-between; gap: 8px; }
+  .progress-bar { height: 8px; border-radius: 999px; background: rgba(15, 23, 42, 0.08); overflow: hidden; margin-top: 4px; }
+  .progress-bar span { display: block; height: 100%; width: 0; background: var(--accent); border-radius: 999px; transition: width .3s; }
+  .link-btn { background: none; border: 0; padding: 0; font: inherit; font-size: 13px; color: var(--text-2); text-decoration: underline; cursor: pointer; }
+
+  .cando { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .cando ul { margin: 6px 0 0; padding-left: 20px; font-size: 14.5px; }
+  .cando li { margin: 2px 0; }
+  .cando h4 { margin: 0; font-size: 15px; }
+  .cando .can h4 { color: var(--ar); }
+  .cando .cant h4 { color: var(--ap); }
+
+  .layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 22px; margin-top: 20px; align-items: start; }
+  .toc { position: sticky; top: 84px; }
+  .toc ol { list-style: none; margin: 0; padding: 0; counter-reset: toc; }
+  .toc li { counter-increment: toc; }
+  .toc a {
+    display: flex; gap: 8px; align-items: baseline;
+    padding: 6px 10px; border-radius: 8px; font-size: 14px;
+    color: var(--text-2); text-decoration: none; line-height: 1.45;
+  }
+  .toc a::before { content: counter(toc); font-weight: 700; color: var(--text-3); min-width: 18px; }
+  .toc a:hover { background: var(--surface); color: var(--text); }
+  .toc a.done { color: var(--text-3); text-decoration: line-through; }
+  .toc a.done::before { content: "✓"; color: var(--ar); }
+  .toc-title { font-size: 12px; font-weight: 700; color: var(--text-3); letter-spacing: .06em; margin: 0 10px 6px; }
+
+  .steps { display: grid; gap: 14px; }
+  .step {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden; transition: border-color .2s;
+  }
+  .step.is-done { border-color: var(--ar-border); }
+  .step-head { display: flex; align-items: flex-start; gap: 14px; padding: 16px 18px 0; }
+  .step-num {
+    flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px;
+    display: grid; place-items: center; font-weight: 700;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .step.is-done .step-num { background: var(--ar); color: #fff; }
+  .step-title { flex: 1; min-width: 0; }
+  .step-title h3 { margin: 4px 0 0; font-size: 17.5px; line-height: 1.4; }
+  .step-title .where { font-size: 13px; color: var(--text-3); }
+  .step-body { padding: 8px 18px 4px 66px; }
+  .step-body ol, .step-body ul { margin: 6px 0; padding-left: 20px; }
+  .step-body li { margin: 3px 0; }
+  .step-body p { margin: 8px 0 0; }
+  .step-body .note { margin: 10px 0 4px; }
+  .step-foot {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+    padding: 12px 18px 16px 66px;
+  }
+  .go {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 10px; text-decoration: none;
+    background: var(--accent); color: #fff; font-size: 14px; font-weight: 600;
+    transition: filter .15s, transform .15s;
+  }
+  .go:hover { filter: brightness(1.08); transform: translateY(-1px); }
+  .go svg { width: 15px; height: 15px; }
+  .check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); cursor: pointer; user-select: none; margin-left: auto; }
+  .check input { width: 18px; height: 18px; accent-color: var(--ar); cursor: pointer; }
+
+  /* ---------- FAQ ---------- */
+  .faq { display: grid; gap: 10px; }
+  .faq details { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0 16px; }
+  .faq summary { cursor: pointer; padding: 13px 0; font-weight: 600; list-style: none; display: flex; gap: 10px; }
+  .faq summary::before { content: "+"; color: var(--brand); font-weight: 700; width: 14px; }
+  .faq details[open] summary::before { content: "−"; }
+  .faq details > div { padding: 0 0 14px 24px; color: var(--text-2); font-size: 15px; }
+  .faq details > div p { margin: 4px 0; }
+
+  .rules { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px; }
+  .rules .card h4 { margin: 0 0 4px; font-size: 15px; }
+  .rules .card p { margin: 0; font-size: 14px; color: var(--text-2); }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--text-3); font-size: 13px; display: flex; flex-wrap: wrap; gap: 8px; justify-content: space-between; }
+
+  @media (max-width: 900px) {
+    .roles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .layout { grid-template-columns: 1fr; }
+    .toc { display: none; }
+  }
+  @media (max-width: 720px) {
+    .roles { grid-template-columns: 1fr; }
+    .cando { grid-template-columns: 1fr; }
+    .step-body, .step-foot { padding-left: 18px; }
+    .brand span { display: none; }
+    .topbar .btn .label-long { display: none; }
+    .progress { margin-left: 0; width: 100%; }
+  }
+  @media print {
+    .topbar, .toc, .roles, .step-foot .check, .progress { display: none !important; }
+    .layout { grid-template-columns: 1fr; }
+    body { background: #fff; }
+    .step, .card { break-inside: avoid; }
+    .go { background: none; color: var(--text); padding: 0; }
+    .go::after { content: " (" attr(href) ")"; color: var(--text-3); font-weight: 400; }
+  }
+</style>
+</head>
+<body data-role="ap">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="#top">
+      <img src="/logo.svg" alt="">
+      <div><b>คู่มือการใช้งาน</b><span>Auto Reconcile Bank</span></div>
+    </a>
+    <div class="topbar-actions">
+      <button class="btn" type="button" onclick="window.print()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+        <span class="label-long">พิมพ์</span>
+      </button>
+      <a class="btn btn-primary" href="/login">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="m10 17 5-5-5-5"/><path d="M15 12H3"/></svg>
+        <span>เข้าสู่ระบบ</span>
+      </a>
+    </div>
+  </div>
+</header>
+
+<main id="top">
+
+  <section class="hero">
+    <h1>คู่มือการใช้งาน</h1>
+    <p>เลือกตำแหน่งของคุณ แล้วทำตามขั้นตอน กดปุ่ม <b>เปิดหน้านี้</b> เพื่อไปที่หน้าจอจริง</p>
+
+    <div class="roles" role="group" aria-label="เลือกตำแหน่ง">
+      <button class="role-card" type="button" data-role="ap" aria-pressed="true">
+        <span class="tag">AP</span>
+        <h3>AP เงินออก</h3>
+        <p>ดูแลรายการเงินที่จ่ายออกจากบัญชี</p>
+        <div class="pick">ดูคู่มือ AP</div>
+      </button>
+      <button class="role-card" type="button" data-role="ar" aria-pressed="false">
+        <span class="tag">AR</span>
+        <h3>AR เงินเข้า</h3>
+        <p>ดูแลรายการเงินที่รับเข้าบัญชี</p>
+        <div class="pick">ดูคู่มือ AR</div>
+      </button>
+      <button class="role-card" type="button" data-role="admin" aria-pressed="false">
+        <span class="tag">Admin</span>
+        <h3>Admin ผู้ดูแลระบบ</h3>
+        <p>ทำได้ทุกอย่าง สิทธิ์มาจากระบบกลาง</p>
+        <div class="pick">ดูคู่มือ Admin</div>
+      </button>
+      <button class="role-card" type="button" data-role="master" aria-pressed="false">
+        <span class="tag">Master</span>
+        <h3>Master ผู้ดูแลงาน</h3>
+        <p>ทำได้เหมือน Admin สิทธิ์ได้จากหน้าสิทธิ์ยืนยันงาน</p>
+        <div class="pick">ดูคู่มือ Master</div>
+      </button>
+    </div>
+  </section>
+
+  <section class="block" id="who">
+    <h2>ระบบรู้ได้อย่างไรว่าคุณเป็นใคร</h2>
+    <p class="sub">ใช้ชื่อผู้ใช้และรหัสผ่านเดียวกับระบบกลาง ระบบจะดูสิทธิ์ให้เอง</p>
+    <div class="who">
+      <div class="card"><h4>Admin ในระบบกลาง</h4><p>ได้สิทธิ์ทุกอย่างทันที</p></div>
+      <div class="card"><h4>User ที่ได้สิทธิ์ MASTER</h4><p>เป็น Master ทำได้เหมือน Admin ทุกอย่าง</p></div>
+      <div class="card"><h4>User ที่ได้สิทธิ์ AP หรือ AR</h4><p>AP ทำงานเงินออก AR ทำงานเงินเข้า</p></div>
+      <div class="card"><h4>User ที่ยังไม่ได้รับสิทธิ์</h4><p>ดูหน้าภาพรวมและรายงานได้อย่างเดียว ขอสิทธิ์ได้จาก Admin</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="matrix">
+    <h2>สิทธิ์ของแต่ละตำแหน่ง</h2>
+    <p class="sub">ช่องที่มีสีคือตำแหน่งที่คุณเลือก</p>
+    <div class="table-wrap">
+      <table class="matrix">
+        <thead>
+          <tr>
+            <th>งาน</th>
+            <th data-col="ap">AP</th>
+            <th data-col="ar">AR</th>
+            <th data-col="admin">Admin</th>
+            <th data-col="master">Master</th>
+            <th data-col="viewer">ยังไม่ได้รับสิทธิ์</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>ดูภาพรวมและรายงาน ดาวน์โหลด Excel</td>
+            <td data-col="ap"><span class="part">เงินออก</span></td><td data-col="ar"><span class="part">เงินเข้า</span></td><td data-col="admin"><span class="yes">ทั้งหมด</span></td><td data-col="master"><span class="yes">ทั้งหมด</span></td><td data-col="viewer"><span class="yes">ได้</span></td></tr>
+          <tr><td>ดึงข้อมูลจาก BC365</td>
+            <td data-col="ap"><span class="yes">ได้</span></td><td data-col="ar"><span class="yes">ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>นำเข้าไฟล์ธนาคาร</td>
+            <td data-col="ap"><span class="part">เงินออก</span></td><td data-col="ar"><span class="part">เงินเข้า</span></td><td data-col="admin"><span class="yes">เลือกเองได้</span></td><td data-col="master"><span class="yes">เลือกเองได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>จับคู่ พักรายการ ระบุ JV ปรับปรุง</td>
+            <td data-col="ap"><span class="part">เงินออก</span></td><td data-col="ar"><span class="part">เงินเข้า</span></td><td data-col="admin"><span class="yes">ทั้งหมด</span></td><td data-col="master"><span class="yes">ทั้งหมด</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>หักล้างรายการ BC365</td>
+            <td data-col="ap"><span class="yes">ได้</span></td><td data-col="ar"><span class="yes">ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>ยกเลิกการจับคู่ และคืนรายการพัก</td>
+            <td data-col="ap"><span class="part">เงินออก</span></td><td data-col="ar"><span class="part">เงินเข้า</span></td><td data-col="admin"><span class="yes">ทั้งหมด</span></td><td data-col="master"><span class="yes">ทั้งหมด</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>ลบไฟล์ธนาคาร</td>
+            <td data-col="ap"><span class="part">ไฟล์เงินออก</span></td><td data-col="ar"><span class="part">ไฟล์เงินเข้า</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>ยืนยันงาน</td>
+            <td data-col="ap"><span class="part">งาน AP</span></td><td data-col="ar"><span class="part">งาน AR</span></td><td data-col="admin"><span class="yes">ทั้ง AP และ AR</span></td><td data-col="master"><span class="yes">ทั้ง AP และ AR</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>เปิดงวดที่ปิดแล้ว</td>
+            <td data-col="ap"><span class="no">ไม่ได้</span></td><td data-col="ar"><span class="no">ไม่ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>เพิ่มหรือปิดบัญชีธนาคาร</td>
+            <td data-col="ap"><span class="no">ดูได้อย่างเดียว</span></td><td data-col="ar"><span class="no">ดูได้อย่างเดียว</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="yes">ได้</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>ให้สิทธิ์พนักงาน</td>
+            <td data-col="ap"><span class="no">ไม่ได้</span></td><td data-col="ar"><span class="no">ไม่ได้</span></td><td data-col="admin"><span class="yes">ได้</span></td><td data-col="master"><span class="part">ได้ ยกเว้นสิทธิ์ของตัวเอง</span></td><td data-col="viewer"><span class="no">ไม่ได้</span></td></tr>
+          <tr><td>ได้สิทธิ์มาจาก</td>
+            <td data-col="ap"><span class="no">Admin หรือ Master ให้</span></td><td data-col="ar"><span class="no">Admin หรือ Master ให้</span></td><td data-col="admin"><span class="no">ระบบกลาง</span></td><td data-col="master"><span class="no">Admin หรือ Master ให้</span></td><td data-col="viewer"><span class="no">ระบบกลาง</span></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="block" id="guide">
+    <div class="guide-head">
+      <div>
+        <h2 id="guideTitle"></h2>
+        <p id="guideDesc"></p>
+      </div>
+      <div class="progress">
+        <div class="progress-label"><span id="progressText"></span><button class="link-btn" type="button" id="resetBtn">ล้างเครื่องหมายถูก</button></div>
+        <div class="progress-bar"><span id="progressBar"></span></div>
+      </div>
+    </div>
+
+    <div class="cando">
+      <div class="card can"><h4>ทำได้</h4><ul id="canList"></ul></div>
+      <div class="card cant"><h4>ทำไม่ได้</h4><ul id="cantList"></ul></div>
+    </div>
+
+    <div class="layout">
+      <nav class="toc" aria-label="ขั้นตอน">
+        <p class="toc-title">ขั้นตอน</p>
+        <ol id="toc"></ol>
+      </nav>
+      <div class="steps" id="steps"></div>
+    </div>
+  </section>
+
+  <section class="block" id="rules">
+    <h2>กฎที่ควรรู้</h2>
+    <p class="sub">ถ้าปุ่มกดไม่ได้ ให้วางเมาส์บนปุ่ม ระบบจะบอกเหตุผล</p>
+    <div class="rules">
+      <div class="card"><h4>แก้ไฟล์ธนาคารไม่ได้</h4><p>ถ้าไฟล์ผิด ให้ลบทั้งไฟล์แล้วนำเข้าใหม่ และพักได้เฉพาะรายการ BC365</p></div>
+      <div class="card"><h4>เห็นเฉพาะงานของตัวเอง</h4><p>AP เห็นเฉพาะเงินออก AR เห็นเฉพาะเงินเข้า</p></div>
+      <div class="card"><h4>ยืนยันแล้วแก้ไม่ได้</h4><p>ถ้าต้องแก้ ให้เปิดงานอีกครั้งก่อน</p></div>
+      <div class="card"><h4>ยืนยันครบแล้วปิดงวดเอง</h4><p>AP และ AR ยืนยันช่วงวันที่เดียวกัน และยอดตรงกัน ระบบจะปิดงวดให้</p></div>
+      <div class="card"><h4>เปิดงวดคืนได้แค่ Admin และ Master</h4><p>เมื่อเปิดงวด AP และ AR ต้องยืนยันใหม่</p></div>
+      <div class="card"><h4>ระบบเก็บประวัติทุกครั้ง</h4><p>รู้ว่าใครทำอะไร เมื่อไร และเพราะอะไร</p></div>
+    </div>
+  </section>
+
+  <section class="block" id="faq">
+    <h2>คำถามที่พบบ่อย</h2>
+    <p class="sub">ปัญหาที่เจอบ่อยและวิธีแก้</p>
+    <div class="faq">
+      <details><summary>เข้าระบบได้ แต่ไม่เห็นเมนูกระทบยอด</summary>
+        <div><p>คุณยังไม่ได้รับสิทธิ์ AP หรือ AR ให้ติดต่อ Admin หรือ Master เมื่อได้สิทธิ์แล้ว ให้ออกจากระบบแล้วเข้าใหม่</p></div></details>
+      <details><summary>เป็น AP แต่เห็นทั้งเงินเข้าและเงินออก</summary>
+        <div><p>บัญชีของคุณอาจเป็น Admin ในระบบกลาง ได้สิทธิ์ MASTER หรือได้ทั้งสิทธิ์ AP และ AR ให้ Admin หรือ Master ตรวจสอบให้</p></div></details>
+      <details><summary>Master เปลี่ยนสิทธิ์ MASTER ของตัวเองไม่ได้</summary>
+        <div><p>ระบบไม่ให้เปลี่ยนสิทธิ์ MASTER ของตัวเอง เพื่อกันการล็อกตัวเองออกจากระบบ ให้ Admin หรือ Master คนอื่นเป็นคนเปลี่ยนให้</p></div></details>
+      <details><summary>กดปุ่มจับคู่ไม่ได้</summary>
+        <div><p>อ่านข้อความสีเหลืองข้างยอดเงินด้านล่าง ระบบจะบอกว่าขาดอะไร เช่น ยังเลือกไม่ครบสองฝั่ง หรืองานถูกยืนยันไปแล้ว</p></div></details>
+      <details><summary>นำเข้าไฟล์ผิดบัญชีหรือผิดเดือน</summary>
+        <div><p>ไปที่เมนู จัดการข้อมูล แท็บ รายการธนาคาร ลบไฟล์นั้นพร้อมเขียนเหตุผล แล้วนำเข้าไฟล์ที่ถูกต้องใหม่</p></div></details>
+      <details><summary>ระบบเตือนว่ายอดคงเหลือไม่ครบ</summary>
+        <div><p>อีกทีมอาจยังไม่ได้นำเข้าไฟล์ของตัวเอง ให้แจ้งอีกทีมนำเข้าไฟล์เดียวกัน ระบบจะไม่นำเข้ารายการซ้ำ</p></div></details>
+      <details><summary>กดยืนยันงานแล้วไม่ผ่าน</summary>
+        <div><p>ถ้าอีกทีมยืนยันไว้แล้ว ระบบจะตรวจว่ายอดตรงกันและวันที่ตรงกันก่อนปิดงวด ให้จับคู่ พักรายการ หรือระบุ JV ปรับปรุงให้ครบก่อน</p></div></details>
+      <details><summary>แก้ข้อมูลใน BC365 แล้ว แต่ในระบบยังไม่เปลี่ยน</summary>
+        <div><p>กดปุ่ม <span class="btn-name">ดึงข้อมูลใหม่จาก BC365</span> ที่หน้ากระทบยอด</p></div></details>
+      <details><summary>กดเปิดหน้านี้ แล้วไปหน้าเข้าสู่ระบบ</summary>
+        <div><p>คุณยังไม่ได้เข้าสู่ระบบ หรือไม่ได้ใช้งานนานเกินไป ให้เข้าสู่ระบบแล้วกดปุ่มเดิมอีกครั้ง</p></div></details>
+    </div>
+  </section>
+
+  <footer>
+    <span>คู่มือการใช้งาน Auto Reconcile Bank</span>
+    <a href="/login">กลับไปหน้าเข้าสู่ระบบ</a>
+  </footer>
+</main>
+
+<script>
+(function () {
+  var ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>';
+
+  function b(name) { return '<span class="btn-name">' + name + '</span>'; }
+
+  // ขั้นตอนของ AP กับ AR เหมือนกัน ต่างกันแค่เงินเข้าหรือเงินออก จึงสร้างจากแม่แบบเดียว
+  function sideSteps(s) {
+    return [
+      {
+        title: 'เข้าสู่ระบบและดูภาพรวม',
+        where: 'เมนู ภาพรวม',
+        href: '/dashboard',
+        body: '<ol>' +
+          '<li>เข้าสู่ระบบด้วยชื่อผู้ใช้และรหัสผ่านของระบบกลาง</li>' +
+          '<li>หน้าภาพรวมบอกยอดเงิน ผลต่าง และรายการที่ยังค้าง</li>' +
+          '<li>กดลูกศรซ้ายหรือขวาเพื่อเปลี่ยนเดือน</li>' +
+          '</ol>'
+      },
+      {
+        title: 'ดึงข้อมูลจาก BC365',
+        where: 'เมนู นำเข้าข้อมูล',
+        href: '/import',
+        body: '<ol>' +
+          '<li>เลือก <b>รายการบัญชี (BC365)</b></li>' +
+          '<li>กด ' + b('ดึงข้อมูลบัญชีทั้งหมดจาก BC365') + ' แล้วรอจนเสร็จ</li>' +
+          '</ol>' +
+          '<div class="note info">ถ้าแก้เอกสารใน BC365 แล้วอยากเห็นผลเร็ว ให้กด ' + b('ดึงข้อมูลใหม่จาก BC365') + ' ที่หน้ากระทบยอดแทน</div>'
+      },
+      {
+        title: 'นำเข้าไฟล์ธนาคาร',
+        where: 'เมนู นำเข้าข้อมูล',
+        href: '/import',
+        body: '<ol>' +
+          '<li>เลือก <b>รายการเดินบัญชีธนาคาร</b></li>' +
+          '<li>เลือกธนาคารและเลขบัญชีให้ถูก ถ้าเลือกผิด ยอดจะผิดทั้งเดือน</li>' +
+          '<li>อัปโหลดไฟล์ ตรวจตัวอย่าง แล้วกดนำเข้า</li>' +
+          '</ol>' +
+          '<div class="note info">ระบบนำเข้าเฉพาะ' + s.dir + 'ให้เอง ' + s.otherDir + 'ในไฟล์เดียวกันจะไม่ถูกนำเข้า ทีม ' + s.other + ' นำเข้าไฟล์เดิมได้โดยรายการไม่ซ้ำ</div>'
+      },
+      {
+        title: 'เริ่มกระทบยอด',
+        where: 'เมนู กระทบยอด',
+        href: '/reconcile',
+        body: '<ol>' +
+          '<li>กด ' + b('เริ่มกระทบยอด') + '</li>' +
+          '<li>เลือกธนาคาร บัญชี และไฟล์ที่นำเข้าไว้ หรือกำหนดวันที่เอง</li>' +
+          '<li>ถ้าระบบถาม <b>ยอดยกมา BC365</b> ให้กรอกยอดคงเหลือใน BC ของวันก่อนเริ่มงวด</li>' +
+          '</ol>' +
+          '<div class="note info">ถ้ามีรายการที่ลงบัญชีข้ามเดือน ให้ติ๊ก <b>รวม BC365 อีก 7 วันของเดือนถัดไป</b></div>'
+      },
+      {
+        title: 'จับคู่รายการ',
+        where: 'เมนู กระทบยอด',
+        href: '/reconcile',
+        body: '<ol>' +
+          '<li>ตารางซ้ายคือธนาคาร ตารางขวาคือ BC365</li>' +
+          '<li>ติ๊กรายการที่คู่กันทั้งสองฝั่ง</li>' +
+          '<li>ดูยอดด้านล่าง ถ้าเท่ากัน กด ' + b('จับคู่') + '</li>' +
+          '</ol>' +
+          '<p><b>ปุ่มช่วยเลือก</b></p><ul>' +
+          '<li>' + b('ยอดตรงกันพอดี') + ' เลือกคู่ที่ยอดตรงกันในวันเดียวกันให้ทั้งหมด</li>' +
+          '<li>' + b('ต้องรวมหลายรายการ') + ' เลือกคู่ที่ต้องรวมหลายรายการ ควรตรวจก่อนกดจับคู่</li>' +
+          '<li>' + b('ผู้ช่วยจับคู่') + ' หาคู่ที่วันที่ไม่ตรงกัน ควรตรวจก่อนยืนยัน</li>' +
+          '</ul>' +
+          '<div class="note">ถ้ายอดไม่เท่ากัน ปุ่มจะเปลี่ยนเป็น ' + b('จับคู่และพักส่วนต่าง') + ' และต้องเขียนหมายเหตุ ถ้ากดปุ่มไม่ได้ ให้อ่านข้อความสีเหลืองข้างยอดเงิน</div>'
+      },
+      {
+        title: 'รายการที่ยังไม่มีคู่',
+        where: 'เมนู กระทบยอด',
+        href: '/reconcile',
+        body: '<ul>' +
+          '<li>' + b('พักรายการ') + ' เก็บรายการ BC365 ไว้จับคู่ทีหลัง พักได้เฉพาะรายการ BC365</li>' +
+          '<li>' + b('ระบุเป็น JV ปรับปรุง') + ' ใช้กับ JV ที่บันทึกใน BC365 แล้ว</li>' +
+          '<li>' + b('หักล้างรายการ BC365') + ' ใช้กับรายการเงินเข้าและเงินออกใน BC365 ที่หักกันเอง</li>' +
+          '</ul>'
+      },
+      {
+        title: 'ตรวจยอดคงเหลือ',
+        where: 'เมนู กระทบยอด',
+        href: '/reconcile',
+        body: '<ol>' +
+          '<li>กดป้ายผลต่างตรงกลางแถบด้านบน</li>' +
+          '<li>ดูว่ายอดคงเหลือธนาคารกับ BC365 ตรงกันไหม แถวสีเหลืองคือวันที่ยอดไม่ตรง</li>' +
+          '<li>ถ้ายังมีผลต่าง ให้บันทึก JV ใน BC365 ดึงข้อมูลใหม่ แล้วกด ' + b('ระบุเป็น JV ปรับปรุง') + '</li>' +
+          '</ol>' +
+          '<div class="note">ถ้าทีม ' + s.other + ' ยังไม่นำเข้า' + s.otherDir + ' ยอดคงเหลือจะยังไม่ครบ ระบบจะขึ้นเตือน</div>'
+      },
+      {
+        title: 'ยืนยันงาน ' + s.code,
+        where: 'เมนู กระทบยอด ในหน้าต่างยอดคงเหลือ',
+        href: '/reconcile',
+        body: '<ol>' +
+          '<li>กด ' + b('ยืนยันงาน ' + s.code) + '</li>' +
+          '<li>เขียนหมายเหตุ ติ๊กช่องรับทราบ แล้วกด ' + b('ยืนยัน') + '</li>' +
+          '<li>หลังยืนยัน จะแก้ไขงาน' + s.dir + 'ไม่ได้ ถ้าต้องแก้ ให้กด ' + b('เปิดงานฝั่งนี้อีกครั้ง') + '</li>' +
+          '</ol>' +
+          '<div class="note info">เมื่อ AP และ AR ยืนยันครบ และยอดตรงกัน ระบบจะปิดงวดให้เอง ถ้าปิดงวดแล้วต้องแก้ ให้แจ้ง Admin หรือ Master</div>'
+      },
+      {
+        title: 'ยกเลิกการจับคู่',
+        where: 'เมนู ประวัติการจับคู่',
+        href: '/reconcile/history',
+        body: '<ol>' +
+          '<li>ค้นหาด้วยเลขเอกสาร รายละเอียด หรือยอดเงิน</li>' +
+          '<li>กดที่รายการเพื่อดูรายละเอียด แล้วเลือกกลุ่มที่ต้องการ</li>' +
+          '<li>กด ' + b('ส่งกลับ') + ' รายการจะกลับไปรอจับคู่</li>' +
+          '</ol>' +
+          '<div class="note info">รายการที่พักไว้ ยกเลิกที่หน้านี้ไม่ได้ ให้ไปที่หน้ารายการพัก</div>'
+      },
+      {
+        title: 'คืนรายการพัก',
+        where: 'เมนู รายการพัก',
+        href: '/suspense',
+        body: '<ol>' +
+          '<li>ติ๊กรายการที่ต้องการ</li>' +
+          '<li>กด ' + b('คืนไปจับคู่') + ' แล้วยืนยัน</li>' +
+          '<li>รายการจะกลับไปรอที่หน้ากระทบยอด</li>' +
+          '</ol>'
+      },
+      {
+        title: 'ดูรายงาน',
+        where: 'เมนู รายงาน',
+        href: '/reports',
+        body: '<ol>' +
+          '<li>เลือกช่วงวันที่ ธนาคาร และบัญชี</li>' +
+          '<li>กด ' + b('ดาวน์โหลด Excel') + ' เพื่อเก็บหรือส่งต่อ</li>' +
+          '</ol>' +
+          '<div class="note info">รายงานแสดงเฉพาะ' + s.dir + '</div>'
+      }
+    ];
+  }
+
+  var ROLES = {
+    ap: {
+      title: 'คู่มือ AP (เงินออก)',
+      desc: 'สำหรับพนักงานที่ได้สิทธิ์ AP ทำงานได้เฉพาะเงินออก',
+      can: [
+        'นำเข้าไฟล์ธนาคาร (ระบบนำเข้าเฉพาะเงินออก)',
+        'ดึงข้อมูลจาก BC365',
+        'จับคู่ พักรายการ และระบุ JV ปรับปรุง',
+        'หักล้างรายการ BC365',
+        'ยกเลิกการจับคู่ และคืนรายการพัก',
+        'ยืนยันงาน AP',
+        'ดูภาพรวม รายงาน และดาวน์โหลด Excel'
+      ],
+      cant: [
+        'เห็นหรือแก้รายการเงินเข้า',
+        'เปิดงวดที่ปิดแล้ว',
+        'เพิ่มหรือปิดบัญชีธนาคาร',
+        'ให้สิทธิ์พนักงาน'
+      ],
+      steps: sideSteps({ code: 'AP', other: 'AR', dir: 'เงินออก', otherDir: 'เงินเข้า' })
+    },
+    ar: {
+      title: 'คู่มือ AR (เงินเข้า)',
+      desc: 'สำหรับพนักงานที่ได้สิทธิ์ AR ทำงานได้เฉพาะเงินเข้า',
+      can: [
+        'นำเข้าไฟล์ธนาคาร (ระบบนำเข้าเฉพาะเงินเข้า)',
+        'ดึงข้อมูลจาก BC365',
+        'จับคู่ พักรายการ และระบุ JV ปรับปรุง',
+        'หักล้างรายการ BC365',
+        'ยกเลิกการจับคู่ และคืนรายการพัก',
+        'ยืนยันงาน AR',
+        'ดูภาพรวม รายงาน และดาวน์โหลด Excel'
+      ],
+      cant: [
+        'เห็นหรือแก้รายการเงินออก',
+        'เปิดงวดที่ปิดแล้ว',
+        'เพิ่มหรือปิดบัญชีธนาคาร',
+        'ให้สิทธิ์พนักงาน'
+      ],
+      steps: sideSteps({ code: 'AR', other: 'AP', dir: 'เงินเข้า', otherDir: 'เงินออก' })
+    },
+    admin: {
+      title: 'คู่มือ Admin',
+      desc: 'สำหรับ Admin ในระบบกลาง ทำได้ทุกอย่าง',
+      can: [
+        'ทำงานได้ทั้งเงินเข้าและเงินออก',
+        'เลือกได้ว่าจะนำเข้าเงินเข้า เงินออก หรือทั้งสองอย่าง',
+        'ให้สิทธิ์หรือปิดสิทธิ์พนักงาน รวมถึงสิทธิ์ MASTER',
+        'เพิ่มบัญชีธนาคาร เปิดหรือปิดบัญชี',
+        'ยืนยันงานแทน AP และ AR',
+        'เปิดงวดที่ปิดแล้ว',
+        'ลบไฟล์ธนาคารได้ทุกไฟล์'
+      ],
+      cant: [
+        'แก้รายการในไฟล์ธนาคารทีละบรรทัด ต้องลบทั้งไฟล์แล้วนำเข้าใหม่',
+        'พักรายการธนาคาร พักได้เฉพาะรายการ BC365',
+        'ปิดงวดตอนที่ยอดยังไม่ตรงกัน'
+      ],
+      steps: [
+        {
+          title: 'ให้สิทธิ์พนักงาน',
+          where: 'เมนู สิทธิ์ยืนยันงาน',
+          href: '/master-data/work-roles',
+          body: '<ol>' +
+            '<li>กด ' + b('เพิ่มหรือเปลี่ยนสิทธิ์') + '</li>' +
+            '<li>ค้นหาพนักงานด้วยรหัส EMP หรือชื่อ</li>' +
+            '<li>เลือกสิทธิ์ AP AR หรือ MASTER แล้วเลือก เปิดสิทธิ์ หรือ ปิดสิทธิ์</li>' +
+            '<li>เขียนเหตุผล แล้วบันทึก</li>' +
+            '</ol>' +
+            '<div class="note">พนักงาน AP และ AR ต้องเป็น User ในระบบกลาง ถ้าเป็น Admin จะเห็นทุกอย่าง หลังเปลี่ยนสิทธิ์ พนักงานต้องออกจากระบบแล้วเข้าใหม่</div>'
+        },
+        {
+          title: 'จัดการบัญชีธนาคาร',
+          where: 'เมนู จัดการข้อมูล แท็บ บัญชีธนาคาร',
+          href: '/master-data/bank-accounts',
+          body: '<ol>' +
+            '<li>ค้นหาบัญชีด้วยชื่อ เลขบัญชี หรือรหัส BC365</li>' +
+            '<li>กด ' + b('เพิ่มบัญชี') + ' เลือกธนาคารและรหัสบัญชีจาก BC365 แล้วบันทึก</li>' +
+            '<li>กด ' + b('ปิดบัญชี') + ' หรือ ' + b('เปิดบัญชี') + ' ในช่องจัดการ</li>' +
+            '</ol>' +
+            '<div class="note info">บัญชีที่ปิดแล้ว นำเข้าไฟล์ใหม่ไม่ได้ แต่ข้อมูลเดิมยังดูได้ และเปิดกลับได้</div>'
+        },
+        {
+          title: 'นำเข้าข้อมูล',
+          where: 'เมนู นำเข้าข้อมูล',
+          href: '/import',
+          body: '<ol>' +
+            '<li>ดึงข้อมูลจาก BC365 เหมือน AP และ AR</li>' +
+            '<li>ตอนนำเข้าไฟล์ธนาคาร ต้องเลือกว่าจะนำเข้า เงินเข้า เงินออก หรือทั้งสองอย่าง</li>' +
+            '</ol>' +
+            '<div class="note">ถ้านำเข้าแค่อย่างเดียว ยอดคงเหลือจะยังไม่ครบจนกว่าจะนำเข้าอีกอย่าง</div>'
+        },
+        {
+          title: 'กระทบยอด',
+          where: 'เมนู กระทบยอด',
+          href: '/reconcile',
+          body: '<p>ทำเหมือนคู่มือ AP แต่เห็นทั้งเงินเข้าและเงินออก</p>' +
+            '<p><a href="#" data-switch="ap">ดูขั้นตอนในคู่มือ AP</a></p>'
+        },
+        {
+          title: 'ติดตามการยืนยันงาน',
+          where: 'เมนู กระทบยอด ในหน้าต่างยอดคงเหลือ',
+          href: '/reconcile',
+          body: '<ol>' +
+            '<li>ดูว่า AP และ AR ยืนยันแล้วหรือยัง ใครยืนยัน และเมื่อไร</li>' +
+            '<li>อ่านข้อความด้านล่างว่ายังขาดอะไร</li>' +
+            '<li>ถ้าจำเป็น กดยืนยันแทนได้ทั้ง AP และ AR</li>' +
+            '</ol>'
+        },
+        {
+          title: 'เปิดงวดที่ปิดแล้ว',
+          where: 'เมนู กระทบยอด',
+          href: '/reconcile',
+          body: '<ol>' +
+            '<li>งวดที่ปิดแล้วจะมีรูปกุญแจที่แถบด้านบน กดเพื่อเปิดหน้าต่างยอดคงเหลือ</li>' +
+            '<li>กด ' + b('เปิดงวดรวมอีกครั้ง') + ' เขียนเหตุผล ติ๊กช่องรับทราบ แล้วกด ' + b('ยืนยัน') + '</li>' +
+            '</ol>' +
+            '<div class="note">เมื่อเปิดงวด การยืนยันของ AP และ AR จะถูกล้าง ทั้งสองทีมต้องยืนยันใหม่</div>'
+        },
+        {
+          title: 'ลบไฟล์ธนาคารที่ผิด',
+          where: 'เมนู จัดการข้อมูล แท็บ รายการธนาคาร',
+          href: '/master-data/bank-statement',
+          body: '<ol>' +
+            '<li>เลือกไฟล์ที่ผิด แล้วกดลบ</li>' +
+            '<li>เขียนเหตุผล เช่น ผิดเดือน หรือข้อมูลไม่ครบ</li>' +
+            '<li>นำเข้าไฟล์ที่ถูกต้องใหม่</li>' +
+            '</ol>' +
+            '<div class="note info">ดูได้ว่าใครลบ เมื่อไร และเพราะอะไร ที่แท็บ ประวัติการลบ</div>'
+        },
+        {
+          title: 'ดูรายงาน',
+          where: 'เมนู รายงาน',
+          href: '/reports',
+          body: '<ol>' +
+            '<li>เลือกช่วงวันที่ ธนาคาร และบัญชี ดูได้ทั้งเงินเข้าและเงินออก</li>' +
+            '<li>กด ' + b('ดาวน์โหลด Excel') + ' เพื่อเก็บหรือส่งต่อ</li>' +
+            '</ol>'
+        }
+      ]
+    }
+  };
+
+  // Master ทำได้เหมือน Admin ทุกอย่าง ต่างกันแค่ที่มาของสิทธิ์ จึงใช้ขั้นตอนชุดเดียวกัน
+  ROLES.master = {
+    title: 'คู่มือ Master',
+    desc: 'สำหรับ User ในระบบกลางที่ได้สิทธิ์ MASTER ทำได้เหมือน Admin ทุกอย่าง',
+    can: ROLES.admin.can,
+    cant: ROLES.admin.cant.concat([
+      'เปลี่ยนสิทธิ์ MASTER ของตัวเอง ต้องให้ Admin หรือ Master คนอื่นทำ'
+    ]),
+    steps: ROLES.admin.steps
+  };
+
+  var STORE_KEY = 'arb-manual-progress';
+  var ROLE_KEY = 'arb-manual-role';
+
+  function loadProgress() {
+    try { return JSON.parse(localStorage.getItem(STORE_KEY) || '{}') || {}; } catch (e) { return {}; }
+  }
+  function saveProgress(p) {
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(p)); } catch (e) { /* ใช้งานต่อได้แม้บันทึกไม่ได้ */ }
+  }
+
+  var progress = loadProgress();
+  var current = 'ap';
+
+  function el(id) { return document.getElementById(id); }
+
+  function render(role) {
+    current = role;
+    var data = ROLES[role];
+    var done = progress[role] || {};
+    document.body.setAttribute('data-role', role);
+
+    document.querySelectorAll('.role-card').forEach(function (c) {
+      c.setAttribute('aria-pressed', String(c.getAttribute('data-role') === role));
+    });
+    document.querySelectorAll('.matrix [data-col]').forEach(function (cell) {
+      cell.classList.toggle('col-active', cell.getAttribute('data-col') === role);
+    });
+
+    el('guideTitle').textContent = data.title;
+    el('guideDesc').textContent = data.desc;
+    el('canList').innerHTML = data.can.map(function (t) { return '<li>' + t + '</li>'; }).join('');
+    el('cantList').innerHTML = data.cant.map(function (t) { return '<li>' + t + '</li>'; }).join('');
+
+    el('toc').innerHTML = data.steps.map(function (s, i) {
+      return '<li><a href="#step-' + (i + 1) + '" class="' + (done[i] ? 'done' : '') + '">' + s.title + '</a></li>';
+    }).join('');
+
+    el('steps').innerHTML = data.steps.map(function (s, i) {
+      var n = i + 1;
+      return '<article class="step' + (done[i] ? ' is-done' : '') + '" id="step-' + n + '">' +
+        '<div class="step-head"><div class="step-num">' + n + '</div>' +
+        '<div class="step-title"><div class="where">' + s.where + '</div><h3>' + s.title + '</h3></div></div>' +
+        '<div class="step-body">' + s.body + '</div>' +
+        '<div class="step-foot">' +
+          '<a class="go" href="' + s.href + '" target="_blank" rel="noopener">เปิดหน้านี้' + ARROW + '</a>' +
+          '<label class="check"><input type="checkbox" data-step="' + i + '"' + (done[i] ? ' checked' : '') + '> ทำขั้นนี้แล้ว</label>' +
+        '</div></article>';
+    }).join('');
+
+    updateProgress();
+    try { localStorage.setItem(ROLE_KEY, role); } catch (e) { /* ไม่บังคับ */ }
+    if (location.hash !== '#' + role && !/^#step-/.test(location.hash)) {
+      history.replaceState(null, '', '#' + role);
+    }
+  }
+
+  function updateProgress() {
+    var total = ROLES[current].steps.length;
+    var done = progress[current] || {};
+    var count = Object.keys(done).filter(function (k) { return done[k]; }).length;
+    el('progressText').textContent = 'ทำแล้ว ' + count + ' จาก ' + total + ' ขั้น';
+    el('progressBar').style.width = (total ? (count / total) * 100 : 0) + '%';
+  }
+
+  document.querySelectorAll('.role-card').forEach(function (c) {
+    c.addEventListener('click', function () {
+      render(c.getAttribute('data-role'));
+      el('guide').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+
+  el('steps').addEventListener('change', function (e) {
+    var box = e.target;
+    if (!box.matches('input[data-step]')) return;
+    var i = Number(box.getAttribute('data-step'));
+    progress[current] = progress[current] || {};
+    progress[current][i] = box.checked;
+    saveProgress(progress);
+    box.closest('.step').classList.toggle('is-done', box.checked);
+    var link = el('toc').querySelectorAll('a')[i];
+    if (link) link.classList.toggle('done', box.checked);
+    updateProgress();
+  });
+
+  el('steps').addEventListener('click', function (e) {
+    var a = e.target.closest('[data-switch]');
+    if (!a) return;
+    e.preventDefault();
+    render(a.getAttribute('data-switch'));
+    el('guide').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  el('resetBtn').addEventListener('click', function () {
+    progress[current] = {};
+    saveProgress(progress);
+    render(current);
+  });
+
+  var fromHash = location.hash.replace('#', '');
+  var saved = null;
+  try { saved = localStorage.getItem(ROLE_KEY); } catch (e) { saved = null; }
+  render(ROLES[fromHash] ? fromHash : (ROLES[saved] ? saved : 'ap'));
+
+  window.addEventListener('hashchange', function () {
+    var h = location.hash.replace('#', '');
+    if (ROLES[h] && h !== current) render(h);
+  });
+})();
+</script>
+</body>
+</html>

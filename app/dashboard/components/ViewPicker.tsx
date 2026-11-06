@@ -45,18 +45,18 @@ export default function ViewPicker({
       <button
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+        className="inline-flex min-h-11 items-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-600"
       >
         <SlidersHorizontal size={15} />
         ปรับมุมมอง
-        <span className="rounded-full bg-slate-100 px-1.5 text-xs tabular-nums text-slate-500">
+        <span className="rounded-full bg-white/20 px-1.5 text-xs tabular-nums text-white">
           {selected.length}/{WIDGETS.length}
         </span>
         <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-[290px] rounded-2xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10">
+        <div className="absolute right-0 z-30 mt-2 w-[290px] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-slate-200 bg-white p-2 shadow-xl shadow-blue-900/10">
           <div className="flex items-center justify-between px-2 py-1.5">
             <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">ส่วนที่แสดง</span>
             <div className="flex gap-2 text-xs font-medium">
@@ -82,7 +82,7 @@ export default function ViewPicker({
               >
                 <span
                   className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
-                    on ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300 bg-white'
+                    on ? 'border-blue-500 bg-blue-500 text-white' : 'border-slate-300 bg-white'
                   }`}
                 >
                   {on && <Check size={11} strokeWidth={3} />}

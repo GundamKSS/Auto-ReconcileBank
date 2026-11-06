@@ -19,6 +19,10 @@ export type LineItem = {
   num: number;
   date: string;
   description?: string;
+  rawDescription?: string | null;
+  senderBank?: string | null;
+  senderAccountNo?: string | null;
+  senderAccountName?: string | null;
   ref?: string;
   accountNo?: string;
   accountName?: string;
@@ -46,6 +50,21 @@ export type MatchRecord = {
   bankLines: LineItem[];
   glLines: LineItem[];
 };
+
+/** หน้าถัดไปอาจเป็นกลุ่มอื่นของ Match เดิม — รวมบรรทัดโดยไม่ทำแถวเดิมซ้ำ */
+export function appendHistoryPage(current: MatchRecord[], incoming: MatchRecord[]): MatchRecord[] {
+  const merged = new Map(current.map((match) => [match.matchId, match]));
+  for (const match of incoming) {
+    const previous = merged.get(match.matchId);
+    merged.set(match.matchId, previous ? {
+      ...previous,
+      ...match,
+      bankLines: [...new Map([...previous.bankLines, ...match.bankLines].map((line) => [line.lineId, line])).values()],
+      glLines: [...new Map([...previous.glLines, ...match.glLines].map((line) => [line.entryNo, line])).values()],
+    } : match);
+  }
+  return [...merged.values()];
+}
 
 // กลุ่มย่อย (Num) = 1 cluster ที่บาลานซ์กันเอง ไม่ว่าจะ 1:1, 1:N, N:1 — เป็นหน่วยที่ติ๊กเลือก/ยกเลิกได้
 export type SubGroup = {

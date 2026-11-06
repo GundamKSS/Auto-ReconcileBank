@@ -1,20 +1,33 @@
 'use client';
 
 import {
+  CheckCircle2,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
+  RefreshCw,
+  TriangleAlert,
+  X,
 } from 'lucide-react';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useSidebar } from './SidebarContext';
-import { findMenuItem, menuItemsFor, normalizeRole, type Role } from '../lib/menu';
+import { findMenuItem, menuItemsFor, type AppRole } from '../lib/menu';
+import { storedAppRole } from '../lib/roles';
 import type { UserSession } from '../lib/trwApi';
 
 const SPRING = { type: 'spring', stiffness: 520, damping: 38, mass: 0.9 } as const;
+const PENDING_LOGIN_SYNC_KEY = 'autorecon:pending-login-gl-sync';
+export const GL_SYNCED_EVENT = 'autorecon:gl-synced';
+
+type SyncAlert = {
+  tone: 'success' | 'error';
+  title: string;
+  message: string;
+};
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -24,7 +37,60 @@ export default function Sidebar() {
   const [authorized, setAuthorized] = useState<boolean | null>(null);
 
   const [user, setUser] = useState<{ name: string; subtitle: string; initials: string } | null>(null);
-  const [role, setRole] = useState<Role | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
+
+  const [syncingGl, setSyncingGl] = useState(false);
+  const [syncAlert, setSyncAlert] = useState<SyncAlert | null>(null);
+  const syncingRef = useRef(false);
+  const alertTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showSyncAlert = useCallback((next: SyncAlert) => {
+    if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+    setSyncAlert(next);
+    alertTimerRef.current = setTimeout(() => {
+      setSyncAlert(null);
+    }, 5000);
+  }, []);
+
+  const triggerGlSync = useCallback(
+    async (mode: 'auto' | 'manual') => {
+      if (syncingRef.current) return;
+      syncingRef.current = true;
+      setSyncingGl(true);
+      try {
+        const res = await fetch('/api/reconcile/sync-gl', { method: 'POST' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (mode === 'manual') {
+            showSyncAlert({
+              tone: 'error',
+              title: 'ซิงค์ข้อมูลจาก BC365 ไม่สำเร็จ',
+              message: data.error || 'กรุณาลองกดซิงค์ใหม่อีกครั้ง',
+            });
+          }
+          return;
+        }
+        window.dispatchEvent(new CustomEvent(GL_SYNCED_EVENT));
+        showSyncAlert({
+          tone: 'success',
+          title: 'ซิงค์ข้อมูลจาก BC365 เรียบร้อยแล้ว',
+          message: 'อัปเดตรายการ BankAccountLedgerEntries ล่าสุดเข้าฐานข้อมูลแล้ว',
+        });
+      } catch {
+        if (mode === 'manual') {
+          showSyncAlert({
+            tone: 'error',
+            title: 'เชื่อมต่อบริการซิงค์ BC365 ไม่ได้',
+            message: 'กรุณาตรวจสอบการเชื่อมต่อเครือข่ายแล้วลองใหม่',
+          });
+        }
+      } finally {
+        syncingRef.current = false;
+        setSyncingGl(false);
+      }
+    },
+    [showSyncAlert]
+  );
 
   // เมนูที่เพิ่งกด แต่หน้ายังโหลดไม่เสร็จ — ให้แถบไฮไลต์ย้ายไปทันทีที่กด ไม่ต้องรอ server
   // จำ path ตอนกดไว้ด้วย: พอ path เปลี่ยน (ไปถึงแล้ว หรือถูกพาไปที่อื่น) ค่านี้ก็หมดความหมาย
@@ -62,8 +128,18 @@ export default function Sidebar() {
         ? words.map((w) => w[0]).join('').toUpperCase()
         : (parsed.username?.slice(0, 2).toUpperCase() ?? 'NA');
       setUser({ name, subtitle, initials });
-      setRole(normalizeRole(parsed.roleProg));
+      setRole(storedAppRole(parsed));
       setAuthorized(true);
+
+      // หากเพิ่งเข้าสู่ระบบจากหน้า Login — สั่งซิงค์รายการ BankAccountLedgerEntries จาก BC365 เบื้องหลังทันที
+      try {
+        if (sessionStorage.getItem(PENDING_LOGIN_SYNC_KEY) === '1') {
+          sessionStorage.removeItem(PENDING_LOGIN_SYNC_KEY);
+          void triggerGlSync('auto');
+        }
+      } catch {
+        // Ignore sessionStorage error
+      }
     } catch (err) {
       console.error('Failed to parse user from localStorage', err);
       router.push('/login');
@@ -71,7 +147,13 @@ export default function Sidebar() {
     // setAuthorized(true) อยู่ในเส้นทางสำเร็จ (ในบล็อก try) แล้ว — ไม่เรียกซ้ำตรงนี้
     // เพราะจะทำให้เคส parse ไม่ผ่าน/ไม่มี session กลายเป็น authorized ค้างไว้ด้วย
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [router]);
+  }, [router, triggerGlSync]);
+
+  useEffect(() => {
+    return () => {
+      if (alertTimerRef.current) clearTimeout(alertTimerRef.current);
+    };
+  }, []);
 
   // ปิด mobile drawer อัตโนมัติทุกครั้งที่เปลี่ยนหน้า
   useEffect(() => {
@@ -130,6 +212,42 @@ export default function Sidebar() {
             style={{ transformOrigin: '0 50%' }}
             className="pointer-events-none fixed inset-x-0 top-0 z-[70] h-[3px] bg-gradient-to-r from-sky-400 via-blue-500 to-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.6)]"
           />
+        )}
+      </AnimatePresence>
+
+      {/* Alert แจ้งเตือนเมื่อซิงค์ข้อมูลจาก BC365 เสร็จสิ้นหรือเกิดข้อผิดพลาด */}
+      <AnimatePresence>
+        {syncAlert && (
+          <motion.div
+            key="bc365-sync-toast"
+            initial={{ opacity: 0, y: -16, scale: 0.94 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.96 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+            role="status"
+            aria-live="polite"
+            className={`fixed right-5 top-5 z-[80] flex max-w-sm items-start gap-3 rounded-xl border bg-white/90 px-4 py-3 shadow-xl backdrop-blur-xl backdrop-saturate-150 ${
+              syncAlert.tone === 'success' ? 'border-green-200/80' : 'border-amber-200/80'
+            }`}
+          >
+            {syncAlert.tone === 'success' ? (
+              <CheckCircle2 size={20} className="mt-0.5 shrink-0 text-green-600" />
+            ) : (
+              <TriangleAlert size={20} className="mt-0.5 shrink-0 text-amber-600" />
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">{syncAlert.title}</p>
+              <p className="mt-0.5 text-xs text-slate-500">{syncAlert.message}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSyncAlert(null)}
+              aria-label="ปิดการแจ้งเตือน"
+              className="shrink-0 text-slate-300 transition-transform hover:text-slate-500 active:scale-90"
+            >
+              <X size={16} />
+            </button>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -271,6 +389,38 @@ export default function Sidebar() {
           </div>
 
         </nav>
+
+        {/* ปุ่มซิงค์ข้อมูลจาก BC365 (อยู่ตลอดด้านล่าง Sidebar) */}
+        <div className="px-4 pb-3">
+          <button
+            type="button"
+            onClick={() => void triggerGlSync('manual')}
+            disabled={syncingGl}
+            title={collapsed ? (syncingGl ? 'กำลังซิงค์ข้อมูล BC365...' : 'ซิงค์ข้อมูล BC365') : undefined}
+            className={`
+              group flex w-full items-center gap-3 rounded-xl border
+              px-3.5 py-2.5 text-left transition-all duration-200
+              ${
+                syncingGl
+                  ? 'border-blue-200 bg-blue-50/80 text-blue-700 cursor-wait'
+                  : 'border-slate-200/80 bg-slate-50/70 text-slate-700 hover:border-blue-200 hover:bg-blue-50/60 hover:text-blue-700 active:scale-[0.98]'
+              }
+              ${collapsed ? 'lg:justify-center lg:px-0' : ''}
+            `}
+          >
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white text-blue-600 shadow-xs ring-1 ring-slate-200/70 group-hover:ring-blue-200">
+              <RefreshCw size={16} className={syncingGl ? 'animate-spin' : 'transition-transform duration-300 group-hover:rotate-90'} />
+            </span>
+            <div className={`min-w-0 flex-1 ${collapsed ? 'lg:hidden' : ''}`}>
+              <p className="truncate text-xs font-semibold">
+                {syncingGl ? 'กำลังซิงค์ข้อมูล BC365...' : 'ซิงค์ข้อมูล BC365'}
+              </p>
+              <p className="truncate text-[11px] text-slate-400">
+                {syncingGl ? 'กำลังอัปเดตฐานข้อมูลเบื้องหลัง' : 'อัปเดตรายการ GL ล่าสุด'}
+              </p>
+            </div>
+          </button>
+        </div>
 
         {/* User */}
         <div className="border-t border-slate-100 p-4">

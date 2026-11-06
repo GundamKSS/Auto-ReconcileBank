@@ -5,7 +5,9 @@ import { readStatementRows, MAX_FILE_BYTES, MAX_IMPORT_ROWS } from '../../../../
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { findOverlapWithImportedLines } from '../../../../lib/bankStatementOverlap';
-import { bankAccountColumnsReady, resolveBankAccount } from '../../../../lib/bankAccountDb';
+import { bankAccountColumnsReady, CLOSED_ACCOUNT_ERROR, resolveBankAccount } from '../../../../lib/bankAccountDb';
+import { readWorkPermissions } from '../../../../lib/workRolesDb';
+import { filterLinesBySide, IMPORT_SIDE_LABELS, resolveImportSide, statementLineDirection, type ImportSide } from '../../../../lib/importSide';
 
 const VALID_BANKS: BankCode[] = ['BBL', 'KBANK', 'SCB'];
 
@@ -54,6 +56,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'อ่านข้อมูลที่ส่งมาไม่สำเร็จ' }, { status: 400 });
   }
 
+  // ฝั่งที่นำเข้า — กติกาเดียวกับ import/route.ts ผล preview จึงตรงกับตอนกดนำเข้าจริง
+  let importSide: ImportSide;
+  try {
+    const resolved = resolveImportSide(await readWorkPermissions(auth.session), formData.get('side'));
+    if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    importSide = resolved.side;
+  } catch (err) {
+    console.error('Resolve import side error:', err);
+    return NextResponse.json({ error: 'ตรวจสอบสิทธิ์การนำเข้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
+  }
+
   // ขั้นระบุบัญชี — ตรวจให้ตรงกันแบบเดียวกับตอนนำเข้าจริง (ดู import/route.ts) เพื่อให้หน้า preview
   // ไม่แสดงผลที่คำนวณจากบัญชีหนึ่งแล้วตอนกดนำเข้าจริงกลับถูกปฏิเสธด้วยเหตุผลคนละอย่าง
   try {
@@ -68,6 +81,9 @@ export async function POST(req: NextRequest) {
       const account = await resolveBankAccount(rawAccount);
       if (!account?.bankCode) {
         return NextResponse.json({ error: 'ไม่รู้จักบัญชีที่เลือก กรุณาเลือกใหม่' }, { status: 400 });
+      }
+      if (account.isActive === false) {
+        return NextResponse.json({ error: CLOSED_ACCOUNT_ERROR }, { status: 409 });
       }
       if (!VALID_BANKS.includes(account.bankCode as BankCode)) {
         return NextResponse.json(
@@ -145,6 +161,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  // จำนวนของแต่ละฝั่งในไฟล์ — หน้าจอบอกได้ว่าอีกฝั่งมีกี่รายการที่รอบนี้ไม่ได้นำเข้า
+  const sideCounts = {
+    IN: lines.filter((l) => statementLineDirection(l) === 'IN').length,
+    OUT: lines.filter((l) => statementLineDirection(l) === 'OUT').length,
+  };
+  lines = filterLinesBySide(lines, importSide);
+  if (lines.length === 0) {
+    return NextResponse.json({ error: `ไฟล์นี้ไม่มีรายการ${IMPORT_SIDE_LABELS[importSide]}ให้นำเข้า` }, { status: 400 });
+  }
+
   try {
     const pool = await getPool();
     const overlap = await findOverlapWithImportedLines(
@@ -166,6 +192,8 @@ export async function POST(req: NextRequest) {
       fileName: file.name,
       fileSizeKb: Math.round(file.size / 1024),
       totalRows: lines.length,
+      side: importSide,
+      sideCounts,
       periodStart,
       periodEnd,
       previewRows: lines.slice(0, 5),

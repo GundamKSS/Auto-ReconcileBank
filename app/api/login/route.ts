@@ -6,6 +6,9 @@ import {
   UserSession,
 } from '../../../lib/trwApi';
 import { SESSION_COOKIE, createSessionToken, sessionCookieOptions } from '../../../lib/session';
+import { effectiveAppRole, normalizeEmployeeCode } from '../../../lib/workRoles';
+import { readWorkPermissions } from '../../../lib/workRolesDb';
+import { normalizeRole } from '../../../lib/roles';
 
 // กัน Next.js cache response ของ route นี้ไว้ — ต้องยิงเช็คของจริงทุกครั้ง
 export const dynamic = 'force-dynamic';
@@ -48,6 +51,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         { error: `ตรวจสอบผู้ใช้งานไม่สำเร็จ (HTTP ${res.status})` },
         { status: 502 }
+
       );
     }
 
@@ -68,12 +72,22 @@ export async function POST(req: NextRequest) {
     const session: UserSession = {
       username,
       displayName: data.display_name || username,
-      employeeNo: data.employee_no ?? null,
+      employeeNo: normalizeEmployeeCode(typeof data.employee_no === 'number' ? String(data.employee_no) : data.employee_no),
       email: data.email ?? null,
       role: data.role ?? null,
       roleProg: program.role_prog ?? null,
       programs,
     };
+    // เมนูฝั่ง client ใช้ role ที่ปรับด้วยสิทธิ์ในโปรแกรม (MASTER/REPORT) — อ่านไม่ได้ก็ใช้ roleProg ตามเดิม
+    // เพราะ server คิดสิทธิ์จริงใหม่ทุก request อยู่แล้ว ไม่ควรให้ DB สะดุดแล้ว login ไม่ได้
+    try {
+      const role = normalizeRole(session.roleProg);
+      session.effectiveRole = effectiveAppRole(role, await readWorkPermissions({
+        username, displayName: session.displayName, role, employeeNo: session.employeeNo ?? undefined,
+      }));
+    } catch (err) {
+      console.error('Login work-role lookup failed:', err);
+    }
 
     const response = NextResponse.json(session);
     response.cookies.set(
@@ -82,6 +96,7 @@ export async function POST(req: NextRequest) {
         username: session.username,
         displayName: session.displayName,
         roleProg: session.roleProg,
+        employeeNo: session.employeeNo,
       }),
       sessionCookieOptions(req.nextUrl.protocol === 'https:')
     );

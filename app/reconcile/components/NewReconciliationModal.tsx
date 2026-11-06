@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
 import { useEffect, useMemo, useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { ReconcileSession, BankStatementImportSummary } from "./types";
@@ -417,25 +418,21 @@ export default function NewReconciliationModal({
                 suggestionFrom={openingInfo.suggestedFromPeriod ? formatDMY(openingInfo.suggestedFromPeriod) : null}
               />
               <p className="text-[11px] text-gray-400 mt-1">
-                กรอกครั้งเดียวต่องวด ใช้เทียบยอดคงเหลือกับธนาคาร
-                {openingInfo.bankOpening !== null && ` · ยอดยกมาฝั่งธนาคารจากไฟล์ = ${formatAmount(openingInfo.bankOpening)}`}
+                กรอกครั้งเดียวต่องวด
+                {openingInfo.bankOpening !== null && ` · ธนาคารยกมา ${formatAmount(openingInfo.bankOpening)}`}
               </p>
               {openingError && <p className="text-xs text-red-600 mt-1">{openingError}</p>}
             </div>
           )}
 
-          <label className="flex items-start gap-2.5 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={includeSuspenseBuffer}
-              onChange={(e) => setIncludeSuspenseBuffer(e.target.checked)}
-              className="w-4 h-4 rounded border-gray-300 mt-0.5"
-            />
-            <span className="text-xs text-gray-600 leading-relaxed">
-              ขยายวันที่ฝั่ง GL (BC365) ไปอีก 7 วันของเดือนถัดไป — ใช้ค้นหารายการบัญชีพักโอนที่บันทึกข้ามเดือน
-              (ฝั่งธนาคารยังใช้ช่วงวันที่เดิมไม่เปลี่ยน)
-            </span>
-          </label>
+          <div className="flex items-center gap-1">
+            <label className="flex items-center gap-2.5 cursor-pointer">
+              <input type="checkbox" checked={includeSuspenseBuffer}
+                onChange={(e) => setIncludeSuspenseBuffer(e.target.checked)} className="w-4 h-4 rounded border-gray-300" />
+              <span className="text-xs text-gray-600">รวม BC365 อีก 7 วันของเดือนถัดไป</span>
+            </label>
+            <HelpTooltip label="เกี่ยวกับรายการข้ามเดือน">ใช้ค้นหารายการพักโอนที่บันทึกข้ามเดือน โดยช่วงวันที่ฝั่งธนาคารยังคงเดิม</HelpTooltip>
+          </div>
         </div>
 
         <div className="flex items-center justify-end gap-2 px-5 py-4 border-t border-gray-100">

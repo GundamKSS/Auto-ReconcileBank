@@ -1,4 +1,5 @@
 "use client";
+import HelpTooltip from '../../../components/HelpTooltip';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   FileText, UploadCloud, CheckCircle2,
@@ -11,10 +12,16 @@ import {
   guessAccountFromFileName,
   shortAccountLabel,
 } from "../../../lib/bankAccounts";
+import { IMPORT_SIDE_LABELS, importableSides, type ImportSide } from "../../../lib/importSide";
+import type { WorkPermissions } from "../../../lib/workRoles";
 
 type PreviewLine = {
   tranDate: string;
   description: string;
+  rawDescription?: string | null;
+  senderBank?: string | null;
+  senderAccountNo?: string | null;
+  senderAccountName?: string | null;
   debit: number | null;
   credit: number | null;
   balance: number | null;
@@ -27,6 +34,9 @@ type PreviewResponse = {
   fileName: string;
   fileSizeKb: number;
   totalRows: number;
+  // ฝั่งที่ preview นี้อ่าน และจำนวนรายการของแต่ละฝั่งในทั้งไฟล์
+  side?: ImportSide;
+  sideCounts?: { IN: number; OUT: number };
   periodStart: string | null;
   periodEnd: string | null;
   previewRows: PreviewLine[];
@@ -76,7 +86,13 @@ export default function ImportFlow() {
 
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
-  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; skippedCount: number } | null>(null);
+  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; skippedCount: number; otherSideCount: number } | null>(null);
+
+  // ฝั่งที่นำเข้าตามสิทธิ์ AP/AR (lib/importSide.ts) — AP เงินออก, AR เงินเข้า, มีทั้งคู่/Master เลือกทุกครั้ง
+  // server ตรวจซ้ำทั้งตอน preview และนำเข้า ค่าที่นี่มีไว้ให้หน้าจอพาไปถูกทาง
+  const [workPermissions, setWorkPermissions] = useState<WorkPermissions | null>(null);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [pickedSide, setPickedSide] = useState<ImportSide | null>(null);
 
   const [syncingGl, setSyncingGl] = useState(false);
   const [glSyncError, setGlSyncError] = useState("");
@@ -115,8 +131,34 @@ export default function ImportFlow() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/work-permissions")
+      .then(async (res) => {
+        const data = await res.json();
+        if (!cancelled && res.ok) setWorkPermissions(data.permissions ?? null);
+      })
+      // โหลดไม่ได้ก็ไม่ส่งฝั่งไป ให้ server เลือกตามสิทธิ์เอง (สิทธิ์ฝั่งเดียว) หรือแจ้งให้เลือก
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setPermissionsLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const sides = workPermissions ? importableSides(workPermissions) : null;
+  const cannotImport = sides !== null && sides.length === 0;
+  const importSide: ImportSide | null =
+    sides === null ? null : sides.length === 1 ? sides[0] : pickedSide && sides.includes(pickedSide) ? pickedSide : null;
+  // ต้องรู้ฝั่งก่อนอ่านไฟล์ — ยกเว้นโหลดสิทธิ์ไม่ได้ (ไม่ส่งฝั่ง ให้ server ตัดสิน)
+  const sideReady = sides === null ? permissionsLoaded : importSide !== null;
+
+  // บัญชีที่ปิดแล้ว (หน้าจัดการข้อมูล · บัญชีธนาคาร) นำเข้าไม่ได้ — ซ่อนตั้งแต่ตัวเลือก
+  const openAccounts = useMemo(() => accounts.filter((a) => a.isActive !== false), [accounts]);
+
   // เฉพาะบัญชีของธนาคารที่ parser รองรับ และของธนาคารที่เลือกอยู่
-  const accountsOfBank = accounts.filter((a) => a.bankCode === selectedBank);
+  const accountsOfBank = openAccounts.filter((a) => a.bankCode === selectedBank);
 
   // บัญชีที่เลือกอยู่ — ไม่มีค่า default ให้กดผ่าน ต้องกดเลือกเองใน step 2
   // (เดิม default เป็นบัญชีแรกของธนาคาร ซึ่งเสี่ยงให้คนกด Continue ผ่านไปโดยไม่ได้ดูว่าบัญชีไหน)
@@ -129,8 +171,8 @@ export default function ImportFlow() {
   // ตรวจสอบไขว้: เลข 4 ตัวท้ายในชื่อไฟล์บอกบัญชีอะไร แล้วตรงกับที่ผู้ใช้เลือกไว้ไหม
   // ไม่เอาไปเปลี่ยนค่าให้เอง เพราะผู้ใช้ตัดสินใจไปแล้วใน step 2 — ทั้งสองทางยืนยันกันเองดีกว่า
   const fileNameGuess = useMemo(
-    () => (file ? guessAccountFromFileName(file.name, accounts) : null),
-    [file, accounts]
+    () => (file ? guessAccountFromFileName(file.name, openAccounts) : null),
+    [file, openAccounts]
   );
   const fileNameMismatch =
     fileNameGuess && effectiveAccountNo && fileNameGuess.bankAccountNo !== effectiveAccountNo
@@ -142,11 +184,17 @@ export default function ImportFlow() {
 
   // ข้ามขั้นเลือกบัญชีได้เฉพาะตอนที่ระบบไม่มีรายชื่อบัญชีให้เลือกจริงๆ (API ล่ม)
   // ถ้ามีรายชื่อแล้วต้องกดเลือก — ห้ามปล่อยผ่านด้วยค่า default
-  const canLeaveAccountStep = accounts.length === 0 ? !loadingAccounts : Boolean(effectiveAccountNo);
+  const canLeaveAccountStep = (accounts.length === 0 ? !loadingAccounts : Boolean(effectiveAccountNo)) && sideReady;
 
   function handleBankChange(code: string) {
     setSelectedBank(code);
     setSelectedAccountNo("");
+  }
+
+  function handleSideChange(side: ImportSide) {
+    setPickedSide(side);
+    // เปลี่ยนฝั่งหลังอ่านไฟล์แล้ว = จำนวนรายการ/ผลตรวจซ้ำเปลี่ยน ต้องอ่านใหม่
+    if (file) handleFileSelected(file, { accountNo: effectiveAccountNo, bankCode: selectedBank, side });
   }
 
   function handleAccountChange(accountNo: string) {
@@ -166,7 +214,7 @@ export default function ImportFlow() {
 
   async function handleFileSelected(
     selected: File,
-    override?: { accountNo: string; bankCode: string }
+    override?: { accountNo: string; bankCode: string; side?: ImportSide }
   ) {
     setFile(selected);
     setPreview(null);
@@ -184,6 +232,8 @@ export default function ImportFlow() {
       formData.append("file", selected);
       formData.append("bankCode", bankCode);
       if (accountNo) formData.append("bankAccountNo", accountNo);
+      const side = override?.side ?? importSide;
+      if (side) formData.append("side", side);
 
       const res = await fetch("/api/bank-statement/preview", {
         method: "POST",
@@ -214,6 +264,7 @@ export default function ImportFlow() {
       formData.append("file", file);
       formData.append("bankCode", selectedBank);
       if (effectiveAccountNo) formData.append("bankAccountNo", effectiveAccountNo);
+      if (importSide) formData.append("side", importSide);
 
       const res = await fetch("/api/bank-statement/import", {
         method: "POST",
@@ -225,7 +276,7 @@ export default function ImportFlow() {
         setImportError(data.error || "นำเข้าไม่สำเร็จ");
         return;
       }
-      setImportSuccess({ rowCount: data.rowCount, skippedCount: data.skippedCount ?? 0 });
+      setImportSuccess({ rowCount: data.rowCount, skippedCount: data.skippedCount ?? 0, otherSideCount: data.otherSideCount ?? 0 });
     } catch {
       setImportError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
     } finally {
@@ -260,6 +311,8 @@ export default function ImportFlow() {
   function resetAll() {
     setStep(1);
     setFile(null);
+    // คนที่มีทั้งสองฝั่งต้องเลือกฝั่งใหม่ทุกครั้งที่นำเข้า ไม่จำของรอบก่อน
+    setPickedSide(null);
     setPreview(null);
     setPreviewError("");
     setImportError("");
@@ -281,8 +334,7 @@ export default function ImportFlow() {
             <Menu size={22} />
           </button>
           <div>
-            <h1 className="text-3xl font-bold mb-1">นำเข้าข้อมูล</h1>
-            <p className="text-slate-500">นำเข้าไฟล์รายการเดินบัญชีธนาคาร หรือดึงข้อมูลบัญชีจาก BC365</p>
+            <h1 className="text-3xl font-bold">นำเข้าข้อมูล</h1>
           </div>
         </div>
       </div>
@@ -320,7 +372,7 @@ export default function ImportFlow() {
                   <FileText className={selectedSource === "gl" ? "text-blue-600" : "text-slate-400"} />
                   <div>
                     <h3 className="font-semibold text-slate-800">รายการบัญชี (BC365)</h3>
-                    <p className="text-sm text-slate-500 mt-1">ดึงข้อมูลจาก Business Central (BC365)</p>
+
                   </div>
                 </div>
               </div>
@@ -376,15 +428,10 @@ export default function ImportFlow() {
             {selectedSource === "gl" && (
               <div className="mb-auto flex flex-col gap-4">
                 <div className="p-5 bg-slate-50 border border-slate-200 rounded-xl">
-                  <p className="text-sm font-semibold text-slate-800 mb-1">ดึงข้อมูลบัญชีทั้งหมดจาก BC365</p>
-                  <p className="text-sm text-slate-500">
-                    ดึงรายการบัญชีธนาคาร <span className="font-medium text-slate-700">ทั้งหมด</span> จาก
-                    Business Central (BC365) มาอัปเดตในระบบ โดยไม่ต้องอัปโหลดไฟล์
-                  </p>
-                  <p className="text-xs text-slate-400 mt-3">
-                    การดึงข้อมูลทั้งหมดอาจใช้เวลาสักครู่ หากต้องการอัปเดตเฉพาะ 40 วันล่าสุด
-                    ให้ใช้ปุ่ม &quot;ดึงข้อมูลใหม่จาก BC365&quot; ในหน้ากระทบยอด
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-semibold text-slate-800">ดึงข้อมูลบัญชีทั้งหมดจาก BC365</p>
+                    <HelpTooltip label="เกี่ยวกับการดึงข้อมูล BC365">อัปเดตข้อมูลบัญชีธนาคารทั้งหมดโดยไม่ต้องอัปโหลดไฟล์ อาจใช้เวลาสักครู่ หากต้องการเฉพาะ 40 วันล่าสุด ให้กดดึงข้อมูลใหม่จาก BC365 ที่หน้ากระทบยอด</HelpTooltip>
+                  </div>
                 </div>
 
                 {glSyncError && (
@@ -417,12 +464,20 @@ export default function ImportFlow() {
                   {syncingGl ? "กำลังดึงข้อมูลทั้งหมด..." : "ดึงข้อมูลทั้งหมด"}
                 </button>
               ) : (
-                <button
-                  onClick={() => setStep(2)}
-                  className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors"
-                >
-                  ถัดไป <ArrowRight size={16} />
-                </button>
+                <div className="flex flex-col items-end gap-2">
+                  {cannotImport && (
+                    <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-100 rounded-xl px-4 py-2">
+                      ต้องมีสิทธิ์ AP หรือ AR จึงจะนำเข้า statement ได้ กรุณาติดต่อผู้ดูแลระบบ
+                    </p>
+                  )}
+                  <button
+                    onClick={() => !cannotImport && setStep(2)}
+                    disabled={cannotImport}
+                    className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full font-medium flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    ถัดไป <ArrowRight size={16} />
+                  </button>
+                </div>
               )}
             </div>
           </div>
@@ -486,6 +541,41 @@ export default function ImportFlow() {
                     </button>
                   );
                 })}
+              </div>
+            )}
+
+            {/* ฝั่งที่นำเข้า — สิทธิ์ฝั่งเดียวแสดงเฉยๆ, มีทั้งสองฝั่ง (หรือ Master) ต้องเลือกเองทุกครั้ง */}
+            {sides && sides.length > 0 && (
+              <div className="mt-6">
+                <h3 className="text-sm font-semibold text-slate-800">ฝั่งที่จะนำเข้า</h3>
+                {sides.length === 1 ? (
+                  <p className="mt-2 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+                    นำเข้าเฉพาะ <span className="font-semibold">{IMPORT_SIDE_LABELS[sides[0]]}</span> ตามสิทธิ์ของคุณ
+                  </p>
+                ) : (
+                  <>
+                    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2" role="radiogroup" aria-label="ฝั่งที่จะนำเข้า">
+                      {sides.map((side) => {
+                        const active = importSide === side;
+                        return (
+                          <button
+                            key={side}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => handleSideChange(side)}
+                            className={`p-3 rounded-xl border-2 text-sm font-medium text-left transition-all ${
+                              active ? "border-blue-400 bg-blue-50/60 text-blue-700" : "border-slate-200 bg-white text-slate-600 hover:border-blue-200"
+                            }`}
+                          >
+                            {IMPORT_SIDE_LABELS[side]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {!importSide && <p className="mt-2 text-xs text-amber-700">กรุณาเลือกฝั่งก่อนไปขั้นถัดไป</p>}
+                  </>
+                )}
               </div>
             )}
 
@@ -634,21 +724,31 @@ export default function ImportFlow() {
                           </td>
                         </tr>
                       )}
-                      {preview?.previewRows.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-4 py-3 text-slate-600">{row.tranDate}</td>
-                          <td className="px-4 py-3 text-slate-800">{row.description}</td>
-                          <td className="px-4 py-3 text-right text-slate-800 tabular-nums">
-                            {row.debit?.toLocaleString() ?? "-"}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-800 tabular-nums">
-                            {row.credit?.toLocaleString() ?? "-"}
-                          </td>
-                          <td className="px-4 py-3 text-right text-slate-800 tabular-nums">
-                            {row.balance?.toLocaleString() ?? "-"}
-                          </td>
-                        </tr>
-                      ))}
+                      {preview?.previewRows.map((row, i) => {
+                        const senderText = [row.senderBank, row.senderAccountNo, row.senderAccountName]
+                          .filter(Boolean)
+                          .join(" · ");
+                        return (
+                          <tr key={i} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-slate-600">{row.tranDate}</td>
+                            <td className="px-4 py-3 text-slate-800">
+                              <div>{row.description}</div>
+                              {senderText && (
+                                <div className="text-xs text-slate-500 font-mono mt-0.5">{senderText}</div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-800 tabular-nums">
+                              {row.debit?.toLocaleString() ?? "-"}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-800 tabular-nums">
+                              {row.credit?.toLocaleString() ?? "-"}
+                            </td>
+                            <td className="px-4 py-3 text-right text-slate-800 tabular-nums">
+                              {row.balance?.toLocaleString() ?? "-"}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -678,10 +778,10 @@ export default function ImportFlow() {
           <div className="flex-1 flex flex-col">
             <div className="grid grid-cols-12 gap-8 h-full">
               <div className="col-span-8 flex flex-col">
-                <h2 className="font-semibold text-lg">รูปแบบคอลัมน์ที่ระบบอ่าน</h2>
-                <p className="text-sm text-slate-500 mb-4">
-                  ระบบอ่านคอลัมน์ตามรูปแบบไฟล์ของ {preview.bankCode} โดยอัตโนมัติ ไม่ต้องตั้งค่าเพิ่มเติม
-                </p>
+                <div className="mb-4 flex items-center gap-1.5">
+                  <h2 className="font-semibold text-lg">รูปแบบคอลัมน์</h2>
+                  <HelpTooltip label="เกี่ยวกับรูปแบบคอลัมน์">ระบบอ่านรูปแบบไฟล์ {preview.bankCode} ให้อัตโนมัติ ไม่ต้องตั้งค่าเพิ่มเติม</HelpTooltip>
+                </div>
 
                 <div className="bg-white border border-slate-200 rounded-xl shadow-sm p-2 flex flex-col gap-1">
                   {[
@@ -710,8 +810,18 @@ export default function ImportFlow() {
                       <CheckCircle2 size={18} className="text-green-500 mt-0.5" />
                       <span className="text-sm text-slate-700">
                         {preview.totalRows.toLocaleString()} รายการที่อ่านได้
+                        {preview.side && preview.side !== "ALL" && ` (เฉพาะ${IMPORT_SIDE_LABELS[preview.side]})`}
                       </span>
                     </div>
+                    {preview.side && preview.side !== "ALL" && preview.sideCounts && (
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 size={18} className="text-slate-400 mt-0.5 shrink-0" />
+                        <span className="text-sm text-slate-500">
+                          ไม่นำเข้า{IMPORT_SIDE_LABELS[preview.side === "IN" ? "OUT" : "IN"]}{" "}
+                          {preview.sideCounts[preview.side === "IN" ? "OUT" : "IN"].toLocaleString()} รายการ — เป็นงานของอีกทีม
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-start gap-2">
                       <CheckCircle2 size={18} className="text-green-500 mt-0.5" />
                       <span className="text-sm text-slate-700">
@@ -762,6 +872,8 @@ export default function ImportFlow() {
                     นำเข้าสำเร็จ {importSuccess.rowCount.toLocaleString()} รายการ
                     {importSuccess.skippedCount > 0 &&
                       ` · ข้ามรายการที่นำเข้าแล้ว ${importSuccess.skippedCount.toLocaleString()} รายการ`}
+                    {importSuccess.otherSideCount > 0 &&
+                      ` · ไม่นำเข้ารายการอีกฝั่ง ${importSuccess.otherSideCount.toLocaleString()} รายการ`}
                   </div>
                 ) : (
                   <div className="mt-auto flex flex-col gap-3">

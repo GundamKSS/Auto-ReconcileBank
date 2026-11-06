@@ -21,10 +21,17 @@ export function useOffsetList<T>(url: string | null, itemsKey: string) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [reloadToken, setReloadToken] = useState(0);
 
   const requestIdRef = useRef(0);
   // กันยิงซ้ำในเฟรมเดียวกัน — state loadingMore อัปเดตแบบ async เลยเช็คไม่ทันถ้ามีสองสัญญาณมาพร้อมกัน
   const inFlightRef = useRef(false);
+
+  useEffect(() => {
+    const onGlSynced = () => setReloadToken((v) => v + 1);
+    window.addEventListener("autorecon:gl-synced", onGlSynced);
+    return () => window.removeEventListener("autorecon:gl-synced", onGlSynced);
+  }, []);
 
   useEffect(() => {
     if (url === null) return;
@@ -65,7 +72,7 @@ export function useOffsetList<T>(url: string | null, itemsKey: string) {
     return () => {
       cancelled = true;
     };
-  }, [url, itemsKey]);
+  }, [url, itemsKey, reloadToken]);
 
   const hasMore = items.length < total;
 

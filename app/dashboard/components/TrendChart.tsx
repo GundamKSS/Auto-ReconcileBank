@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import {
   Bar,
   CartesianGrid,
@@ -58,11 +60,11 @@ function legendFormatter(key: unknown): string {
   return KEY_LABEL[String(key)] ?? String(key);
 }
 
-export default function TrendChart({ data }: { data: DashboardData }) {
+function TrendChart({ data }: { data: DashboardData }) {
   const series = buildSeries(data);
 
   return (
-    <div className="h-[320px] w-full">
+    <div className="dashboard-chart-enter h-[320px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={series} margin={{ top: 5, right: 8, bottom: 0, left: -12 }}>
           <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
@@ -87,21 +89,26 @@ export default function TrendChart({ data }: { data: DashboardData }) {
             tickFormatter={(v: number) => `${v}%`}
           />
 
-          <Tooltip formatter={tooltipFormatter} />
+          <Tooltip
+            formatter={tooltipFormatter}
+            cursor={{ fill: '#eff6ff' }}
+            contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 10px 35px rgba(30,64,175,0.06)', fontSize: 12 }}
+          />
 
           <Legend formatter={legendFormatter} iconType="circle" wrapperStyle={{ fontSize: 12 }} />
 
-          <Bar yAxisId="lines" dataKey="matched" stackId="lines" fill={STATUS_COLOR.MATCHED} radius={[0, 0, 0, 0]} />
-          <Bar yAxisId="lines" dataKey="suspense" stackId="lines" fill={STATUS_COLOR.SUSPENSE} />
-          <Bar yAxisId="lines" dataKey="unmatched" stackId="lines" fill={STATUS_COLOR.UNMATCHED} radius={[6, 6, 0, 0]} />
+          <Bar isAnimationActive={false} yAxisId="lines" dataKey="matched" stackId="lines" fill={STATUS_COLOR.MATCHED} radius={[0, 0, 0, 0]} />
+          <Bar isAnimationActive={false} yAxisId="lines" dataKey="suspense" stackId="lines" fill={STATUS_COLOR.SUSPENSE} />
+          <Bar isAnimationActive={false} yAxisId="lines" dataKey="unmatched" stackId="lines" fill={STATUS_COLOR.UNMATCHED} radius={[6, 6, 0, 0]} />
 
           <Line
+            isAnimationActive={false}
             yAxisId="rate"
             type="monotone"
             dataKey="rate"
-            stroke="#2563eb"
+            stroke="#3b82f6"
             strokeWidth={3}
-            dot={{ r: 3, fill: '#2563eb' }}
+            dot={{ r: 3, fill: '#3b82f6' }}
             connectNulls={false}
           />
         </ComposedChart>
@@ -109,3 +116,5 @@ export default function TrendChart({ data }: { data: DashboardData }) {
     </div>
   );
 }
+
+export default memo(TrendChart, (previous, next) => previous.data.trend === next.data.trend && previous.data.month === next.data.month && previous.data.trendMonths === next.data.trendMonths);

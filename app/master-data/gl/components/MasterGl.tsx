@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from '../../../../components/HelpTooltip';
 import { useEffect, useMemo, useState } from "react";
 import {
   Menu,
@@ -201,10 +202,10 @@ export default function MasterGl() {
             <Database size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการบัญชี BC365</h1>
-            <p className="mt-1 text-[15px] text-slate-500">
-              ตรวจสอบรายการเงินเข้าและเงินออกของบัญชีธนาคารที่ดึงมาจาก BC365
-            </p>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการบัญชี BC365</h1>
+              <HelpTooltip label="เกี่ยวกับรายการบัญชี BC365">รายการเงินเข้าและเงินออกจาก BC365 หากต้องการแก้ไข ให้แก้ใน BC365 แล้วดึงข้อมูลใหม่ที่หน้านำเข้าข้อมูลหรือกระทบยอด</HelpTooltip>
+            </div>
           </div>
         </div>
       </div>
@@ -285,7 +286,7 @@ export default function MasterGl() {
 
               <p className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Lock size={12} className="shrink-0" />
-                หน้านี้ใช้ดูข้อมูลเท่านั้น หากต้องการแก้ไข ให้ปรับข้อมูลใน BC365 แล้วดึงข้อมูลใหม่ที่หน้า “นำเข้าข้อมูล” หรือ “กระทบยอด”
+                ดูข้อมูลเท่านั้น
               </p>
             </div>
 

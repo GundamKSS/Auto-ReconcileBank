@@ -1,11 +1,13 @@
 "use client";
 
+import HelpTooltip from '../../../../components/HelpTooltip';
 import { useEffect, useState } from "react";
 import { AnimatePresence } from "framer-motion";
 import { Menu, Database, FileSpreadsheet, History, CircleCheck, X } from "lucide-react";
 import { useSidebar } from "@/components/SidebarContext";
 import BankTabs from "./BankTabs";
-import ImportBatchList, { ImportBatch } from "./ImportBatchList";
+import ImportBatchList, { batchSides, ImportBatch } from "./ImportBatchList";
+import { missingWorkSide, type WorkPermissions } from "../../../../lib/workRoles";
 import LineItemsView from "./LineItemsView";
 import DeleteImportModal from "./DeleteImportModal";
 import DeleteHistoryList from "./DeleteHistoryList";
@@ -28,6 +30,9 @@ export default function MasterBankStatement() {
   const [bankCode, setBankCode] = useSessionState("master-data:bank:bankCode", "BBL");
   const [view, setView] = useSessionState<View>("master-data:bank:view", "files", isView);
   const [batches, setBatches] = useState<ImportBatch[]>([]);
+  // สิทธิ์ AP/AR — มากับรายการไฟล์ ใช้ปิดปุ่มลบไฟล์ของฝั่งที่ไม่มีสิทธิ์ (server ตรวจซ้ำตอนลบ)
+  const [workPermissions, setWorkPermissions] = useState<WorkPermissions | undefined>(undefined);
+  const canDelete = (b: ImportBatch) => !missingWorkSide(workPermissions, batchSides(b));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -53,6 +58,7 @@ export default function MasterBankStatement() {
         return;
       }
       setBatches(data.imports);
+      setWorkPermissions(data.workPermissions);
       // ไฟล์ที่จำไว้ไม่อยู่ในรายการแล้ว (ถูกลบจากแท็บอื่น) — ลืมไปเลย ไม่งั้นนำเข้าไฟล์ใหม่ก็ไม่มีผล แต่ค่าค้างไว้เปล่าๆ
       setSelectedImportId((id) =>
         id !== null && !(data.imports as ImportBatch[]).some((b) => b.ImportId === id) ? null : id
@@ -136,10 +142,10 @@ export default function MasterBankStatement() {
             <Database size={20} className="text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการธนาคาร</h1>
-            <p className="mt-1 text-[15px] text-slate-500">
-              ตรวจสอบไฟล์รายการเดินบัญชีธนาคารที่นำเข้าไว้ สามารถลบได้ทั้งไฟล์ โดยระบบจะเก็บประวัติการลบทุกครั้ง
-            </p>
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-3xl font-bold tracking-tight text-slate-900">จัดการข้อมูล · รายการธนาคาร</h1>
+              <HelpTooltip label="เกี่ยวกับรายการธนาคาร">ดูไฟล์ที่นำเข้าและประวัติการลบ หากต้องการแก้ข้อมูล ให้ลบทั้งไฟล์แล้วนำเข้าใหม่</HelpTooltip>
+            </div>
           </div>
         </div>
       </div>
@@ -188,6 +194,7 @@ export default function MasterBankStatement() {
             loading={loading}
             onSelect={(b) => setSelectedImportId(b.ImportId)}
             onDelete={openDelete}
+            canDelete={canDelete}
           />
         ) : (
           <LineItemsView
@@ -195,6 +202,7 @@ export default function MasterBankStatement() {
             batch={selectedBatch}
             onBack={() => setSelectedImportId(null)}
             onDelete={openDelete}
+            canDelete={canDelete(selectedBatch)}
           />
         )}
       </section>

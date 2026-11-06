@@ -9,6 +9,7 @@ import {
   LockKeyhole,
   Eye,
   EyeOff,
+  BookOpen,
 } from 'lucide-react';
 
 export default function LoginPage() {
@@ -47,6 +48,11 @@ export default function LoginPage() {
 
       localStorage.setItem('user', JSON.stringify(data));
       localStorage.setItem('lastActivity', Date.now().toString());
+      try {
+        sessionStorage.setItem('autorecon:pending-login-gl-sync', '1');
+      } catch {
+        // Storage blocked/full should not prevent login redirect
+      }
       discardLegacyWorkspace();
 
       router.replace(resumeWorkspacePath(data));
@@ -294,6 +300,17 @@ export default function LoginPage() {
             </motion.button>
 
           </motion.form>
+
+          {/* คู่มือเป็นไฟล์ static ใน public/manual เปิดได้โดยไม่ต้องเข้าสู่ระบบ */}
+          <a
+            href="/manual/index.html"
+            target="_blank"
+            rel="noopener"
+            className="mt-6 flex items-center justify-center gap-2 text-sm font-semibold text-blue-600 transition hover:text-blue-700"
+          >
+            <BookOpen size={17} />
+            คู่มือการใช้งาน
+          </a>
 
         </motion.div>
 

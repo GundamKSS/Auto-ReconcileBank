@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import Link from "next/link";
 import { Undo2 } from "lucide-react";
 import {
@@ -54,15 +54,18 @@ function Lines({ lines, source }: { lines: LineItem[]; source: "BANK" | "GL" }) 
   );
 }
 
-function HistoryRow({ match, group, selected, onToggle, onReturn }: {
+function HistoryRow({ match, group, canEdit, selected, onToggle, onReturn }: {
   match: MatchRecord;
   group: SubGroup;
+  // มีสิทธิ์ AP/AR ของฝั่งรายการนี้ — ไม่มีสิทธิ์ก็ยังเห็นรายการ แต่ส่งกลับไม่ได้
+  canEdit: boolean;
   selected: boolean;
   onToggle: (key: string) => void;
   onReturn: (groups: SubGroup[]) => void;
 }) {
   const reversed = group.status === "REVERSED";
-  const selectable = MATCH_TYPE_META[match.matchType].revertable && !reversed;
+  const revertable = MATCH_TYPE_META[match.matchType].revertable && !reversed;
+  const selectable = revertable && canEdit;
   const difference = summarizeGroups([group]).difference;
   const hasDifference = match.matchType === "MATCHED" && Math.abs(difference) >= AMOUNT_TOLERANCE;
   const cell = "block px-4 py-3 align-top lg:table-cell";
@@ -98,33 +101,32 @@ function HistoryRow({ match, group, selected, onToggle, onReturn }: {
       </td>
       <td className={`${cell} lg:w-[115px]`}>
         {selectable ? <button type="button" onClick={() => onReturn([group])} aria-label={`ส่งกลับ #${match.matchId} กลุ่ม ${group.num}`} className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"><Undo2 size={13} /> ส่งกลับ</button>
+          : revertable ? <span title="ไม่มีสิทธิ์ AP/AR ของฝั่งรายการนี้" className="inline-flex cursor-not-allowed items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-slate-600 opacity-40"><Undo2 size={13} /> ส่งกลับ</span>
           : !reversed && match.matchType === "SUSPENSE" ? <Link href="/suspense" className="text-xs font-medium text-blue-600 hover:underline">ไปหน้ารายการพัก</Link> : null}
       </td>
     </tr>
   );
 }
 
-export default function HistoryTable({ matches, groupsByMatchId, selectedKeys, onToggleGroup, onRequestUnmatch, loading, children, onLoadMore }: {
+export default function HistoryTable({ matches, groupsByMatchId, canEditGroup, selectedKeys, onToggleGroup, onRequestUnmatch, loading, children, scrollRef }: {
   matches: MatchRecord[];
   groupsByMatchId: Map<number, SubGroup[]>;
+  canEditGroup: (match: MatchRecord, group: SubGroup) => boolean;
   selectedKeys: Set<string>;
   onToggleGroup: (key: string) => void;
   onRequestUnmatch: (groups: SubGroup[]) => void;
   loading: boolean;
   children: ReactNode;
-  onLoadMore: () => void;
+  scrollRef: RefObject<HTMLDivElement | null>;
 }) {
   return (
-    <div aria-busy={loading} inert={loading} onScroll={(event) => {
-      const { scrollTop, scrollHeight, clientHeight } = event.currentTarget;
-      if (scrollHeight - scrollTop - clientHeight < 300) onLoadMore();
-    }} className={`overflow-auto rounded-xl border border-slate-200 bg-white lg:max-h-[70vh] ${loading ? "opacity-50" : ""}`}>
+    <div ref={scrollRef} aria-busy={loading} inert={loading} className={`overflow-auto rounded-xl border border-slate-200 bg-white lg:max-h-[70vh] ${loading ? "opacity-50" : ""}`}>
       <table aria-label="รายการประวัติการจับคู่" className="block w-full text-left lg:table lg:min-w-[1080px]">
         <thead className="sticky top-0 z-10 hidden bg-slate-100 text-xs font-semibold text-slate-600 lg:table-header-group">
           <tr><th scope="col" className="w-10"><span className="sr-only">เลือก</span></th><th scope="col" className="px-4 py-3">อ้างอิง / กลุ่ม</th><th scope="col" className="px-4 py-3">ธนาคาร <span className="font-normal text-slate-400">· บาท</span></th><th scope="col" className="px-4 py-3">BC365 <span className="font-normal text-slate-400">· บาท</span></th><th scope="col" className="px-4 py-3">ผลการจับคู่</th><th scope="col" className="px-4 py-3">แก้ไข</th></tr>
         </thead>
         <tbody className="block lg:table-row-group">
-          {matches.flatMap((match) => (groupsByMatchId.get(match.matchId) ?? []).map((group) => <HistoryRow key={group.key} match={match} group={group} selected={selectedKeys.has(group.key)} onToggle={onToggleGroup} onReturn={onRequestUnmatch} />))}
+          {matches.flatMap((match) => (groupsByMatchId.get(match.matchId) ?? []).map((group) => <HistoryRow key={group.key} match={match} group={group} canEdit={canEditGroup(match, group)} selected={selectedKeys.has(group.key)} onToggle={onToggleGroup} onReturn={onRequestUnmatch} />))}
         </tbody>
       </table>
       {children}

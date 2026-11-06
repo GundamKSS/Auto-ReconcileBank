@@ -1,13 +1,12 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
+import { SIDE_FILTER_ACTIVE_CLASS, SIDE_FILTER_INACTIVE_CLASS } from '../../../components/sideFilterStyles';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ChevronRight,
   ChevronDown,
   Loader2,
-  ArrowDownLeft,
-  ArrowUpRight,
   Undo2,
   CheckCircle2,
   Search,
@@ -15,58 +14,40 @@ import {
   X,
   Layers,
   ArrowRight,
+  ArrowDownLeft,
+  ArrowUpRight,
 } from "lucide-react";
 import Link from "next/link";
 import { useSidebar } from "@/components/SidebarContext";
 import UnsuspendConfirmModal, { ConfirmLine } from "./UnsuspendConfirmModal";
+import SuspenseTable from "./SuspenseTable";
+import StatementPairModal, { type PairTarget } from "./StatementPairModal";
+import { MAX_PAIR_TARGETS, type PairSuggestion } from "../../../lib/suspenseSuggest";
 import { loadReconcileSession } from "../../../lib/reconcileSession";
 import { useSessionState } from "../../../hooks/useSessionState";
 import { oneOf } from "../../../lib/tabWorkspace";
 import type { ReconcileSession } from "../../reconcile/components/types";
 import type { BalanceData } from "../../reconcile/components/balanceTypes";
 import { formatAmount } from '../../../lib/formatAmount';
+import { missingWorkSide, visibleWorkSides, type WorkPermissions } from '../../../lib/workRoles';
 import {
-  sideLabelOf,
   suspenseBalanceParts,
   visibleLines,
   type MatchRecord,
+  type RawGlLine,
   type SideTab,
   type UnifiedLine,
 } from "./suspenseModel";
-
-const GROUP_COLORS = [
-  "border-purple-300 bg-purple-50",
-  "border-orange-300 bg-orange-50",
-  "border-cyan-300 bg-cyan-50",
-  "border-pink-300 bg-pink-50",
-  "border-lime-300 bg-lime-50",
-  "border-indigo-300 bg-indigo-50",
-];
-const GROUP_BADGE_COLORS = [
-  "bg-purple-100 text-purple-700",
-  "bg-orange-100 text-orange-700",
-  "bg-cyan-100 text-cyan-700",
-  "bg-pink-100 text-pink-700",
-  "bg-lime-100 text-lime-700",
-  "bg-indigo-100 text-indigo-700",
-];
 
 function formatSigned(n: number) {
   if (Math.abs(n) < 0.005) return "0.00";
   return `${n > 0 ? "+" : "−"}${formatAmount(Math.abs(n))}`;
 }
-function formatDateTime(iso: string) {
-  return new Date(iso).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" });
-}
-function formatDate(iso: string) {
-  return new Date(iso).toISOString().slice(0, 10);
-}
-
 // แท็บฝั่งรับ/จ่าย (กติกาการแยกฝั่งอยู่ใน suspenseModel.ts)
-const SIDE_TABS: { value: SideTab; label: string }[] = [
-  { value: "ALL", label: "ทั้งหมด" },
-  { value: "IN", label: "เงินเข้า" },
-  { value: "OUT", label: "เงินออก" },
+const SIDE_TABS = [
+  { value: "ALL" as const, label: "ทั้งหมด", icon: Layers, activeClass: SIDE_FILTER_ACTIVE_CLASS.ALL },
+  { value: "IN" as const, label: "เงินเข้า", icon: ArrowDownLeft, activeClass: SIDE_FILTER_ACTIVE_CLASS.AR },
+  { value: "OUT" as const, label: "เงินออก", icon: ArrowUpRight, activeClass: SIDE_FILTER_ACTIVE_CLASS.AP },
 ];
 
 function toConfirmLine(u: UnifiedLine): ConfirmLine {
@@ -80,43 +61,6 @@ function toConfirmLine(u: UnifiedLine): ConfirmLine {
     direction: u.direction,
     amount: u.amount,
   };
-}
-
-function DirectionBadge({ direction }: { direction: "IN" | "OUT" }) {
-  const isIn = direction === "IN";
-  return (
-    <span
-      className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full ${
-        isIn ? "bg-purple-50 text-purple-700" : "bg-red-50 text-red-600"
-      }`}
-    >
-      {isIn ? <ArrowDownLeft size={11} /> : <ArrowUpRight size={11} />}
-      {isIn ? "เงินเข้า" : "เงินออก"}
-    </span>
-  );
-}
-
-function SourceTag({ sourceType }: { sourceType: "BANK" | "GL" }) {
-  return (
-    <span
-      className={`text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${
-        sourceType === "BANK" ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-600"
-      }`}
-    >
-      {sourceType === "BANK" ? "ธนาคาร" : "BC365"}
-    </span>
-  );
-}
-
-function AgingBadge({ createdAt }: { createdAt: string }) {
-  // อ่านเวลาปัจจุบันครั้งเดียวตอน mount (lazy initializer) แทนการเรียก Date.now() กลางฟังก์ชัน render ตรงๆ
-  const [now] = useState(() => Date.now());
-  const days = Math.max(0, Math.floor((now - new Date(createdAt).getTime()) / 86400000));
-  const cls =
-    days < 7 ? "bg-emerald-100 text-emerald-700" : days < 30 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700";
-  return (
-    <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${cls}`}>พักมา {days} วัน</span>
-  );
 }
 
 function SuccessToast({ message, onClose }: { message: string; onClose: () => void }) {
@@ -202,235 +146,6 @@ function SuspenseBalanceBar({
   );
 }
 
-function SubGroupTable({
-  num,
-  colorIdx,
-  lines,
-  selected,
-  onToggleLine,
-  selectable,
-}: {
-  selectable: boolean;
-  num: number;
-  colorIdx: number;
-  lines: UnifiedLine[];
-  selected: Set<string>;
-  onToggleLine: (key: string) => void;
-}) {
-  return (
-    <div className={`border-l-4 rounded-lg ${GROUP_COLORS[colorIdx % GROUP_COLORS.length]} p-3`}>
-      <div className="flex items-center gap-2 mb-2">
-        <span
-          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-            GROUP_BADGE_COLORS[colorIdx % GROUP_BADGE_COLORS.length]
-          }`}
-        >
-          กลุ่ม {num}
-        </span>
-        <span className="text-xs text-gray-500">{lines.length} รายการ</span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[520px]">
-          <tbody className="divide-y divide-black/5">
-            {lines.map((l) => (
-              <tr key={l.key} className="hover:bg-white/60 transition-colors">
-                <td className="py-1.5 pr-2 w-8">
-                  {selectable && <input
-                    type="checkbox"
-                    aria-label={`เลือก ${l.detail}`}
-                    checked={selected.has(l.key)}
-                    onChange={() => onToggleLine(l.key)}
-                    className="w-4 h-4 rounded border-gray-300"
-                  />}
-                </td>
-                <td className="py-1.5 pr-3 text-xs text-gray-400 whitespace-nowrap">{formatDate(l.date)}</td>
-                <td className="py-1.5 pr-3">
-                  <SourceTag sourceType={l.sourceType} />
-                </td>
-                <td className="py-1.5 pr-3">
-                  <DirectionBadge direction={l.direction} />
-                </td>
-                <td className="py-1.5 pr-3 text-gray-700 truncate max-w-[280px]" title={l.detail}>
-                  {l.detail}
-                </td>
-                <td className="py-1.5 text-right tabular-nums text-gray-900 whitespace-nowrap">
-                  {formatAmount(l.amount)}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function MatchCard({
-  match,
-  sideTab,
-  selected,
-  onToggleLine,
-  onToggleMatch,
-  onRevertMatch,
-}: {
-  match: MatchRecord;
-  sideTab: SideTab;
-  selected: Set<string>;
-  onToggleLine: (key: string) => void;
-  onToggleMatch: (match: MatchRecord) => void;
-  onRevertMatch: (match: MatchRecord) => void;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const isDifferenceSuspense = match.suspenseKind === "DIFFERENCE";
-  const unified = useMemo(() => visibleLines(match, sideTab), [match, sideTab]);
-  const bankLineCount = unified.filter((l) => l.sourceType === "BANK").length;
-  const glLineCount = unified.filter((l) => l.sourceType === "GL").length;
-  const bankTotal = unified.filter((l) => l.sourceType === "BANK").reduce((s, l) => s + l.amount, 0);
-  const glTotal = unified.filter((l) => l.sourceType === "GL").reduce((s, l) => s + l.amount, 0);
-  const { hasIn, hasOut, label: sideLabel } = sideLabelOf(unified);
-
-  const allKeys = unified.map((l) => l.key);
-  const selectedCount = allKeys.filter((k) => selected.has(k)).length;
-  const allSelected = allKeys.length > 0 && selectedCount === allKeys.length;
-
-  const nums = Array.from(new Set(unified.map((l) => l.num))).sort((a, b) => a - b);
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.97, transition: { duration: 0.15 } }}
-      transition={{ duration: 0.2 }}
-      className="bg-white border border-gray-200 rounded-2xl overflow-hidden"
-    >
-      <div className="w-full flex flex-wrap items-center gap-3 px-4 py-4 hover:bg-slate-50/60">
-        {isDifferenceSuspense ? (
-          <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${match.suspenseDirection === "IN" ? "bg-emerald-500" : "bg-rose-500"}`} />
-        ) : (
-          <input
-            type="checkbox"
-            checked={allSelected}
-            onChange={() => onToggleMatch(match)}
-            onClick={(e) => e.stopPropagation()}
-            className="w-4 h-4 rounded border-gray-300 shrink-0"
-            aria-label={`เลือกทั้งชุด #${match.matchId}`}
-          />
-        )}
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
-          aria-controls={`suspense-detail-${match.matchId}`}
-          className="flex items-center gap-3 flex-1 min-w-[200px] text-left"
-        >
-          {expanded ? (
-            <ChevronDown size={14} className="text-gray-400 shrink-0" />
-          ) : (
-            <ChevronRight size={14} className="text-gray-400 shrink-0" />
-          )}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap mb-0.5">
-              <span className="text-sm font-medium text-gray-900">#{match.matchId}</span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                {match.bankCode}
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                {isDifferenceSuspense ? "พักส่วนต่าง" : "พักทั้งรายการ"}
-              </span>
-              {!isDifferenceSuspense && sideLabel && (
-                <span
-                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                    hasIn && hasOut
-                      ? "bg-slate-100 text-slate-600"
-                      : hasIn
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-rose-100 text-rose-700"
-                  }`}
-                >
-                  {sideLabel}
-                </span>
-              )}
-
-              {selectedCount > 0 && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-                  เลือก {selectedCount}
-                </span>
-              )}
-            </div>
-            <p className="mt-1 truncate text-sm text-slate-600" title={unified[0]?.detail}>
-              {unified[0]?.detail ?? "ไม่มีรายละเอียด"}
-            </p>
-            <div className="mt-1.5 flex items-center gap-2 text-xs text-slate-400">
-              <span>{unified.length} รายการ</span>
-              <span>·</span>
-              <AgingBadge createdAt={match.createdAt} />
-            </div>
-            {isDifferenceSuspense && match.remark && (
-              <p className="mt-0.5 truncate text-xs text-amber-700" title={match.remark}>หมายเหตุ: {match.remark}</p>
-            )}
-          </div>
-          <div className="text-right shrink-0">
-            {isDifferenceSuspense ? (
-              <>
-                <p className={`text-sm font-semibold tabular-nums ${match.suspenseDirection === "IN" ? "text-emerald-700" : "text-rose-700"}`}>
-                  {match.suspenseDirection === "IN" ? "รับ" : "จ่าย"} {formatAmount(Math.abs(match.suspenseDifference ?? 0))}
-                </p>
-                <p className="text-[11px] text-gray-400">ธนาคาร {formatAmount(bankTotal)} · BC {formatAmount(glTotal)}</p>
-              </>
-            ) : (
-              <><p className="text-base font-semibold text-gray-900 tabular-nums">{formatAmount(glTotal)}</p><p className="text-[11px] text-slate-400">บาท</p></>
-            )}
-          </div>
-        </button>
-        {isDifferenceSuspense ? (
-          <Link href="/reconcile/history" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100">
-            ดูคู่ที่จับไว้ <ArrowRight size={13} />
-          </Link>
-        ) : (
-          <button
-            onClick={() => onRevertMatch(match)}
-            className="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-white hover:bg-blue-600 border border-blue-200 hover:border-blue-600 px-3 py-1.5 rounded-full transition-colors shrink-0"
-          >
-            <Undo2 size={13} />
-            คืนไปจับคู่
-          </button>
-        )}
-      </div>
-
-      <AnimatePresence initial={false}>
-        {expanded && (
-          <motion.div
-            key="detail"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: "easeInOut" }}
-            style={{ overflow: "hidden" }}
-          >
-            <div id={`suspense-detail-${match.matchId}`} className="border-t border-gray-100 p-3 flex flex-col gap-2 bg-gray-50/50">
-              <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-slate-500">
-                <span>พักเมื่อ {formatDateTime(match.createdAt)} · ธนาคาร {bankLineCount} · BC365 {glLineCount}</span>
-                <span className="sm:hidden font-semibold tabular-nums">{formatAmount(isDifferenceSuspense ? Math.abs(match.suspenseDifference ?? 0) : glTotal)} บาท</span>
-              </div>
-              {isDifferenceSuspense && <p className="px-1 text-xs text-slate-500">หากต้องการแก้ไข ให้ยกเลิกคู่ในประวัติการจับคู่</p>}
-              {nums.map((num, idx) => (
-                <SubGroupTable
-                  key={num}
-                  num={num}
-                  colorIdx={idx}
-                  lines={unified.filter((l) => l.num === num)}
-                  selected={selected}
-                  onToggleLine={onToggleLine}
-                  selectable={!isDifferenceSuspense}
-                />
-              ))}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
-  );
-}
-
 export default function SuspenseWorkspace() {
   const { collapsed } = useSidebar();
   const [matches, setMatches] = useState<MatchRecord[]>([]);
@@ -446,7 +161,16 @@ export default function SuspenseWorkspace() {
   const [error, setError] = useState("");
   const [showDateFilters, setShowDateFilters] = useSessionState("suspense:showDates", false);
   const [bankFilter, setBankFilter] = useSessionState("suspense:bankCode", "ALL");
-  const [sideTab, setSideTab] = useSessionState<SideTab>("suspense:side", "ALL", oneOf('ALL', 'IN', 'OUT'));
+  const [pickedSideTab, setSideTab] = useSessionState<SideTab>("suspense:side", "ALL", oneOf('ALL', 'IN', 'OUT'));
+  // สิทธิ์ AP/AR ของผู้ใช้ — มากับหน้าแรกของ /api/history ซึ่งกรองรายการพักตามสิทธิ์ไว้แล้วฝั่ง server
+  const [workPermissions, setWorkPermissions] = useState<WorkPermissions | undefined>(undefined);
+  const visibleSides = visibleWorkSides(workPermissions);
+  // สิทธิ์ฝั่งเดียว → อยู่ได้แค่แท็บฝั่งนั้น ("ทั้งหมด" ก็ปิด เพราะจะโชว์บรรทัดอีกฝั่งของชุดที่พักไว้ทั้งรับและจ่าย)
+  const blockedTabs: SideTab[] =
+    visibleSides.length === 1 ? (["ALL", "IN", "OUT"] as const).filter((t) => t !== visibleSides[0]) : [];
+  const sideTab: SideTab = blockedTabs.includes(pickedSideTab) ? visibleSides[0] : pickedSideTab;
+  // ไม่มีสิทธิ์ AP/AR เลย เห็นได้ทั้งสองฝั่งแต่คืนรายการไม่ได้ — server ปฏิเสธเหมือนกัน
+  const readOnly = Boolean(missingWorkSide(workPermissions, visibleSides, "any"));
   // จำนวน Match ของทุกฝั่งภายใต้ตัวกรองอื่นที่เลือกอยู่ — server นับมาให้โดยไม่สนฝั่งที่เลือก
   const [sideCounts, setSideCounts] = useState<Record<SideTab, number> | null>(null);
   const [dateFrom, setDateFrom] = useSessionState("suspense:from", "");
@@ -459,6 +183,13 @@ export default function SuspenseWorkspace() {
   const [toast, setToast] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
   const [selectingAll, setSelectingAll] = useState(false);
+  // statement ที่ยอดตรงกับรายการพักแต่ละรายการ (ตาม Entry No.) — ป้ายใต้รายการ BC365 ในตาราง
+  const [pairHints, setPairHints] = useState<Map<number, PairSuggestion>>(new Map());
+  const [pairTarget, setPairTarget] = useState<PairTarget | null>(null);
+  // Entry No. ที่ขอป้ายไปแล้ว — ขอเฉพาะรายการที่เพิ่งโหลดมา ไม่ขอซ้ำทุกครั้งที่เลื่อนโหลดเพิ่ม
+  const requestedHintsRef = useRef<Set<number>>(new Set());
+  // เลขรอบของป้าย — หลังจับคู่หรือคืนรายการ ผลที่ค้างอยู่ของรอบก่อนต้องทิ้งไป
+  const hintGenerationRef = useRef(0);
 
   const requestIdRef = useRef(0);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
@@ -546,6 +277,7 @@ export default function SuspenseWorkspace() {
         setTotal(data.total ?? data.matches.length);
         if (data.suspenseSummary) setQueueSummary(data.suspenseSummary);
         if (data.suspenseSideCounts) setSideCounts(data.suspenseSideCounts);
+        if (data.workPermissions) setWorkPermissions(data.workPermissions);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
@@ -563,6 +295,72 @@ export default function SuspenseWorkspace() {
       cancelled = true;
     };
   }, [params, reloadToken]);
+
+  // หา statement ให้รายการพักที่เพิ่งโหลดมา ทีละไม่เกิน MAX_PAIR_TARGETS รายการต่อคำขอ
+  // พักส่วนต่างเป็นคู่ที่จับไว้แล้ว ไม่ต้องหา
+  useEffect(() => {
+    const ids = [
+      ...new Set(matches.filter((m) => m.suspenseKind !== "DIFFERENCE").flatMap((m) => m.glLines.map((g) => g.entryNo))),
+    ].filter((id) => !requestedHintsRef.current.has(id));
+    if (ids.length === 0) return;
+    ids.forEach((id) => requestedHintsRef.current.add(id));
+    const generation = hintGenerationRef.current;
+
+    (async () => {
+      for (let i = 0; i < ids.length; i += MAX_PAIR_TARGETS) {
+        const chunk = ids.slice(i, i + MAX_PAIR_TARGETS);
+        try {
+          const res = await fetch(`/api/reconcile/suspense-pair?entryNos=${chunk.join(",")}`);
+          if (generation !== hintGenerationRef.current) return;
+          if (!res.ok) throw new Error("hint request failed");
+          const data = await res.json();
+          if (generation !== hintGenerationRef.current) return;
+          setPairHints((prev) => {
+            const next = new Map(prev);
+            for (const item of data.items as PairSuggestion[]) next.set(item.entryNo, item);
+            return next;
+          });
+        } catch {
+          // ป้ายเป็นตัวช่วยเสริม ขอไม่สำเร็จก็ไม่ขึ้นป้าย แต่ให้ขอใหม่ได้ตอนโหลดรายการรอบถัดไป
+          // ปล่อยทั้งชุดที่พลาดและชุดที่ยังไม่ได้ขอ ไม่งั้นชุดหลังจะถูกข้ามไปตลอด
+          if (generation === hintGenerationRef.current) ids.slice(i).forEach((id) => requestedHintsRef.current.delete(id));
+          return;
+        }
+      }
+    })();
+  }, [matches]);
+
+  function resetPairHints() {
+    hintGenerationRef.current += 1;
+    requestedHintsRef.current = new Set();
+    setPairHints(new Map());
+  }
+
+  function openPairFinder(match: MatchRecord, gl: RawGlLine) {
+    setPairTarget({
+      matchId: match.matchId,
+      entryNo: gl.entryNo,
+      date: gl.date,
+      documentNo: gl.ref ?? null,
+      direction: gl.direction,
+      amount: gl.amount,
+    });
+  }
+
+  // target มาจากหน้าต่างที่บันทึกสำเร็จเอง — ปิดเฉพาะหน้าต่างนั้น ถ้าผู้ใช้เปิดรายการอื่นค้างไว้แล้วต้องไม่ปิดตามไปด้วย
+  function handlePaired(target: PairTarget, message: string) {
+    setPairTarget((current) =>
+      current && current.matchId === target.matchId && current.entryNo === target.entryNo ? null : current
+    );
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.delete(`${target.matchId}:GL:${target.entryNo}`);
+      return next;
+    });
+    setToast(message);
+    resetPairHints();
+    setReloadToken((t) => t + 1);
+  }
 
   const hasMore = matches.length < total;
 
@@ -641,11 +439,10 @@ export default function SuspenseWorkspace() {
     });
   }
 
-  function toggleMatch(match: MatchRecord) {
-    if (match.suspenseKind === "DIFFERENCE") return;
-    const keys = visibleLines(match, sideTab).map((l) => l.key);
-    const allSelected = keys.length > 0 && keys.every((k) => selected.has(k));
+  function toggleLines(lines: UnifiedLine[]) {
+    const keys = lines.map((line) => line.key);
     setSelected((prev) => {
+      const allSelected = keys.length > 0 && keys.every((key) => prev.has(key));
       const next = new Set(prev);
       if (allSelected) keys.forEach((k) => next.delete(k));
       else keys.forEach((k) => next.add(k));
@@ -714,9 +511,8 @@ export default function SuspenseWorkspace() {
     }
   }
 
-  function openConfirmForMatch(match: MatchRecord) {
-    if (match.suspenseKind === "DIFFERENCE") return;
-    setConfirmLines(visibleLines(match, sideTab).map(toConfirmLine));
+  function openConfirmForLines(lines: UnifiedLine[]) {
+    if (lines.length > 0) setConfirmLines(lines.map(toConfirmLine));
   }
 
   function openConfirmForSelection() {
@@ -749,6 +545,8 @@ export default function SuspenseWorkspace() {
       });
       setToast(`คืนรายการเพื่อจับคู่ใหม่ สำเร็จ ${confirmLines.length} รายการ`);
       setConfirmLines(null);
+      // รายการที่คืนไปกลายเป็น BC365 รอจับคู่ ซึ่งเป็นคู่แข่งของ statement ในป้ายของรายการพักอื่น
+      resetPairHints();
       // โหลดหน้าแรกใหม่จาก server แทนการแก้ matches ในเครื่องเอง — กัน offset เพี้ยนกับ total ที่เซิร์ฟเวอร์นับไว้
       // (รายการที่ดึงกลับไปแล้วอาจอยู่ในหน้าที่ยังไม่โหลดมาก็ได้ ไม่ใช่แค่ในชุดที่แสดงอยู่)
       setReloadToken((t) => t + 1);
@@ -769,8 +567,9 @@ export default function SuspenseWorkspace() {
     <div className="flex-1 min-w-0 p-4 sm:p-6 pb-24">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">รายการพัก</h1>
-          <p className="mt-1 text-sm text-slate-500">เลือกรายการ แล้วคืนไปจับคู่เมื่อพร้อม</p>
+          <div className="flex items-center gap-1.5"><h1 className="text-xl sm:text-2xl font-bold text-gray-900">รายการพัก</h1>
+            <HelpTooltip label="เกี่ยวกับรายการพัก">เลือกรายการที่พร้อม แล้วกดคืนไปจับคู่ที่หน้ากระทบยอด</HelpTooltip>
+          </div>
         </div>
         <Link href="/reconcile" className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
           ไปหน้ากระทบยอด <ArrowRight size={15} />
@@ -790,50 +589,83 @@ export default function SuspenseWorkspace() {
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
         <div>
           <h2 className="text-sm font-semibold text-slate-800">รายการที่พักไว้</h2>
-          <p className="text-[11px] text-slate-400">พักทั้งรายการ {queueSummary.lineCount} ชุด · พักส่วนต่าง {queueSummary.differenceCount} ชุด</p>
+          <p className="text-[11px] text-slate-400">
+            พักทั้งรายการ {queueSummary.lineCount} ชุด · พักส่วนต่าง {queueSummary.differenceCount} ชุด
+            {sideTab === "IN" && queueSummary.incoming > 0 && ` · ยอดรวมเงินเข้า ${formatAmount(queueSummary.incoming)} บาท`}
+            {sideTab === "OUT" && queueSummary.outgoing > 0 && ` · ยอดรวมเงินออก ${formatAmount(queueSummary.outgoing)} บาท`}
+          </p>
         </div>
       </div>
 
       {/* แยกฝั่งรับ/จ่ายที่ server (suspenseSide) ไม่ใช่กรองเฉพาะ 50 รายการที่โหลดมาแล้ว
           จำนวนบนแท็บมาจากการนับที่ไม่สนฝั่งที่เลือกอยู่ เลขของอีกฝั่งจึงไม่กลายเป็น 0 ตอนกดสลับ */}
-      <div className="mb-4 grid grid-cols-3 gap-2">
-        {SIDE_TABS.map((tab) => {
-          const active = sideTab === tab.value;
-          const count = sideCounts?.[tab.value] ?? null;
-          const amount =
-            tab.value === "IN" ? queueSummary.incoming : tab.value === "OUT" ? queueSummary.outgoing : null;
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => setSideTab(tab.value)}
-              aria-pressed={active}
-              className={`flex flex-wrap items-center gap-x-2 gap-y-1 rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
-                active
-                  ? tab.value === "IN"
-                    ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                    : tab.value === "OUT"
-                      ? "border-rose-300 bg-rose-50 text-rose-700"
-                      : "border-blue-300 bg-blue-50 text-blue-700"
-                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
-              }`}
-            >
-              {tab.label}
-              <span
-                className={`rounded-full px-1.5 py-0.5 text-[11px] font-medium tabular-nums ${
-                  active ? "bg-gray-900/5 text-gray-700" : "bg-gray-100 text-gray-500"
-                }`}
+      <div className="mb-4">
+        <div
+          role="tablist"
+          aria-label="แยกฝั่งรายการพัก"
+          className="inline-flex max-w-full overflow-x-auto min-w-0 self-start rounded-2xl border border-slate-200 bg-white p-1 shadow-sm"
+        >
+          {SIDE_TABS.map((tab, index) => {
+            const active = sideTab === tab.value;
+            const blocked = blockedTabs.includes(tab.value);
+            const count = sideCounts?.[tab.value] ?? null;
+            const amount =
+              blocked ? null : tab.value === "IN" ? queueSummary.incoming : tab.value === "OUT" ? queueSummary.outgoing : null;
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.value}
+                id={`suspense-tab-${tab.value}`}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                tabIndex={active ? 0 : -1}
+                onClick={() => setSideTab(tab.value)}
+                onKeyDown={(event) => {
+                  const target =
+                    event.key === "Home"
+                      ? SIDE_TABS[0]
+                      : event.key === "End"
+                      ? SIDE_TABS[SIDE_TABS.length - 1]
+                      : event.key === "ArrowLeft"
+                      ? SIDE_TABS[(index - 1 + SIDE_TABS.length) % SIDE_TABS.length]
+                      : event.key === "ArrowRight"
+                      ? SIDE_TABS[(index + 1) % SIDE_TABS.length]
+                      : null;
+                  if (target && !blockedTabs.includes(target.value)) {
+                    event.preventDefault();
+                    setSideTab(target.value);
+                    document.getElementById(`suspense-tab-${target.value}`)?.focus();
+                  }
+                }}
+                disabled={blocked}
+                title={blocked ? "เห็นได้เฉพาะฝั่งที่ได้รับสิทธิ์ AP / AR" : undefined}
+                className={`flex min-h-11 min-w-0 shrink-0 items-center justify-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold transition-colors sm:px-4 sm:text-sm ${
+                  active ? tab.activeClass : SIDE_FILTER_INACTIVE_CLASS
+                } disabled:cursor-not-allowed disabled:opacity-40`}
               >
-                {count === null ? "…" : count.toLocaleString()}
-              </span>
-              {amount !== null && (
-                <span className="w-full text-left text-xs font-normal text-slate-500 tabular-nums">
-                  {formatAmount(amount)} บาท
+                <Icon size={16} className="hidden shrink-0 sm:block" />
+                <span>{tab.label}</span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                    active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                  }`}
+                >
+                  {blocked ? "—" : count === null ? "…" : count.toLocaleString()}
                 </span>
-              )}
-            </button>
-          );
-        })}
+                {amount !== null && (
+                  <span
+                    className={`hidden text-xs font-normal sm:inline tabular-nums ${
+                      active ? "text-white/80" : "text-slate-400"
+                    }`}
+                  >
+                    · {formatAmount(amount)} บาท
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
@@ -894,7 +726,8 @@ export default function SuspenseWorkspace() {
               ref={selectAllRef}
               type="checkbox"
               checked={allSelected}
-              disabled={selectingAll || busy}
+              disabled={selectingAll || busy || readOnly}
+              title={readOnly ? "ไม่มีสิทธิ์ AP / AR — ดูได้อย่างเดียว" : undefined}
               onChange={toggleSelectAll}
               className="w-4 h-4 rounded border-gray-300"
             />
@@ -912,37 +745,37 @@ export default function SuspenseWorkspace() {
         </div>
       )}
 
-      <div className="flex flex-col gap-3">
-        {matches.map((m) => (
-          <MatchCard
-            key={m.matchId}
-            match={m}
-            sideTab={sideTab}
-            selected={selected}
-            onToggleLine={toggleLine}
-            onToggleMatch={toggleMatch}
-            onRevertMatch={openConfirmForMatch}
-          />
-        ))}
-      </div>
-
-      {!loading && matches.length > 0 && (
-        <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
-          {loadingMore ? (
-            <span className="inline-flex items-center gap-2">
-              <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
-            </span>
-          ) : hasMore ? (
-            <span className="inline-flex items-center gap-2">
-              แสดง {matches.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
-              <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
-                โหลดเพิ่ม
-              </button>
-            </span>
-          ) : (
-            `ครบทั้งหมด ${total.toLocaleString()} รายการ`
-          )}
-        </div>
+      {matches.length > 0 && (
+        <SuspenseTable
+          matches={matches}
+          sideTab={sideTab}
+          readOnly={readOnly}
+          selected={selected}
+          onToggleLine={toggleLine}
+          onToggleLines={toggleLines}
+          onRequestReturn={openConfirmForLines}
+          loading={loading || selectingAll || busy}
+          onLoadMore={loadMore}
+          pairHints={pairHints}
+          onFindPair={openPairFinder}
+        >
+          <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
+            {loadingMore ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
+              </span>
+            ) : hasMore ? (
+              <span className="inline-flex items-center gap-2">
+                แสดง {matches.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
+                <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+                  โหลดเพิ่ม
+                </button>
+              </span>
+            ) : (
+              `ครบทั้งหมด ${total.toLocaleString()} รายการ`
+            )}
+          </div>
+        </SuspenseTable>
       )}
 
       {/* กล่องเต็มความกว้างจอ เว้น padding-left เท่ากับความกว้าง sidebar ปัจจุบัน (คู่กับ MainContent)
@@ -992,6 +825,18 @@ export default function SuspenseWorkspace() {
             busy={busy}
             onCancel={() => !busy && setConfirmLines(null)}
             onConfirm={handleConfirmRevert}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {pairTarget && (
+          <StatementPairModal
+            key={`${pairTarget.matchId}:${pairTarget.entryNo}`}
+            target={pairTarget}
+            readOnly={readOnly}
+            onClose={() => setPairTarget(null)}
+            onPaired={handlePaired}
           />
         )}
       </AnimatePresence>

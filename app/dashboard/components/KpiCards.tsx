@@ -68,7 +68,7 @@ export default function KpiCards({ data }: { data: DashboardData }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="บรรทัดทั้งหมด"
           value={formatCount(all.lines)}
@@ -102,24 +102,24 @@ export default function KpiCards({ data }: { data: DashboardData }) {
       </div>
 
       {/* แถบยอดเงิน — เป็นข้อมูลประกอบ ไม่ใช่ตัวชี้วัดหลัก จึงทำให้เตี้ยกว่าการ์ดด้านบน */}
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         {moneyCards.map((card) => (
           <div
             key={card.key}
-            className="rounded-[20px] border border-white/80 bg-white px-6 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]"
+            className="min-w-0 rounded-[20px] border border-white/80 bg-white px-5 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]"
           >
             <p className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
               {card.label} <SourceTag source={card.source} />
             </p>
-            <p className={`mt-1 text-xl font-bold tabular-nums ${card.tone}`}>{formatAmount(card.value)}</p>
+            <p className={`mt-1 break-words text-xl font-bold tabular-nums ${card.tone}`}>{formatAmount(card.value)}</p>
           </div>
         ))}
 
-        <div className="rounded-[20px] border border-white/80 bg-white px-6 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
+        <div className="min-w-0 rounded-[20px] border border-white/80 bg-white px-5 py-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
           <p className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-slate-500">
             ผลต่างสุทธิ <SourceTag source="BANK" /> − <SourceTag source="GL" />
           </p>
-          <p className={`mt-1 text-xl font-bold tabular-nums ${hasDiff ? 'text-rose-600' : 'text-slate-900'}`}>
+          <p className={`mt-1 break-words text-xl font-bold tabular-nums ${hasDiff ? 'text-rose-600' : 'text-slate-900'}`}>
             {formatAmount(shownDiff)}
           </p>
           {pendingImport.length > 0 && (

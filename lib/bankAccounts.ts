@@ -17,7 +17,14 @@ export type BankAccountOption = {
   displayNo: string | null;
   // จำนวนไฟล์ statement ที่นำเข้าไว้แล้วของบัญชีนี้ (ใช้เรียงลำดับ/บอกใบ้ผู้ใช้ใน dropdown)
   importCount?: number;
+  // false = ปิดบัญชีแล้ว นำเข้า statement ใหม่ไม่ได้ (sql/012) — ยังไม่ได้รันสคริปต์ถือว่าใช้งานทุกบัญชี
+  isActive?: boolean;
 };
+
+// ธนาคารที่เลือกได้ตอนเพิ่มบัญชีในหน้า Master Data — ตัวแกะ statement มีแค่ BBL/KBANK/SCB
+// ธนาคารอื่นเพิ่มได้เพื่อดูฝั่ง GL แต่ยังนำเข้าไฟล์ไม่ได้
+export const ACCOUNT_BANK_CODES = ['BBL', 'KBANK', 'SCB', 'KTB', 'TTB', 'BAY'] as const;
+export const STATEMENT_BANK_CODES: readonly string[] = ['BBL', 'KBANK', 'SCB'];
 
 // แกะเลขบัญชีจากชื่อบัญชีของ BC365 — เอาส่วนหลัง '#' ตัวสุดท้าย
 // รูปแบบที่เจอจริงมีทั้ง '#037-3-029725', '#150-3074633', '#027-2-37773-3' และ '#490-9'

@@ -17,3 +17,4 @@ export function parseBankStatement(bankCode: BankCode, rows: unknown[][]): Parse
 }
 
 export * from './types';
+export * from './senderExtractor';

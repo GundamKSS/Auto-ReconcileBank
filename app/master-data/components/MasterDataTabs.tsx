@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FileSpreadsheet, BookOpen } from "lucide-react";
+import { FileSpreadsheet, BookOpen, Landmark } from "lucide-react";
 import { STICKY_VARS, useStickyHeight } from "./useSticky";
 
 // สลับระหว่างข้อมูลต้นทางสองฝั่งของการกระทบยอด — เมนู Master Data ใน sidebar มีอันเดียว (guardPath '/master-data')
@@ -11,6 +11,7 @@ import { STICKY_VARS, useStickyHeight } from "./useSticky";
 const TABS = [
   { href: "/master-data/bank-statement", label: "รายการธนาคาร", hint: "ไฟล์ที่นำเข้า", icon: FileSpreadsheet },
   { href: "/master-data/gl", label: "รายการบัญชี", hint: "BC365", icon: BookOpen },
+  { href: "/master-data/bank-accounts", label: "บัญชีธนาคาร", hint: "เพิ่ม/ปิดบัญชี", icon: Landmark },
 ] as const;
 
 export default function MasterDataTabs() {

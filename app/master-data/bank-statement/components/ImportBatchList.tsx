@@ -1,6 +1,7 @@
 "use client";
 
 import { FileSpreadsheet, ChevronRight, Trash2, Loader2, Inbox, Lock } from "lucide-react";
+import type { WorkDirection } from "../../../../lib/workRoles";
 
 export type ImportBatch = {
   ImportId: number;
@@ -12,7 +13,20 @@ export type ImportBatch = {
   ImportedAt: string;
   // จำนวนรายการในไฟล์ที่ยังจับคู่/พักไว้อยู่ — มากกว่า 0 = ลบทั้งไฟล์ไม่ได้จนกว่าจะยกเลิกการจับคู่
   LockedCount: number;
+  // จำนวนเงินเข้า/เงินออกในไฟล์ — AP นำเข้าเฉพาะเงินออก AR เฉพาะเงินเข้า ไฟล์เก่ามีทั้งสองฝั่ง
+  InCount?: number;
+  OutCount?: number;
 };
+
+// ฝั่งของไฟล์ — ใช้ทั้งป้ายบนรายการและตัดสินว่าลบได้ไหม (ต้องมีสิทธิ์ทุกฝั่งที่อยู่ในไฟล์)
+export function batchSides(b: ImportBatch): WorkDirection[] {
+  return [...((b.InCount ?? 0) > 0 ? ["IN" as const] : []), ...((b.OutCount ?? 0) > 0 ? ["OUT" as const] : [])];
+}
+export function batchSideLabel(b: ImportBatch): string {
+  const sides = batchSides(b);
+  return sides.length === 2 ? "เงินเข้า + เงินออก" : sides[0] === "IN" ? "เงินเข้า" : sides[0] === "OUT" ? "เงินออก" : "";
+}
+export const NO_DELETE_RIGHT = "ไม่มีสิทธิ์ลบ — ลบได้เฉพาะไฟล์ของฝั่งที่ได้รับสิทธิ์ (ไฟล์ที่มีทั้งสองฝั่งต้องมีทั้ง AP และ AR)";
 
 export function formatDate(iso: string | null) {
   return iso ? new Date(iso).toISOString().slice(0, 10) : "-";
@@ -27,11 +41,13 @@ export default function ImportBatchList({
   loading,
   onSelect,
   onDelete,
+  canDelete,
 }: {
   batches: ImportBatch[];
   loading: boolean;
   onSelect: (batch: ImportBatch) => void;
   onDelete: (batch: ImportBatch) => void;
+  canDelete: (batch: ImportBatch) => boolean;
 }) {
   if (loading) {
     return (
@@ -68,6 +84,7 @@ export default function ImportBatchList({
               <p className="text-xs text-gray-400 mt-0.5">
                 {formatDate(b.PeriodStart)} – {formatDate(b.PeriodEnd)} ·{" "}
                 <span className="text-gray-500 font-medium">{b.ImportedRowCount.toLocaleString()} รายการ</span>
+                {batchSideLabel(b) && <> · <span className="text-gray-500">{batchSideLabel(b)}</span></>}
                 {b.LockedCount > 0 && (
                   <>
                     {" "}
@@ -84,6 +101,10 @@ export default function ImportBatchList({
               title={`ลบไม่ได้ — มี ${b.LockedCount.toLocaleString()} รายการที่จับคู่/พักไว้อยู่ ต้องยกเลิกการจับคู่ก่อน`}
               className="p-2 text-gray-300 shrink-0 cursor-not-allowed"
             >
+              <Lock size={16} />
+            </span>
+          ) : !canDelete(b) ? (
+            <span title={NO_DELETE_RIGHT} className="p-2 text-gray-300 shrink-0 cursor-not-allowed">
               <Lock size={16} />
             </span>
           ) : (

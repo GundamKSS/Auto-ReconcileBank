@@ -6,6 +6,8 @@ import { auditActor, requireRole } from '../../../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../../../lib/roles';
 import { badRequest, parseIdParam } from '../../../../../../lib/apiInput';
 import { assertDatesOpen, isoDate, PeriodClosedError, reconcilePeriodCloseReady } from '../../../../../../lib/periodClose';
+import type { WorkDate } from '../../../../../../lib/periodWorkflow';
+import { assertWorkSides, WorkPermissionError } from '../../../../../../lib/workRolesDb';
 
 // ยาวได้ไม่เกินคอลัมน์ DeletedReason NVARCHAR(500)
 const MAX_REASON_LENGTH = 500;
@@ -89,20 +91,27 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         );
       }
 
+      // ลบได้เฉพาะไฟล์ของฝั่งที่มีสิทธิ์ — ไฟล์ที่มีทั้งเงินเข้าและเงินออก (นำเข้าทั้งไฟล์) ต้องมีทั้ง AP และ AR
+      const sides = await new sql.Request(transaction).input('importId', sql.Int, importId).query(`
+        SELECT DISTINCT CASE WHEN Credit IS NOT NULL THEN 'IN' ELSE 'OUT' END AS Direction
+        FROM BankStatementLine WHERE ImportId = @importId
+      `);
+      await assertWorkSides(auth.session, sides.recordset.map((r) => r.Direction), transaction);
+
       // ห้ามลบไฟล์ที่มีบรรทัดอยู่ในงวดที่ปิดแล้ว — ยอดคงเหลือของงวดนั้นคำนวณจากไฟล์นี้อยู่ ลบแล้วยอดจะขยับ
       // ข้ามบรรทัดที่ไม่รู้บัญชี (ไฟล์เก่าก่อนมีมิติบัญชี) เหมือนด่านอื่นๆ ที่ใช้มิติบัญชี
       if (await reconcilePeriodCloseReady()) {
         const accountDates = await new sql.Request(transaction)
           .input('importId', sql.Int, importId)
           .query(`
-            SELECT DISTINCT BankAccountNo, TranDate FROM BankStatementLine
+            SELECT DISTINCT BankAccountNo, TranDate, CASE WHEN Credit IS NOT NULL THEN 'IN' ELSE 'OUT' END AS Direction FROM BankStatementLine
             WHERE ImportId = @importId AND BankAccountNo IS NOT NULL
           `);
-        const byAccount = new Map<string, string[]>();
+        const byAccount = new Map<string, WorkDate[]>();
         for (const row of accountDates.recordset) {
           const acc = String(row.BankAccountNo);
           const list = byAccount.get(acc) ?? [];
-          list.push(isoDate(row.TranDate));
+          list.push({ date: isoDate(row.TranDate), direction: row.Direction });
           byAccount.set(acc, list);
         }
         for (const [acc, dates] of byAccount) {
@@ -128,6 +137,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
       return NextResponse.json({ success: true, deletedLineCount: lines.rowsAffected[0] ?? 0 });
     } catch (err) {
       await transaction.rollback();
+      if (err instanceof WorkPermissionError) return NextResponse.json({ error: err.message }, { status: err.status });
       if (err instanceof DeleteBlockedError) {
         return NextResponse.json({ error: err.message }, { status: err.status });
       }

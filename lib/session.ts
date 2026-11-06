@@ -1,7 +1,9 @@
 import crypto from 'crypto';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { normalizeRole, type Role } from './roles';
+import { APP_ROLES, normalizeRole, type AppRole } from './roles';
+import { effectiveAppRole, normalizeEmployeeCode } from './workRoles';
+import { readWorkPermissions } from './workRolesDb';
 
 export const SESSION_COOKIE = 'arb_session';
 
@@ -14,12 +16,15 @@ type SessionPayload = {
   d: string;  // displayName
   r: string;  // roleProg
   e: number;  // เวลาหมดอายุ (epoch ms)
+  emp?: string; // trusted employee_no from central authentication, not client input
 };
 
 export type Session = {
   username: string;
   displayName: string;
-  role: Role;
+  // จาก cookie = role ระบบกลาง; หลังผ่าน requireRole = role ที่ใช้งานจริง (อาจเป็น Staff หรือ Admin จาก MASTER)
+  role: AppRole;
+  employeeNo?: string;
 };
 
 // คีย์สำหรับเซ็น session — ควรตั้ง SESSION_SECRET ใน .env ให้เป็นค่าคงที่
@@ -46,12 +51,13 @@ function sign(data: string): string {
   return crypto.createHmac('sha256', getSecret()).update(data).digest('base64url');
 }
 
-export function createSessionToken(input: { username: string; displayName: string; roleProg: string | null }): string {
+export function createSessionToken(input: { username: string; displayName: string; roleProg: string | null; employeeNo?: string | null }): string {
   const payload: SessionPayload = {
     u: input.username,
     d: input.displayName,
     r: input.roleProg ?? '',
     e: Date.now() + SESSION_TTL_SECONDS * 1000,
+    ...(normalizeEmployeeCode(input.employeeNo) ? { emp: normalizeEmployeeCode(input.employeeNo)! } : {}),
   };
   const body = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
   return `${body}.${sign(body)}`;
@@ -79,6 +85,7 @@ export function verifySessionToken(token: string | undefined | null): Session | 
       username: payload.u,
       displayName: payload.d || payload.u,
       role: normalizeRole(payload.r),
+      ...(normalizeEmployeeCode(payload.emp) ? { employeeNo: normalizeEmployeeCode(payload.emp)! } : {}),
     };
   } catch {
     return null;
@@ -119,6 +126,13 @@ export function auditActor(session: Session): string {
   return room > 1 ? `${name!.slice(0, room - 1)}…${suffix}` : user.slice(0, AUDIT_ACTOR_MAX_LENGTH);
 }
 
+/** Workflow approvals must retain the EMP code used for authorization at that moment. */
+export function auditWorkActor(session: Session): string {
+  const code = normalizeEmployeeCode(session.employeeNo);
+  const actor = auditActor(session);
+  return code ? `EMP ${code} · ${actor}`.slice(0, AUDIT_ACTOR_MAX_LENGTH) : actor;
+}
+
 export function sessionCookieOptions(isHttps: boolean) {
   return {
     httpOnly: true,          // JavaScript ฝั่งหน้าเว็บอ่านไม่ได้ — กันการขโมย/ปลอม session
@@ -143,7 +157,7 @@ export function sessionCookieOptions(isHttps: boolean) {
  *   // auth.session.username ใช้เป็น CreatedBy ได้เลย — มาจาก cookie ที่เซ็นไว้ ปลอมไม่ได้
  */
 export async function requireRole(
-  allowed: readonly Role[]
+  allowed: readonly AppRole[]
 ): Promise<{ ok: true; session: Session } | { ok: false; response: NextResponse }> {
   const session = await getSession();
 
@@ -154,12 +168,18 @@ export async function requireRole(
     };
   }
 
-  if (!allowed.includes(session.role)) {
+  // Dev/Admin มาจากระบบกลางอย่างเดียว ส่วน User ต้องดูสิทธิ์ในโปรแกรมต่อ (ดู effectiveAppRole) — อ่านจาก DB
+  // ทุก request ถอนสิทธิ์แล้วมีผลทันทีโดยไม่ต้อง logout; route ที่ทุก role เข้าได้ (ภาพรวม/รายงาน) ผลไม่เปลี่ยน จึงข้ามได้
+  const role = session.role !== 'User' || APP_ROLES.every((r) => allowed.includes(r))
+    ? session.role
+    : effectiveAppRole(session.role, await readWorkPermissions(session));
+
+  if (!allowed.includes(role)) {
     return {
       ok: false,
       response: NextResponse.json({ error: 'คุณไม่มีสิทธิ์ใช้งานส่วนนี้' }, { status: 403 }),
     };
   }
 
-  return { ok: true, session };
+  return { ok: true, session: { ...session, role } };
 }

@@ -1,8 +1,9 @@
 "use client";
 
+import HelpTooltip from '../../../../components/HelpTooltip';
 import { useMemo } from "react";
 import { ArrowLeft, Trash2, X, Lock, SlidersHorizontal, ArrowDownLeft, ArrowUpRight, Scale } from "lucide-react";
-import { ImportBatch, formatDate } from "./ImportBatchList";
+import { ImportBatch, formatDate, NO_DELETE_RIGHT } from "./ImportBatchList";
 import BankDayDetail from "./BankDayDetail";
 import StickySummaryBar from "../../components/StickySummaryBar";
 import DayTable, { type DaySummary } from "../../components/DayTable";
@@ -29,10 +30,13 @@ export default function LineItemsView({
   batch,
   onBack,
   onDelete,
+  canDelete,
 }: {
   batch: ImportBatch;
   onBack: () => void;
   onDelete: (batch: ImportBatch) => void;
+  // false = ไม่มีสิทธิ์ AP/AR ของทุกฝั่งในไฟล์
+  canDelete: boolean;
 }) {
   // ตัวกรองจำแยกรายไฟล์ — ช่วงวันที่ของไฟล์หนึ่งไม่ควรติดไปซ่อนรายการของอีกไฟล์
   // (parent ใส่ key={ImportId} ไว้ เปลี่ยนไฟล์แล้ว component นี้ mount ใหม่พร้อม key ของ storage ชุดใหม่)
@@ -75,7 +79,7 @@ export default function LineItemsView({
   const summary = (firstPage?.summary as Summary | undefined) ?? null;
   const channelOptions = (firstPage?.channels as string[] | undefined) ?? [];
 
-  const locked = batch.LockedCount > 0;
+  const locked = batch.LockedCount > 0 || !canDelete;
   const net = summary ? summary.inAmount - summary.outAmount : 0;
   const lineCount = summary?.lineCount ?? 0;
 
@@ -96,7 +100,8 @@ export default function LineItemsView({
           </p>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-slate-500">
             <Lock size={12} className="shrink-0" />
-            หน้านี้ใช้ดูข้อมูลเท่านั้น หากข้อมูลไม่ถูกต้อง ให้ลบไฟล์และนำเข้าไฟล์ที่แก้ไขแล้ว ไม่สามารถแก้ไขหรือลบทีละรายการได้
+            ดูข้อมูลเท่านั้น
+            <HelpTooltip label="วิธีแก้ข้อมูลธนาคาร">แก้หรือลบทีละรายการไม่ได้ หากข้อมูลผิด ให้ลบทั้งไฟล์แล้วนำเข้าไฟล์ที่แก้ไขแล้ว</HelpTooltip>
           </p>
         </div>
         <div className="flex flex-col items-end gap-1">
@@ -107,11 +112,11 @@ export default function LineItemsView({
           >
             {locked ? <Lock size={14} /> : <Trash2 size={14} />} ลบไฟล์นี้
           </button>
-          {locked && (
+          {batch.LockedCount > 0 ? (
             <p className="text-[11px] text-amber-600">
               มี {batch.LockedCount.toLocaleString()} รายการจับคู่แล้ว — ต้องยกเลิกการจับคู่ก่อนจึงลบได้
             </p>
-          )}
+          ) : !canDelete && <p className="text-[11px] text-amber-600">{NO_DELETE_RIGHT}</p>}
         </div>
       </div>
 

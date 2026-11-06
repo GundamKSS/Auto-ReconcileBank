@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import { Cell, Pie, PieChart, ResponsiveContainer } from 'recharts';
 import {
   STATUS_COLOR,
@@ -11,7 +13,7 @@ import {
   type StatusKey,
 } from './shared';
 
-export default function StatusDonut({ data }: { data: DashboardData }) {
+function StatusDonut({ data }: { data: DashboardData }) {
   const slices = STATUS_ORDER.map((status) => ({
     status,
     label: STATUS_LABEL[status],
@@ -23,7 +25,7 @@ export default function StatusDonut({ data }: { data: DashboardData }) {
   const hasData = total > 0;
 
   return (
-    <div className="flex flex-col items-center">
+    <div className="dashboard-chart-enter flex h-[326px] flex-col items-center">
       <div className="relative h-[210px] w-[210px]">
         {hasData ? (
           <ResponsiveContainer width="100%" height="100%">
@@ -74,3 +76,5 @@ export default function StatusDonut({ data }: { data: DashboardData }) {
     </div>
   );
 }
+
+export default memo(StatusDonut, (previous, next) => previous.data.summary.buckets === next.data.summary.buckets);

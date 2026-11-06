@@ -4,6 +4,8 @@ import { getPool } from '../../../../../lib/db';
 import { requireRole } from '../../../../../lib/session';
 import { VIEWER_ROLES } from '../../../../../lib/roles';
 import { resolveAccountFilter } from '../../../../../lib/bankAccountDb';
+import { readWorkPermissions } from '../../../../../lib/workRolesDb';
+import { visibleWorkSides } from '../../../../../lib/workRoles';
 import {
   MAX_EXPORT_ROWS,
   ORDER_BY,
@@ -237,6 +239,9 @@ export async function GET(req: NextRequest) {
 
   try {
     const filters = parseFilters(req.nextUrl.searchParams);
+    // สิทธิ์ AP หรือ AR ฝั่งเดียว export ได้เฉพาะฝั่งของตัวเอง — กติกาเดียวกับ /api/reports/reconciliation
+    const visibleSides = visibleWorkSides(await readWorkPermissions(auth.session));
+    if (visibleSides.length === 1) filters.side = visibleSides[0] === 'IN' ? 'AR' : 'AP';
 
     if (filters.from > filters.to) {
       return NextResponse.json({ error: 'ช่วงวันที่ไม่ถูกต้อง (วันเริ่มต้นอยู่หลังวันสิ้นสุด)' }, { status: 400 });

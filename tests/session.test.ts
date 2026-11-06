@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { AUDIT_ACTOR_MAX_LENGTH, auditActor, createSessionToken, verifySessionToken } from '../lib/session';
+import { AUDIT_ACTOR_MAX_LENGTH, auditActor, auditWorkActor, createSessionToken, verifySessionToken } from '../lib/session';
 
 const login = (o: Partial<Parameters<typeof createSessionToken>[0]> = {}) =>
   createSessionToken({ username: 'siwakorn', displayName: 'ศิวกร ส.', roleProg: 'Admin', ...o });
@@ -9,6 +9,16 @@ afterEach(() => {
 });
 
 describe('createSessionToken / verifySessionToken', () => {
+  it('binds the authenticated employee code into the signed cookie, preserving leading zeros', () => {
+    expect(verifySessionToken(login({ employeeNo: ' 0012a ' }))?.employeeNo).toBe('0012A');
+    expect(verifySessionToken(login())?.employeeNo).toBeUndefined();
+  });
+  it('rejects client tampering with the employee code', () => {
+    const [body, signature] = login({ employeeNo: '001' }).split('.');
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
+    payload.emp = '999';
+    expect(verifySessionToken(`${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${signature}`)).toBeNull();
+  });
   it('อ่าน session กลับมาได้ครบหลังเซ็น', () => {
     expect(verifySessionToken(login())).toEqual({
       username: 'siwakorn',
@@ -67,6 +77,11 @@ describe('createSessionToken / verifySessionToken', () => {
 });
 
 describe('auditActor — ชื่อผู้ทำรายการที่บันทึกลง audit trail', () => {
+  it('workflow audit includes the employee identity used to authorize the action', () => {
+    const actor = auditWorkActor({ username: 'alice', displayName: 'Alice', role: 'Admin', employeeNo: '001' });
+    expect(actor).toBe('EMP 001 · Alice (alice)');
+    expect(auditWorkActor({ username: 'a', displayName: 'x'.repeat(200), role: 'Admin', employeeNo: '001' }).length).toBeLessThanOrEqual(100);
+  });
   const session = (username: string, displayName: string) =>
     ({ username, displayName, role: 'Admin' }) as Parameters<typeof auditActor>[0];
 

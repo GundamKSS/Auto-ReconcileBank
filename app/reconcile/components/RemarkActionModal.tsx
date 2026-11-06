@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
@@ -78,8 +79,9 @@ export default function RemarkActionModal({
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               {isMatch
-                ? "ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง พร้อมบันทึกหมายเหตุเพื่อใช้ตรวจสอบภายหลัง"
-                : "ใช้กับ JV ที่บันทึกใน BC365 แล้ว ระบบจะไม่นำรายการนี้ไปจับคู่กับธนาคาร แต่จะนำยอดไปคำนวณยอดพักโอน สามารถยกเลิกได้ในหน้าสรุปยอดคงเหลือ"}
+                ? "จับคู่ตามยอดจริง และพักเฉพาะส่วนต่าง"
+                : "ใช้กับ JV ที่บันทึกใน BC365 แล้ว"}
+              <HelpTooltip label="ผลของการบันทึกรายการ">{isMatch ? 'พักเฉพาะส่วนต่างและเก็บหมายเหตุไว้ตรวจสอบย้อนหลัง' : 'รายการนี้จะไม่นำไปจับคู่กับธนาคาร แต่จะใช้คำนวณยอดพักโอน ยกเลิกได้ในหน้าสรุปยอดคงเหลือ'}</HelpTooltip>
             </p>
           </div>
           <button

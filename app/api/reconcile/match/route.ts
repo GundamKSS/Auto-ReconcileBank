@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { auditActor, requireRole } from '../../../../lib/session';
+import { assertWorkSides, WorkPermissionError } from '../../../../lib/workRolesDb';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { bankSignedSql, glSignedSql } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
 import { EXTRAS_MIGRATION_HINT, reconcileExtrasReady } from '../../../../lib/reconcileExtrasDb';
 import { remarkProblem } from '../../../../lib/matchRemark';
 import { assertDatesOpen, isoDate, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
+import type { WorkDate } from '../../../../lib/periodWorkflow';
 
 type MatchGroup = {
   bankLineIds: number[];
@@ -182,9 +184,12 @@ export async function POST(req: NextRequest) {
         if (Number(glFound.recordset[0]?.N ?? 0) !== seenGl.size) {
           throw new Error('มีรายการฝั่ง GL ที่ไม่พบในระบบ กรุณารีเฟรชหน้าใหม่');
         }
+        // UPDLOCK + HOLDLOCK ล็อกช่วงของ Entry No. เหล่านี้ไว้จนจบ transaction — อีกคำขอที่จับคู่ GL ตัวเดียวกัน
+        // พร้อมกันจะรอที่นี่จนคำขอแรกบันทึกเสร็จ แล้วเห็นว่าถูกใช้ไปแล้ว (เดิมเช็คก่อนล็อกบัญชีแล้ว insert โดยไม่เช็คซ้ำ
+        // GL ตัวเดียวจึงอยู่สองคู่ได้)
         const glTaken = await new sql.Request(transaction).query(`
           SELECT DISTINCT rml.GLEntryNo
-          FROM ReconciliationMatchLine rml
+          FROM ReconciliationMatchLine rml WITH (UPDLOCK, HOLDLOCK)
           JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
           WHERE rml.SourceType = 'GL' AND rml.Status = 'ACTIVE' AND rml.GLEntryNo IN (${glCsv})
         `);
@@ -248,22 +253,23 @@ export async function POST(req: NextRequest) {
       //     ของ session เพราะจับคู่ข้ามงวดได้ (เช่น includeSuspenseBuffer) ด่านนี้ข้ามไปถ้าระบุบัญชีไม่ได้
       //     (ไฟล์เก่าก่อนมีมิติบัญชี) เช่นเดียวกับด่าน 1c ด้านบน
       if (matchAccountNo && (await reconcilePeriodCloseReady())) {
-        const dates: string[] = [];
+        const dates: WorkDate[] = [];
         if (seenBank.size > 0) {
           const idsCsv = [...seenBank].join(',');
           const bankDates = await new sql.Request(transaction).query(
-            `SELECT TranDate FROM BankStatementLine WHERE LineId IN (${idsCsv})`
+            `SELECT TranDate, CASE WHEN Credit IS NOT NULL THEN 'IN' ELSE 'OUT' END AS Direction FROM BankStatementLine WHERE LineId IN (${idsCsv})`
           );
-          dates.push(...bankDates.recordset.map((r) => isoDate(r.TranDate)));
+          dates.push(...bankDates.recordset.map((r) => ({ date: isoDate(r.TranDate), direction: r.Direction })));
         }
         if (seenGl.size > 0) {
           const glCsv = [...seenGl].join(',');
           const glDates = await new sql.Request(transaction).query(
-            `SELECT Posting_Date FROM BankAccountLedgerEntries WHERE Entry_No IN (${glCsv})`
+            `SELECT Posting_Date, CASE WHEN ${glSignedSql()} > 0 THEN 'IN' ELSE 'OUT' END AS Direction FROM BankAccountLedgerEntries WHERE Entry_No IN (${glCsv})`
           );
-          dates.push(...glDates.recordset.map((r) => isoDate(r.Posting_Date)));
+          dates.push(...glDates.recordset.map((r) => ({ date: isoDate(r.Posting_Date), direction: r.Direction })));
         }
         await assertDatesOpen(transaction, matchAccountNo, dates);
+        await assertWorkSides(auth.session, dates.map((d) => d.direction), transaction, matchType === 'OFFSET' ? 'any' : 'all');
       }
 
       // 2) แต่ละกลุ่มของ MATCHED ต้องมียอดสองฝั่งดุลกัน — ตรวจจากยอดจริงใน DB ไม่ใช่ตัวเลขที่ client ส่งมา
@@ -399,11 +405,18 @@ export async function POST(req: NextRequest) {
         const updateRequest = new sql.Request(transaction);
         // allBankIds ผ่าน Number.isInteger ครบทุกตัวแล้ว จึงต่อเข้า IN(...) ได้อย่างปลอดภัย
         // ส่วน matchType bind เป็น parameter เสมอ ไม่ต่อสตริงดิบ (แม้จะ validate เป็น enum ไว้แล้วก็ตาม)
-        await updateRequest
+        const updated = await updateRequest
           .input('matchType', sql.NVarChar, matchType)
           .query(`
-          UPDATE BankStatementLine SET MatchStatus = @matchType WHERE LineId IN (${allBankIds.join(',')})
+          UPDATE BankStatementLine SET MatchStatus = @matchType
+          WHERE LineId IN (${allBankIds.join(',')}) AND MatchStatus = 'UNMATCHED'
         `);
+        // ด่าน 1 อ่านสถานะก่อนล็อกบัญชี อีกคนจึงจับคู่ statement บรรทัดเดียวกันตัดหน้าได้ระหว่างนั้น
+        // (หน้ากระทบยอดสองคน หรือหน้ารายการพัก) เปลี่ยนสถานะได้ไม่ครบทุกบรรทัด = ยกเลิกทั้งหมด
+        // ไม่งั้น statement บรรทัดเดียวจะอยู่ในสองคู่และถูกนับยอดซ้ำ
+        if (updated.rowsAffected[0] !== allBankIds.length) {
+          throw new Error('มีรายการฝั่ง Bank ที่เพิ่งถูกจับคู่ไประหว่างบันทึก กรุณารีเฟรชหน้าใหม่');
+        }
       }
 
       await transaction.commit();
@@ -422,6 +435,7 @@ export async function POST(req: NextRequest) {
       await transaction.rollback();
       // ข้อผิดพลาดที่เราตั้งใจโยนเองข้างบนเป็นเรื่องของข้อมูลที่ผู้ใช้เลือกมา ไม่ใช่ระบบพัง
       // จึงตอบ 409 (ข้อมูลขัดแย้ง) พร้อมข้อความตรงๆ ให้ผู้ใช้แก้ได้เอง
+      if (err instanceof WorkPermissionError) return NextResponse.json({ error: err.message }, { status: err.status });
       if (err instanceof Error) {
         return NextResponse.json({ error: err.message }, { status: 409 });
       }

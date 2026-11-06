@@ -15,6 +15,11 @@ export type AssistantBankLine = {
   description: string;
   ref: string;
   channel: string | null;
+  accountNo?: string | null;
+  rawDescription?: string | null;
+  senderBank?: string | null;
+  senderAccountNo?: string | null;
+  senderAccountName?: string | null;
 };
 
 export type AssistantGlLine = {
@@ -25,6 +30,7 @@ export type AssistantGlLine = {
   documentNo: string;
   accountNo: string;
   accountName: string | null;
+  bankCode?: string | null;
 };
 
 export type AssistantReason = { tone: 'good' | 'warn' | 'info'; text: string };
@@ -32,9 +38,11 @@ export type AssistantReason = { tone: 'good' | 'warn' | 'info'; text: string };
 export type AssistantCandidate = {
   gl: AssistantGlLine;
   outsidePeriod: boolean;
+  crossAccount?: boolean;
+  crossDirection?: boolean; // ทิศทางตรงข้าม (เช่น Bank OUT แต่ BC365 IN)
   score: number; // 5-100
   dayGap: number; // วันที่ GL ลบวันที่ Bank (ติดลบ = GL ลงก่อน)
-  businessDays: number; // ระยะห่างนับเฉพาะ จ.-ศ. (อย่างน้อย 1)
+  businessDays: number; // ระยะห่างนับเฉพาะ จ.-ศ. (0 เมื่อเป็นวันเดียวกันแต่อยู่ต่างบัญชีหรือผิดฝั่ง)
   reasons: AssistantReason[];
 };
 
@@ -45,6 +53,7 @@ export type AssistantSuggestion = {
   // GL ที่แนะนำให้เลือกไว้ก่อน — ไล่จากการ์ดคะแนนสูงสุด GL ตัวเดียวจะไม่ถูกแนะนำซ้ำ 2 การ์ด
   // null = GL ทุกตัวของการ์ดนี้ถูกแนะนำให้การ์ดที่คะแนนสูงกว่าไปแล้ว (ยังเลือกเองได้)
   suggestedEntryNo: number | null;
+  crossAccountBank?: boolean; // รายการ Bank Statement อยู่ต่างบัญชี (ตรงกับ GL ของบัญชีนี้)
 };
 
 export type AssistantResult = {
@@ -179,19 +188,57 @@ function scoreCandidate(args: {
   otherBanks: number; // Bank รายการอื่นที่เข้าคู่กับ GL ตัวนี้ได้เหมือนกัน
   windowDays: number;
   glInPeriod: boolean;
+  crossAccount?: boolean;
+  crossDirection?: boolean;
+  crossAccountBank?: boolean;
 }): AssistantCandidate {
-  const { bank, gl, dayGap, glOptions, otherBanks, windowDays, glInPeriod } = args;
+  const { bank, gl, dayGap, glOptions, otherBanks, windowDays, glInPeriod, crossAccount, crossDirection, crossAccountBank } = args;
   const reasons: AssistantReason[] = [{ tone: 'good', text: 'ยอดเงินตรงกันพอดี' }];
   let score = 100;
 
-  const businessDays = businessDaysBetween(dayNumber(bank.date), dayNumber(gl.date));
-  score -= Math.min(45, businessDays * 5);
-  const absGap = Math.abs(dayGap);
-  const when = dayGap > 0 ? `GL ลงหลัง Bank ${absGap} วัน` : `GL ลงก่อน Bank ${absGap} วัน`;
-  reasons.push({
-    tone: businessDays <= 2 ? 'good' : businessDays <= 5 ? 'info' : 'warn',
-    text: businessDays < absGap ? `${when} (${businessDays} วันทำการ)` : when,
-  });
+  if (crossDirection) {
+    const bankDirText = bank.direction === 'IN' ? 'เงินเข้า' : 'เงินออก';
+    const glDirText = gl.direction === 'IN' ? 'เงินเข้า' : 'เงินออก';
+    reasons.push({
+      tone: 'warn',
+      text: `บันทึกผิดฝั่ง (Statement เป็น${bankDirText} แต่ BC365 ลงเป็น${glDirText}) อาจลงเดบิต/เครดิตสลับด้าน`,
+    });
+    score -= 35;
+  }
+
+  if (crossAccountBank) {
+    reasons.push({
+      tone: 'warn',
+      text: `Statement อยู่ต่างบัญชีธนาคาร (${bank.accountNo ?? 'ไม่ระบุ'}) แต่ใน BC365 ลงที่บัญชีนี้`,
+    });
+    score -= 20;
+  } else if (crossAccount) {
+    const accountLabel = [gl.bankCode, gl.accountNo, gl.accountName].filter(Boolean).join(' · ');
+    reasons.push({
+      tone: 'warn',
+      text: `อยู่ต่างบัญชีใน BC365 (${accountLabel}) อาจลงผิดบัญชี`,
+    });
+    score -= 20;
+  }
+
+  let businessDays = 0;
+  if (dayGap === 0) {
+    if (crossAccount || crossDirection || crossAccountBank) {
+      reasons.push({
+        tone: 'good',
+        text: 'ลงวันที่เดียวกันพอดี',
+      });
+    }
+  } else {
+    businessDays = businessDaysBetween(dayNumber(bank.date), dayNumber(gl.date));
+    score -= Math.min(45, businessDays * 5);
+    const absGap = Math.abs(dayGap);
+    const when = dayGap > 0 ? `GL ลงหลัง Bank ${absGap} วัน` : `GL ลงก่อน Bank ${absGap} วัน`;
+    reasons.push({
+      tone: businessDays <= 2 ? 'good' : businessDays <= 5 ? 'info' : 'warn',
+      text: businessDays < absGap ? `${when} (${businessDays} วันทำการ)` : when,
+    });
+  }
 
   // ยิ่งมียอดเท่ากันให้เลือกหลายตัว ยิ่งเสี่ยงจับผิดคู่ (เคสจริง: ค่าธรรมเนียม 10 บาทหลายรายการ)
   const extra = glOptions - 1 + otherBanks;
@@ -214,9 +261,16 @@ function scoreCandidate(args: {
 
   if (!glInPeriod) reasons.push({ tone: 'info', text: 'GL ลงวันที่นอกงวดที่เลือก' });
 
+  const senderParts = [bank.senderBank, bank.senderAccountNo, bank.senderAccountName].filter(Boolean);
+  if (senderParts.length > 0) {
+    reasons.push({ tone: 'info', text: `ผู้โอน: ${senderParts.join(' · ')}` });
+  }
+
   return {
     gl,
     outsidePeriod: !glInPeriod,
+    ...(crossAccount ? { crossAccount: true } : {}),
+    ...(crossDirection ? { crossDirection: true } : {}),
     score: Math.max(5, Math.round(score)),
     dayGap,
     businessDays,
@@ -249,6 +303,16 @@ function scoreBankGroupCandidate(args: {
   reasons.push({ tone: 'warn', text: 'เป็นคู่แบบรวมยอด ควรตรวจรายละเอียดก่อนยืนยัน' });
   if (!glInPeriod) reasons.push({ tone: 'info', text: 'GL ลงวันที่นอกงวดที่เลือก' });
 
+  const senders = banks
+    .map((b) => [b.senderBank, b.senderAccountNo, b.senderAccountName].filter(Boolean).join(' · '))
+    .filter(Boolean);
+  if (senders.length > 0) {
+    reasons.push({
+      tone: 'info',
+      text: `ผู้โอน: ${senders.slice(0, 2).join(', ')}${senders.length > 2 ? ` (+${senders.length - 2})` : ''}`,
+    });
+  }
+
   let score = 84 - Math.min(35, maxBusinessDays * 4) - Math.min(12, (banks.length - 2) * 3);
   if (Math.round(total * 100) % 100 === 0 && total < 100) score -= 10;
 
@@ -277,15 +341,28 @@ export function findNearDateMatches(input: {
   periodFrom: string;
   periodTo: string;
   windowDays: number;
+  bankAccountNo?: string | null;
+  activeDirection?: Direction | null;
 }): AssistantResult {
-  const { bankLines, glLines, periodFrom, periodTo, windowDays } = input;
+  const { bankLines, glLines, periodFrom, periodTo, windowDays, bankAccountNo, activeDirection } = input;
   const inPeriod = (date: string) => date >= periodFrom && date <= periodTo;
+  const isActiveBank = (b: AssistantBankLine) =>
+    !bankAccountNo || !b.accountNo || b.accountNo === bankAccountNo;
+  const isActiveGl = (g: AssistantGlLine) =>
+    !bankAccountNo || !g.accountNo || g.accountNo === bankAccountNo;
 
-  // 1) กันรายการที่จับกลุ่มวันเดียวกันได้อยู่แล้วออก
+  // 1) กันรายการที่จับกลุ่มวันเดียวกันได้อยู่แล้วออก (แยกตามบัญชี เพื่อไม่ให้ข้ามบัญชีมาจับคู่กันเองในขั้นนี้
+  //    และกันไม่ให้ GL ต่างบัญชีที่มีคู่ Statement ของบัญชีตัวเองในวันเดียวกันอยู่แล้ว ถูกดึงมาเตือนผิดบัญชี)
   const bankByKey = new Map<string, Item[]>();
-  for (const b of bankLines) push(bankByKey, `${b.date}_${b.direction}`, { id: b.lineId, amount: b.amount });
+  for (const b of bankLines) {
+    const accKey = bankAccountNo ? (b.accountNo ?? bankAccountNo) : '';
+    push(bankByKey, `${accKey}_${b.date}_${b.direction}`, { id: b.lineId, amount: b.amount });
+  }
   const glByKey = new Map<string, Item[]>();
-  for (const g of glLines) push(glByKey, `${g.date}_${g.direction}`, { id: g.entryNo, amount: g.amount });
+  for (const g of glLines) {
+    const accKey = bankAccountNo ? (g.accountNo ?? '') : '';
+    push(glByKey, `${accKey}_${g.date}_${g.direction}`, { id: g.entryNo, amount: g.amount });
+  }
 
   const reservedBank = new Set<number>();
   const reservedGl = new Set<number>();
@@ -298,34 +375,56 @@ export function findNearDateMatches(input: {
     }
   }
 
-  // 2) จับคู่ยอดเท่ากันพอดี ทิศทางเดียวกัน คนละวัน ห่างไม่เกิน windowDays
+  // 2) จับคู่ยอดเท่ากันพอดี ห่างไม่เกิน windowDays
+  //    - บัญชีเดียวกัน + ทิศทางเดียวกัน: ข้ามวันเท่านั้น (dayGap !== 0 เพราะวันเดียวกันถูกติ๊กอัตโนมัติในตารางแล้ว)
+  //    - ต่างบัญชี (crossAccount) หรือ ผิดฝั่ง (crossDirection): รวมวันเดียวกันด้วย (dayGap === 0)
+  //      เพราะตารางหลักกรองเฉพาะบัญชีและทิศทางที่เลือก ทำให้ผู้ใช้มองไม่เห็นข้อผิดพลาดเหล่านี้
   const glByAmount = new Map<string, AssistantGlLine[]>();
+  const glByCents = new Map<number, AssistantGlLine[]>();
   for (const g of glLines) {
     const cents = Math.round(g.amount * 100);
     if (reservedGl.has(g.entryNo) || cents <= 0) continue;
     push(glByAmount, `${g.direction}_${cents}`, g);
+    push(glByCents, cents, g);
   }
 
-  type Edge = { gl: AssistantGlLine; dayGap: number };
+  type Edge = { gl: AssistantGlLine; dayGap: number; crossAccount: boolean; crossDirection: boolean };
   const edgesByBank = new Map<number, { bank: AssistantBankLine; edges: Edge[] }>();
   const banksPerGl = new Map<number, number>();
+  const sameAccountGlMatched = new Set<number>();
+  const glMatchedByActiveBank = new Set<number>();
+
   for (const b of bankLines) {
+    if (!isActiveBank(b)) continue;
+    if (activeDirection && b.direction !== activeDirection) continue;
     const cents = Math.round(b.amount * 100);
     if (reservedBank.has(b.lineId) || cents <= 0) continue;
     const bankDay = dayNumber(b.date);
-    for (const g of glByAmount.get(`${b.direction}_${cents}`) ?? []) {
+
+    for (const g of glByCents.get(cents) ?? []) {
       if (Math.abs(g.amount - b.amount) >= AMOUNT_TOLERANCE) continue;
+      const crossAccount = Boolean(bankAccountNo && g.accountNo && g.accountNo !== bankAccountNo);
+      const crossDirection = b.direction !== g.direction;
       const dayGap = dayNumber(g.date) - bankDay;
-      // วันเดียวกันเป็นงานของการติ๊กอัตโนมัติในตารางอยู่แล้ว
-      if (dayGap === 0 || Math.abs(dayGap) > windowDays) continue;
+
+      // รายการปกติในบัญชีเดียวกันทิศทางเดียวกัน ข้ามวันเท่านั้น
+      // แต่ถ้าเป็นต่างบัญชี หรือบันทึกผิดฝั่ง ให้ตรวจจับแม้จะลงวันเดียวกันเป๊ะ
+      if (!crossAccount && !crossDirection && dayGap === 0) continue;
+      if (Math.abs(dayGap) > windowDays) continue;
+
       const entry = edgesByBank.get(b.lineId) ?? { bank: b, edges: [] };
-      entry.edges.push({ gl: g, dayGap });
+      entry.edges.push({ gl: g, dayGap, crossAccount, crossDirection });
       edgesByBank.set(b.lineId, entry);
       banksPerGl.set(g.entryNo, (banksPerGl.get(g.entryNo) ?? 0) + 1);
+
+      if (!crossAccount && !crossDirection) {
+        sameAccountGlMatched.add(g.entryNo);
+      }
+      glMatchedByActiveBank.add(g.entryNo);
     }
   }
 
-  // 3) ให้คะแนนเฉพาะ Bank ในงวด
+  // 3) ให้คะแนนเฉพาะ Bank ในงวด (ของบัญชีและทิศทางที่กำลังดู)
   const suggestions: AssistantSuggestion[] = [];
   for (const { bank, edges } of edgesByBank.values()) {
     if (!inPeriod(bank.date)) continue;
@@ -338,26 +437,34 @@ export function findNearDateMatches(input: {
         otherBanks: (banksPerGl.get(e.gl.entryNo) ?? 1) - 1,
         windowDays,
         glInPeriod: inPeriod(e.gl.date),
+        crossAccount: e.crossAccount,
+        crossDirection: e.crossDirection,
       })
     );
+    // ให้คู่ปกติ (ไม่ข้ามบัญชี และ ไม่ผิดฝั่ง) ขึ้นก่อนคู่ที่มีปัญหา หากคะแนนเท่ากันให้ดูระยะห่างวัน
     candidates.sort(
-      (a, b) => b.score - a.score || Math.abs(a.dayGap) - Math.abs(b.dayGap) || a.gl.entryNo - b.gl.entryNo
+      (a, b) =>
+        Number(Boolean(a.crossAccount || a.crossDirection)) -
+          Number(Boolean(b.crossAccount || b.crossDirection)) ||
+        b.score - a.score ||
+        Math.abs(a.dayGap) - Math.abs(b.dayGap) ||
+        a.gl.entryNo - b.gl.entryNo
     );
     suggestions.push({ banks: [bank], kind: '1:1', candidates, suggestedEntryNo: null });
   }
 
-  // 4) N:1 ข้ามวัน — Bank หลายรายการรวมกันเท่ากับ GL 1 รายการ
-  // ให้สิทธิ์คู่ 1:1 ก่อนเสมอ เพราะอธิบายได้ชัดกว่าและเสี่ยงจับผิดน้อยกว่า จากนั้นจึงใช้เฉพาะ
-  // และกันแต่ละรายการไม่ให้ถูกเสนอซ้ำในหลายกลุ่ม N:1 ส่วนกรณี Bank เดียวกันมีทางเลือก 1:1 ด้วย
-  // จะแสดงให้ผู้ใช้ตัดสินใจ แต่ UI จะปิดการ์ดทางเลือกอื่นทันทีหลัง Bank ถูกใช้ไปแล้ว
+  // 4) N:1 ข้ามวัน — Bank หลายรายการรวมกันเท่ากับ GL 1 รายการ (เฉพาะในบัญชีเดียวกันและทิศทางเดียวกัน)
   const groupedBankTaken = new Set<number>();
   const groupedGlTaken = new Set<number>();
   for (const gl of glLines) {
+    const isCrossGl = Boolean(bankAccountNo && gl.accountNo && gl.accountNo !== bankAccountNo);
     if (
+      isCrossGl ||
       reservedGl.has(gl.entryNo) ||
-      banksPerGl.has(gl.entryNo) ||
+      sameAccountGlMatched.has(gl.entryNo) ||
       groupedGlTaken.has(gl.entryNo) ||
-      gl.amount <= 0
+      gl.amount <= 0 ||
+      (activeDirection && gl.direction !== activeDirection)
     ) {
       continue;
     }
@@ -365,6 +472,7 @@ export function findNearDateMatches(input: {
     const eligibleBanks = bankLines
       .filter(
         (bank) =>
+          isActiveBank(bank) &&
           inPeriod(bank.date) &&
           bank.direction === gl.direction &&
           bank.amount > 0 &&
@@ -395,8 +503,73 @@ export function findNearDateMatches(input: {
     groupedGlTaken.add(gl.entryNo);
   }
 
+  // 5) ตรวจหาเคส "Statement อยู่ต่างบัญชี" (Cross-Account Bank Statement)
+  //    มีรายการ GL ในบัญชีที่กำลังกระทบยอด (และในงวด) ที่ยังหา Statement ในบัญชีตัวเองไม่เจอ
+  //    แต่ไปพบ Statement ยอดตรงกันในบัญชีธนาคารอื่น
+  if (bankAccountNo) {
+    const otherBankByCents = new Map<number, AssistantBankLine[]>();
+    for (const b of bankLines) {
+      if (isActiveBank(b) || reservedBank.has(b.lineId) || b.amount <= 0) continue;
+      const cents = Math.round(b.amount * 100);
+      push(otherBankByCents, cents, b);
+    }
+
+    const crossBankGlTaken = new Set<number>();
+    for (const g of glLines) {
+      if (
+        !isActiveGl(g) ||
+        !inPeriod(g.date) ||
+        reservedGl.has(g.entryNo) ||
+        sameAccountGlMatched.has(g.entryNo) ||
+        groupedGlTaken.has(g.entryNo) ||
+        (activeDirection && g.direction !== activeDirection)
+      ) {
+        continue;
+      }
+      const cents = Math.round(g.amount * 100);
+      const otherBankCandidates = otherBankByCents.get(cents) ?? [];
+      for (const b of otherBankCandidates) {
+        if (Math.abs(b.amount - g.amount) >= AMOUNT_TOLERANCE) continue;
+        const dayGap = dayNumber(g.date) - dayNumber(b.date);
+        if (Math.abs(dayGap) > windowDays) continue;
+        const crossDirection = b.direction !== g.direction;
+
+        const candidate = scoreCandidate({
+          bank: b,
+          gl: g,
+          dayGap,
+          glOptions: 1,
+          otherBanks: 0,
+          windowDays,
+          glInPeriod: inPeriod(g.date),
+          crossAccount: false,
+          crossDirection,
+          crossAccountBank: true,
+        });
+
+        suggestions.push({
+          banks: [b],
+          kind: '1:1',
+          candidates: [candidate],
+          suggestedEntryNo: g.entryNo,
+          crossAccountBank: true,
+        });
+        crossBankGlTaken.add(g.entryNo);
+        break; // เสนอ 1 Statement ต่อ 1 GL ตัวนี้
+      }
+    }
+  }
+
+  const isSuggestionIssue = (s: AssistantSuggestion) =>
+    Boolean(
+      s.crossAccountBank ||
+      s.candidates[0]?.crossAccount ||
+      s.candidates[0]?.crossDirection
+    );
+
   const byTopScore = (a: AssistantSuggestion, b: AssistantSuggestion) =>
-    b.candidates[0].score - a.candidates[0].score ||
+    Number(isSuggestionIssue(a)) - Number(isSuggestionIssue(b)) ||
+    (b.candidates[0]?.score ?? 0) - (a.candidates[0]?.score ?? 0) ||
     a.banks[0].date.localeCompare(b.banks[0].date) ||
     a.banks[0].lineId - b.banks[0].lineId;
   suggestions.sort(byTopScore);
@@ -412,7 +585,9 @@ export function findNearDateMatches(input: {
   }
   suggestions.sort(byTopScore);
 
-  const periodBank = bankLines.filter((b) => inPeriod(b.date));
+  const periodBank = bankLines.filter(
+    (b) => isActiveBank(b) && inPeriod(b.date) && (!activeDirection || b.direction === activeDirection)
+  );
   return {
     windowDays,
     suggestions,

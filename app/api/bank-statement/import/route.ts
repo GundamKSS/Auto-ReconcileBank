@@ -7,7 +7,10 @@ import { readStatementRows, MAX_FILE_BYTES, MAX_IMPORT_ROWS } from '../../../../
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { findOverlapWithImportedLines } from '../../../../lib/bankStatementOverlap';
-import { bankAccountColumnsReady, resolveBankAccount } from '../../../../lib/bankAccountDb';
+import { bankAccountColumnsReady, CLOSED_ACCOUNT_ERROR, resolveBankAccount, statementSenderColumnsReady } from '../../../../lib/bankAccountDb';
+import { assertDatesOpen, isoDate, PeriodClosedError, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
+import { readWorkPermissions } from '../../../../lib/workRolesDb';
+import { filterLinesBySide, IMPORT_SIDE_LABELS, resolveImportSide, type ImportSide } from '../../../../lib/importSide';
 
 const VALID_BANKS: BankCode[] = ['BBL', 'KBANK', 'SCB'];
 
@@ -28,9 +31,9 @@ function formatImportedAt(value: string | Date): string {
 
 // จำนวนแถวต่อ 1 คำสั่ง INSERT — เดิมแทรกทีละแถวจึงต้องวิ่งไป-กลับ SQL Server เท่าจำนวนแถว
 // (วัดได้ราว 38 ms ต่อครั้ง = ไฟล์ 424 แถวใช้เวลาราว 16 วินาที โดยเปิด transaction ค้างไว้ตลอด)
-// รวมเป็นชุดละ 200 แถวทำให้เหลือไม่กี่รอบ ยังอยู่ใต้เพดานของ SQL Server ทั้งสองข้อ:
-// 1,000 แถวต่อ VALUES clause และ 2,100 พารามิเตอร์ต่อคำสั่ง (ที่นี่ใช้ 8 ตัว/แถว = 1,600)
-const INSERT_BATCH_SIZE = 200;
+// รวมเป็นชุดละ 150 แถวทำให้เหลือไม่กี่รอบ ยังอยู่ใต้เพดานของ SQL Server ทั้งสองข้อ:
+// 1,000 แถวต่อ VALUES clause และ 2,100 พารามิเตอร์ต่อคำสั่ง (สูงสุด 11 ตัว/แถว × 150 = 1,650)
+const INSERT_BATCH_SIZE = 150;
 
 async function insertLinesInBatches(
   transaction: sql.Transaction,
@@ -38,7 +41,9 @@ async function insertLinesInBatches(
   bankCode: string,
   lines: NormalizedStatementLine[],
   // บัญชีของไฟล์นี้ — null เมื่อยังไม่ได้รัน sql/006 (คอลัมน์ BankAccountNo ยังไม่มี)
-  bankAccountNo: string | null
+  bankAccountNo: string | null,
+  // รัน sql/013_bank_statement_sender_columns.sql แล้วหรือยัง
+  hasSenderColumns: boolean
 ) {
   for (let start = 0; start < lines.length; start += INSERT_BATCH_SIZE) {
     const batch = lines.slice(start, start + INSERT_BATCH_SIZE);
@@ -58,15 +63,20 @@ async function insertLinesInBatches(
       request.input(`ch${i}`, sql.NVarChar, line.chequeNo);
       request.input(`cn${i}`, sql.NVarChar, line.channel);
       request.input(`rd${i}`, sql.NVarChar, line.rawDescription);
+      if (hasSenderColumns) {
+        request.input(`sb${i}`, sql.NVarChar(50), line.senderBank ?? null);
+        request.input(`sa${i}`, sql.NVarChar(50), line.senderAccountNo ?? null);
+        request.input(`sn${i}`, sql.NVarChar(255), line.senderAccountName ?? null);
+      }
       // ชื่อพารามิเตอร์ทั้งหมดสร้างจาก index ของเราเอง ไม่ได้มาจาก input ของผู้ใช้
       valueRows.push(
-        `(@importId, @bankCode, ${bankAccountNo ? '@bankAccountNo, ' : ''}@d${i}, @de${i}, @db${i}, @cr${i}, @ba${i}, @ch${i}, @cn${i}, @rd${i})`
+        `(@importId, @bankCode, ${bankAccountNo ? '@bankAccountNo, ' : ''}@d${i}, @de${i}, @db${i}, @cr${i}, @ba${i}, @ch${i}, @cn${i}, @rd${i}${hasSenderColumns ? `, @sb${i}, @sa${i}, @sn${i}` : ''})`
       );
     });
 
     await request.query(`
       INSERT INTO BankStatementLine
-        (ImportId, BankCode, ${bankAccountNo ? 'BankAccountNo, ' : ''}TranDate, Description, Debit, Credit, Balance, ChequeNo, Channel, RawDescription)
+        (ImportId, BankCode, ${bankAccountNo ? 'BankAccountNo, ' : ''}TranDate, Description, Debit, Credit, Balance, ChequeNo, Channel, RawDescription${hasSenderColumns ? ', SenderBank, SenderAccountNo, SenderAccountName' : ''})
       VALUES ${valueRows.join(', ')}
     `);
   }
@@ -92,6 +102,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'อ่านข้อมูลที่ส่งมาไม่สำเร็จ' }, { status: 400 });
   }
 
+  // ฝั่งที่นำเข้าตามสิทธิ์ AP/AR (ดู lib/importSide.ts) — ตรวจก่อนอ่านไฟล์ คนไม่มีสิทธิ์ไม่ต้องรออัปโหลดก่อนโดนปฏิเสธ
+  let importSide: ImportSide;
+  try {
+    const resolved = resolveImportSide(await readWorkPermissions(auth.session), formData.get('side'));
+    if ('error' in resolved) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+    importSide = resolved.side;
+  } catch (err) {
+    console.error('Resolve import side error:', err);
+    return NextResponse.json({ error: 'ตรวจสอบสิทธิ์การนำเข้าไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
+  }
+
   // ขั้นระบุบัญชี — ต้องทำก่อนแตะไฟล์ เพราะ BankCode ที่ใช้บันทึกจริงต้องมาจาก BankAccountMapping
   // ไม่ใช่ค่าที่ client ส่งมา ไม่งั้นบัญชีกับธนาคารในฐานข้อมูลขัดกันเองได้
   // (เช่นเลือกบัญชี SCB แต่ส่ง bankCode = 'BBL' มา แล้วไฟล์ไปโผล่ผิดธนาคารทั้งใบ)
@@ -107,6 +128,9 @@ export async function POST(req: NextRequest) {
       const account = await resolveBankAccount(rawAccount);
       if (!account?.bankCode) {
         return NextResponse.json({ error: 'ไม่รู้จักบัญชีที่เลือก กรุณาเลือกใหม่' }, { status: 400 });
+      }
+      if (account.isActive === false) {
+        return NextResponse.json({ error: CLOSED_ACCOUNT_ERROR }, { status: 409 });
       }
       if (!VALID_BANKS.includes(account.bankCode as BankCode)) {
         return NextResponse.json(
@@ -183,6 +207,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 });
   }
 
+  // เก็บเฉพาะรายการของฝั่งที่นำเข้า — อีกฝั่งนำเข้าไฟล์เดียวกันซ้ำได้ภายหลัง กันซ้ำระดับรายการจะเข้าเฉพาะของเขา
+  // periodStart/periodEnd ยังเป็นช่วงของทั้งไฟล์ ใช้กว้างพอสำหรับเทียบรายการซ้ำ
+  const sideLines = filterLinesBySide(lines, importSide);
+  const otherSideCount = lines.length - sideLines.length;
+  if (sideLines.length === 0) {
+    return NextResponse.json({ error: `ไฟล์นี้ไม่มีรายการ${IMPORT_SIDE_LABELS[importSide]}ให้นำเข้า` }, { status: 400 });
+  }
+  lines = sideLines;
+
   // ขั้นบันทึกลงฐานข้อมูล
   try {
     const pool = await getPool();
@@ -223,7 +256,7 @@ export async function POST(req: NextRequest) {
           .join(', ');
         throw new ImportBlockedError(
           {
-            error: `ทุกรายการในไฟล์นี้นำเข้าไปแล้ว (${sources}) ไม่มีรายการใหม่ให้นำเข้า`,
+            error: `ทุกรายการ${importSide === 'ALL' ? '' : IMPORT_SIDE_LABELS[importSide]}ในไฟล์นี้นำเข้าไปแล้ว (${sources}) ไม่มีรายการใหม่ให้นำเข้า`,
             duplicate: true,
             existingImportId: overlap.imports[0]?.importId ?? null,
           },
@@ -234,6 +267,11 @@ export async function POST(req: NextRequest) {
       // ช่วงวันที่และจำนวนของหัวไฟล์นับตามรายการที่นำเข้าจริง ไม่ใช่ทั้งไฟล์ —
       // หน้า Reconcile ใช้ PeriodStart/PeriodEnd นี้เติมช่วงวันที่ให้ตอนเริ่ม session
       const newLines = overlap.newLines;
+      if (bankAccountNo && await reconcilePeriodCloseReady()) {
+        await assertDatesOpen(transaction, bankAccountNo, newLines.map((l) => ({
+          date: isoDate(l.tranDate), direction: l.credit !== null ? 'IN' : 'OUT',
+        })));
+      }
       const newDates = newLines.map((l) => l.tranDate).sort();
       const newPeriodStart = newDates[0];
       const newPeriodEnd = newDates[newDates.length - 1];
@@ -256,8 +294,9 @@ export async function POST(req: NextRequest) {
         `);
 
       const importId = importResult.recordset[0].ImportId;
+      const hasSenderColumns = await statementSenderColumnsReady();
 
-      await insertLinesInBatches(transaction, importId, bankCode, newLines, bankAccountNo);
+      await insertLinesInBatches(transaction, importId, bankCode, newLines, bankAccountNo, hasSenderColumns);
 
       await transaction.commit();
 
@@ -267,11 +306,17 @@ export async function POST(req: NextRequest) {
         bankAccountNo,
         rowCount: newLines.length,
         skippedCount: overlap.overlapCount,
+        side: importSide,
+        // รายการของอีกฝั่งที่ไม่ได้นำเข้ารอบนี้ (เป็นงานของอีกทีม)
+        otherSideCount,
         periodStart: newPeriodStart,
         periodEnd: newPeriodEnd,
       });
     } catch (err) {
       await transaction.rollback();
+      if (err instanceof PeriodClosedError) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
       if (err instanceof ImportBlockedError) {
         return NextResponse.json(err.body, { status: err.status });
       }

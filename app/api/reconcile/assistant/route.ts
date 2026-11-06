@@ -12,7 +12,8 @@ import {
   type AssistantGlLine,
 } from '../../../../lib/matchAssistant';
 import { glAmount, glDirection } from '../../../../lib/glAmount';
-import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
+import { bankAccountColumnsReady, statementSenderColumnsReady } from '../../../../lib/bankAccountDb';
+import { extractSenderFromText } from '../../../../lib/bankParsers/senderExtractor';
 import { cancelledGlEntryNos } from '../../../../lib/cancelledGl';
 
 // ข้อมูลต้องสดทุกครั้ง — รายการที่เพิ่งจับคู่ไปต้องไม่โผล่เป็นคำแนะนำอีก
@@ -65,9 +66,16 @@ export async function GET(req: NextRequest) {
 
     const pool = await getPool();
     // ขอบเขตต้องตรงกับ /api/reconcile/data เป๊ะ ทั้งเรื่องบัญชีและ ORDER BY
-    const byAccount = (await bankAccountColumnsReady()) && Boolean(bankAccountNo);
+    const [accountReady, hasSender] = await Promise.all([
+      bankAccountColumnsReady(),
+      statementSenderColumnsReady(),
+    ]);
+    const byAccount = accountReady && Boolean(bankAccountNo);
 
     // ORDER BY ต้องเหมือน /api/reconcile/data — การจับกลุ่มวันเดียวกันขึ้นกับลำดับรายการ
+    // เมื่อ byAccount = true เราดึงทุกบัญชีที่ยังไม่จับคู่ในช่วงเวลามาด้วย เพื่อให้:
+    //   1) ตรวจพบ GL ต่างบัญชีที่อาจลงผิดบัญชีใน BC365 (Cross-Account alert)
+    //   2) กัน GL ต่างบัญชีที่มีคู่ Statement ของบัญชีตัวเองในวันเดียวกันอยู่แล้วออก (ไม่เตือนมั่ว)
     const bankRequest = pool
       .request()
       .input('bankCode', sql.NVarChar, bankCode)
@@ -75,12 +83,12 @@ export async function GET(req: NextRequest) {
       .input('to', sql.Date, scanTo);
     if (byAccount) bankRequest.input('bankAccountNo', sql.NVarChar, bankAccountNo);
     const bankQuery = bankRequest.query(`
-        SELECT LineId, TranDate, Description, Debit, Credit, ChequeNo, Channel
+        SELECT LineId, TranDate, Description, Debit, Credit, ChequeNo, Channel, RawDescription,
+               ${accountReady ? 'COALESCE(BankAccountNo, CASE WHEN BankCode = @bankCode THEN @bankAccountNo ELSE NULL END) AS BankAccountNo,' : 'NULL AS BankAccountNo,'}
+               ${hasSender ? 'SenderBank, SenderAccountNo, SenderAccountName' : 'NULL AS SenderBank, NULL AS SenderAccountNo, NULL AS SenderAccountName'}
         FROM BankStatementLine
         WHERE MatchStatus = 'UNMATCHED'
-          ${byAccount
-            ? 'AND (BankAccountNo = @bankAccountNo OR (BankAccountNo IS NULL AND BankCode = @bankCode))'
-            : 'AND BankCode = @bankCode'}
+          ${byAccount ? '' : 'AND BankCode = @bankCode'}
           AND TranDate >= @from AND TranDate <= @to
         ORDER BY TranDate DESC, LineId DESC
       `);
@@ -90,14 +98,13 @@ export async function GET(req: NextRequest) {
       .input('bankCode', sql.NVarChar, bankCode)
       .input('from', sql.Date, scanFrom)
       .input('to', sql.Date, scanTo);
-    if (byAccount) glRequest.input('bankAccountNo', sql.NVarChar, bankAccountNo);
     const glQuery = glRequest.query(`
-        SELECT e.Entry_No, e.Bank_Account_No, COALESCE(m.BankAccountName, e.Bank_Account_Name) AS AccountName,
+        SELECT e.Entry_No, e.Bank_Account_No, m.BankCode,
+               COALESCE(m.BankAccountName, e.Bank_Account_Name) AS AccountName,
                e.Posting_Date, e.Document_No, e.Source_Code, e.Debit_Amount_LCY, e.Credit_Amount_LCY
         FROM BankAccountLedgerEntries e
         JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
-        WHERE m.BankCode = @bankCode
-          ${byAccount ? 'AND e.Bank_Account_No = @bankAccountNo' : ''}
+        WHERE ${byAccount ? 'm.BankCode IS NOT NULL' : 'm.BankCode = @bankCode'}
           AND NOT EXISTS (
                 SELECT 1 FROM ReconciliationMatchLine rml
                 JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
@@ -111,8 +118,12 @@ export async function GET(req: NextRequest) {
       bankQuery, glQuery, cancelledGlEntryNos(pool),
     ]);
 
-    const bankLines = bankResult.recordset.map(
-      (r): AssistantBankLine => ({
+    const bankLines = bankResult.recordset.map((r): AssistantBankLine => {
+      const fallback =
+        !r.SenderBank && !r.SenderAccountNo && !r.SenderAccountName
+          ? extractSenderFromText(r.RawDescription)
+          : null;
+      return {
         lineId: Number(r.LineId),
         date: toIsoDate(r.TranDate),
         direction: r.Credit !== null ? 'IN' : 'OUT',
@@ -120,8 +131,13 @@ export async function GET(req: NextRequest) {
         description: r.Description ?? '',
         ref: r.ChequeNo && r.ChequeNo !== '0' ? `Chq ${r.ChequeNo}` : `L-${r.LineId}`,
         channel: r.Channel ?? null,
-      })
-    );
+        accountNo: r.BankAccountNo ?? null,
+        rawDescription: r.RawDescription ?? null,
+        senderBank: r.SenderBank ?? fallback?.senderBank ?? null,
+        senderAccountNo: r.SenderAccountNo ?? fallback?.senderAccountNo ?? null,
+        senderAccountName: r.SenderAccountName ?? fallback?.senderAccountName ?? null,
+      };
+    });
 
     // คู่กลับรายการใน BC ถูกแยกออกจากตารางใน /api/reconcile/data แล้ว — ต้องตัดออกแบบเดียวกัน
     // ไม่งั้นผู้ช่วยจะเสนอใบที่ถูกยกเลิกไปแล้วให้จับคู่กับเงินจริงในธนาคาร และจับกลุ่มวันเดียวกันไม่ตรงกับตาราง
@@ -136,17 +152,20 @@ export async function GET(req: NextRequest) {
         documentNo: r.Document_No ?? '',
         accountNo: r.Bank_Account_No ?? '',
         accountName: r.AccountName?.trim() ? r.AccountName : null,
+        bankCode: r.BankCode ?? null,
       })
     );
 
-    // ตัดทิศทางอื่นทิ้งก่อนเข้า engine ได้เลย ผลของฝั่งที่เหลือไม่เปลี่ยน — การจับกลุ่มวันเดียวกัน
-    // การจับคู่ และการนับคู่แข่ง แยกตามทิศทางอยู่แล้วทั้งหมด (IN ไม่มีทางแย่ง GL กับ OUT)
+    // ส่ง bankLines และ glLines ทั้งหมดเข้า engine เพื่อให้ตรวจจับเคส "บันทึกผิดฝั่ง" (IN vs OUT)
+    // และ "Statement ต่างบัญชี" ได้ โดย engine จะกรอง activeDirection ให้เอง
     const result = findNearDateMatches({
-      bankLines: direction ? bankLines.filter((l) => l.direction === direction) : bankLines,
-      glLines: direction ? glLines.filter((l) => l.direction === direction) : glLines,
+      bankLines,
+      glLines,
       periodFrom: toIsoDate(range.from),
       periodTo: toIsoDate(range.to),
       windowDays,
+      bankAccountNo: byAccount ? bankAccountNo : null,
+      activeDirection: direction,
     });
 
     return NextResponse.json(result);

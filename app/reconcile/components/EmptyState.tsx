@@ -22,7 +22,7 @@ export default function EmptyState({ onStart }: { onStart: () => void }) {
         </div>
         <h2 className="text-base font-semibold text-gray-900 mb-1.5">เริ่มต้นกระทบยอดธนาคาร</h2>
         <p className="text-sm text-gray-500 mb-6">
-          เลือกบัญชีธนาคารและช่วงวันที่ เพื่อเปรียบเทียบรายการธนาคารกับรายการบัญชีใน BC365
+          เลือกบัญชีธนาคารและช่วงวันที่เพื่อเริ่มงาน
         </p>
         <button
           onClick={onStart}

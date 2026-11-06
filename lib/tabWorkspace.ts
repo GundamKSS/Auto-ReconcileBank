@@ -1,4 +1,5 @@
-import { firstAllowedPath, menuItems, normalizeRole } from './menu';
+import { firstAllowedPath, menuItems } from './menu';
+import { storedAppRole } from './roles';
 
 const PREFIX = 'autorecon:tab:v1:';
 const LAST_PAGE = 'last-page';
@@ -61,8 +62,8 @@ export function rememberWorkspacePath(pathname: string, username?: string | null
   }
 }
 
-export function resumeWorkspacePath(user: { username: string; roleProg: string | null }): string {
-  const role = normalizeRole(user.roleProg);
+export function resumeWorkspacePath(user: { username: string; roleProg: string | null; effectiveRole?: string | null }): string {
+  const role = storedAppRole(user);
   const saved = readTabValue(tabStorageKey(LAST_PAGE, user.username));
   const page = menuItems.find((item) => item.href === saved && item.auth.includes(role));
   return page?.href ?? firstAllowedPath(role) ?? '/login';

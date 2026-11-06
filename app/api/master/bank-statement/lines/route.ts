@@ -6,6 +6,7 @@ import { requireRole } from '../../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../../lib/roles';
 import { badRequest } from '../../../../../lib/apiInput';
 import { bankLineWhere, bindBankLineFilters, parseBankLineFilters } from '../../../../../lib/masterBankLinesQuery';
+import { statementSenderColumnsReady } from '../../../../../lib/bankAccountDb';
 
 const PAGE_SIZE = 50;
 
@@ -27,14 +28,16 @@ export async function GET(req: NextRequest) {
     const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
 
     const where = bankLineWhere(filters);
-    const pool = await getPool();
+    const [pool, hasSender] = await Promise.all([getPool(), statementSenderColumnsReady()]);
 
     const linesQuery = bindBankLineFilters(pool.request(), filters)
       .input('offset', sql.Int, offset)
       .input('limit', sql.Int, PAGE_SIZE)
       .query(`
         SELECT LineId, ImportId, BankCode, TranDate, Description, Debit, Credit, Balance,
-               ChequeNo, Channel, RawDescription, UPPER(MatchStatus) AS MatchStatus, CreatedAt
+               ChequeNo, Channel, RawDescription,
+               ${hasSender ? 'SenderBank, SenderAccountNo, SenderAccountName,' : 'NULL AS SenderBank, NULL AS SenderAccountNo, NULL AS SenderAccountName,'}
+               UPPER(MatchStatus) AS MatchStatus, CreatedAt
         FROM BankStatementLine
         ${where}
         ORDER BY TranDate ASC, LineId ASC

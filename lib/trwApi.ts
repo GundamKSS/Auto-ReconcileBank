@@ -30,6 +30,8 @@ export type UserSession = {
   role: string | null;
   // สิทธิ์ในโปรแกรมนี้ (Admin/User/Dev) — ตัวที่คุมเมนูและ RouteGuard
   roleProg: string | null;
+  // roleProg หลังปรับด้วยสิทธิ์ในโปรแกรม (MASTER → Admin, REPORT → User) — ใช้แทน roleProg ผ่าน storedAppRole
+  effectiveRole?: string | null;
   // สิทธิ์ทุกโปรแกรมที่ผู้ใช้มี — เก็บไว้เผื่อทำเมนูสลับโปรแกรมภายหลัง
   programs: ProgramAccess[];
 };

@@ -7,7 +7,8 @@ import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../../lib/apiInput';
 import { glAmount, glDirection } from '../../../../lib/glAmount';
-import { bankAccountColumnsReady } from '../../../../lib/bankAccountDb';
+import { bankAccountColumnsReady, statementSenderColumnsReady } from '../../../../lib/bankAccountDb';
+import { extractSenderFromText } from '../../../../lib/bankParsers/senderExtractor';
 import { cancelledGlEntryNos } from '../../../../lib/cancelledGl';
 // กัน Next.js cache response ของ route นี้ไว้ (ต้องเป็นข้อมูลสดทุกครั้ง เพราะ filter วันที่/ธนาคารเปลี่ยนได้ตลอด)
 export const dynamic = 'force-dynamic';
@@ -47,7 +48,10 @@ export async function GET(req: NextRequest) {
     }
 
     const pool = await getPool();
-    const accountReady = await bankAccountColumnsReady();
+    const [accountReady, hasSender] = await Promise.all([
+      bankAccountColumnsReady(),
+      statementSenderColumnsReady(),
+    ]);
     const byAccount = accountReady && Boolean(bankAccountNo);
 
     const bankRequest = pool.request();
@@ -65,7 +69,8 @@ export async function GET(req: NextRequest) {
       : '';
     const bankQuery = bankRequest.query(`
       SELECT LineId, BankCode, ${accountReady ? 'BankAccountNo' : 'NULL AS BankAccountNo'},
-             TranDate, Description, Debit, Credit, ChequeNo
+             TranDate, Description, Debit, Credit, ChequeNo, RawDescription,
+             ${hasSender ? 'SenderBank, SenderAccountNo, SenderAccountName' : 'NULL AS SenderBank, NULL AS SenderAccountNo, NULL AS SenderAccountName'}
       FROM BankStatementLine
       WHERE MatchStatus = 'UNMATCHED'
         ${bankAccountScope}
@@ -104,16 +109,81 @@ export async function GET(req: NextRequest) {
       bankQuery, glQuery, cancelledGlEntryNos(pool),
     ]);
 
-    const bankLines = bankResult.recordset.map((r) => ({
-      id: `bank-${r.LineId}`,
-      lineId: Number(r.LineId),
-      bankCode: r.BankCode,
-      accountNo: r.BankAccountNo ?? null,
-      date: r.TranDate,
-      ref: r.ChequeNo && r.ChequeNo !== '0' ? `Chq ${r.ChequeNo}` : `L-${r.LineId}`,
-      direction: r.Credit !== null ? 'IN' : 'OUT',
-      description: r.Description,
-      amount: r.Credit !== null ? r.Credit : r.Debit,
+    const rawBankLines = bankResult.recordset.map((r) => {
+      const fallback =
+        !r.SenderBank && !r.SenderAccountNo && !r.SenderAccountName
+          ? extractSenderFromText(r.RawDescription)
+          : null;
+      const senderBank = r.SenderBank ?? fallback?.senderBank ?? null;
+      const senderAccountNo = r.SenderAccountNo ?? fallback?.senderAccountNo ?? null;
+      const senderAccountName = r.SenderAccountName ?? fallback?.senderAccountName ?? null;
+
+      return {
+        id: `bank-${r.LineId}`,
+        lineId: Number(r.LineId),
+        bankCode: r.BankCode,
+        accountNo: r.BankAccountNo ?? null,
+        date: r.TranDate,
+        ref: r.ChequeNo && r.ChequeNo !== '0' ? `Chq ${r.ChequeNo}` : `L-${r.LineId}`,
+        direction: r.Credit !== null ? 'IN' : 'OUT',
+        description: r.Description,
+        rawDescription: r.RawDescription ?? null,
+        senderBank,
+        senderAccountNo,
+        senderAccountName,
+        amount: r.Credit !== null ? r.Credit : r.Debit,
+      };
+    });
+
+    // ค้นประวัติการจับคู่ในอดีตของผู้โอนแต่ละราย เพื่อช่วยแนะนำว่าเคยจับคู่กับเอกสาร GL ใด
+    const senderHintMap = new Map<string, string>();
+    if (hasSender) {
+      const validNos = [...new Set(rawBankLines.map((l) => l.senderAccountNo).filter((n): n is string => Boolean(n)))].slice(0, 50);
+      const validNames = [...new Set(rawBankLines.map((l) => l.senderAccountName).filter((n): n is string => Boolean(n)))].slice(0, 50);
+
+      if (validNos.length > 0 || validNames.length > 0) {
+        try {
+          const hintReq = pool.request();
+          const orClauses: string[] = [];
+          validNos.forEach((no, i) => {
+            hintReq.input(`sno${i}`, sql.NVarChar(50), no);
+            orClauses.push(`b.SenderAccountNo = @sno${i}`);
+          });
+          validNames.forEach((name, i) => {
+            hintReq.input(`sname${i}`, sql.NVarChar(255), name);
+            orClauses.push(`b.SenderAccountName = @sname${i}`);
+          });
+
+          const hintRes = await hintReq.query(`
+            SELECT b.SenderAccountNo, b.SenderAccountName,
+                   MAX(g.Document_No) AS LastDocNo,
+                   COUNT(DISTINCT rm.MatchId) AS MatchCount
+            FROM BankStatementLine b
+            JOIN ReconciliationMatchLine rml_b ON rml_b.BankLineId = b.LineId AND rml_b.SourceType = 'BANK' AND rml_b.Status = 'ACTIVE'
+            JOIN ReconciliationMatch rm ON rm.MatchId = rml_b.MatchId AND rm.Status = 'ACTIVE'
+            JOIN ReconciliationMatchLine rml_g ON rml_g.MatchId = rm.MatchId AND rml_g.SourceType = 'GL' AND rml_g.Status = 'ACTIVE'
+            JOIN BankAccountLedgerEntries g ON g.Entry_No = rml_g.GLEntryNo
+            WHERE b.MatchStatus = 'MATCHED' AND (${orClauses.join(' OR ')})
+            GROUP BY b.SenderAccountNo, b.SenderAccountName
+          `);
+
+          for (const row of hintRes.recordset) {
+            const hintText = `เคยคู่กับ ${row.LastDocNo} (${row.MatchCount} ครั้ง)`;
+            if (row.SenderAccountNo) senderHintMap.set(row.SenderAccountNo, hintText);
+            if (row.SenderAccountName) senderHintMap.set(row.SenderAccountName, hintText);
+          }
+        } catch (hintErr) {
+          console.warn('Sender hint lookup warning:', hintErr);
+        }
+      }
+    }
+
+    const bankLines = rawBankLines.map((l) => ({
+      ...l,
+      senderHint:
+        (l.senderAccountNo && senderHintMap.get(l.senderAccountNo)) ||
+        (l.senderAccountName && senderHintMap.get(l.senderAccountName)) ||
+        null,
     }));
 
     const toGlLine = (r: (typeof glResult.recordset)[number]) => ({

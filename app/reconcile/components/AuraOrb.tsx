@@ -1,62 +1,54 @@
 "use client";
 
-import { WandSparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
-// สีออร่าของผู้ช่วยหาคู่ — ใช้ร่วมกันทั้งลูกแก้ว ขอบ modal และปุ่มเปิดในหน้า workspace
-export const AURA_GRADIENT = "conic-gradient(from 0deg, #8b5cf6, #3b82f6, #22d3ee, #e879f9, #8b5cf6)";
+// สีเกรเดียนต์ของระบบผู้ช่วยจับคู่ — ใช้โทน Indigo / Blue สุขุม น่าเชื่อถือ
+export const AURA_GRADIENT = "linear-gradient(135deg, #4f46e5, #2563eb, #6366f1)";
 
-// ลูกแก้วออร่า: size="lg" ตอนกำลังค้นหา / size="sm" เป็นไอคอนหัว modal
-// เป็น CSS animation ล้วน (globals.css: animate-aura-*) — ผู้ใช้ที่ตั้ง reduced motion จะเห็นเป็นภาพนิ่ง
+// ดาว 4 แฉกทรงคมชัด สำหรับกะพริบจังหวะสลับกัน
+function FourPointStar({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M12 2C12.7 7.6 16.4 11.3 22 12C16.4 12.7 12.7 16.4 12 22C11.3 16.4 7.6 12.7 2 12C7.6 11.3 11.3 7.6 12 2Z" />
+    </svg>
+  );
+}
+
+// ไอคอนผู้ช่วยจับคู่: size="lg" ตอนกำลังค้นหา (ดวงดาว Sparkles กะพริบเล็ก-ใหญ่สลับจังหวะ)
+// size="sm" เป็นไอคอนหัว modal
 export default function AuraOrb({ size = "lg", active = true }: { size?: "sm" | "lg"; active?: boolean }) {
   if (size === "sm") {
     return (
-      <span className="relative inline-flex size-9 shrink-0 items-center justify-center" aria-hidden>
-        <span
-          className={`absolute inset-0 rounded-full opacity-60 blur-md ${active ? "animate-aura-spin" : ""}`}
-          style={{ background: AURA_GRADIENT }}
+      <span
+        className="relative inline-flex size-9 shrink-0 items-center justify-center rounded-xl border border-indigo-200/80 bg-gradient-to-br from-indigo-50 via-white to-blue-50 shadow-xs"
+        aria-hidden
+      >
+        <Sparkles
+          size={17}
+          className={`text-indigo-600 ${active ? "animate-sparkle-main" : ""}`}
         />
-        <span
-          className={`absolute inset-0 rounded-full p-[2px] ${active ? "animate-aura-spin-fast" : ""}`}
-          style={{ background: AURA_GRADIENT }}
-        >
-          <span className="block size-full rounded-full bg-white" />
-        </span>
-        <WandSparkles size={16} className="relative text-violet-600" />
       </span>
     );
   }
 
   return (
-    // shrink-0: บนจอเตี้ย flex column จะบีบความสูงลงแต่ไม่บีบความกว้าง ลูกแก้วเลยกลายเป็นวงรีเบี้ยว
-    <div className="relative size-44 shrink-0" aria-hidden>
-      {/* หมอกแสงรอบนอก */}
-      <div
-        className="absolute -inset-12 rounded-full opacity-45 blur-3xl animate-aura-spin"
-        style={{ background: AURA_GRADIENT }}
-      />
-      {/* คลื่นสแกนขยายออก 3 ชั้น */}
-      <span className="absolute inset-3 rounded-full border-2 border-violet-400/60 animate-aura-ping" />
-      <span className="absolute inset-3 rounded-full border-2 border-cyan-400/60 animate-aura-ping [animation-delay:0.8s]" />
-      <span className="absolute inset-3 rounded-full border-2 border-fuchsia-400/50 animate-aura-ping [animation-delay:1.6s]" />
-      {/* วงแหวนไล่สีหมุน */}
-      <div
-        className="absolute inset-6 rounded-full p-[3px] shadow-[0_0_40px_rgba(139,92,246,0.45)] animate-aura-spin-fast"
-        style={{ background: AURA_GRADIENT }}
-      >
-        <div className="size-full rounded-full bg-white/90 backdrop-blur-xl" />
-      </div>
-      {/* จุดแสงโคจร */}
-      <div className="absolute inset-2 animate-aura-spin">
-        <span className="absolute left-1/2 top-0 size-2 -translate-x-1/2 rounded-full bg-cyan-400 shadow-[0_0_12px_#22d3ee]" />
-      </div>
-      <div className="absolute inset-4 animate-aura-spin-fast [animation-direction:reverse]">
-        <span className="absolute bottom-0 left-1/2 size-1.5 -translate-x-1/2 rounded-full bg-fuchsia-400 shadow-[0_0_10px_#e879f9]" />
-      </div>
-      {/* แกนกลาง */}
-      <div className="absolute inset-0 flex items-center justify-center">
-        <div className="animate-aura-breathe">
-          <WandSparkles size={40} className="text-violet-600 drop-shadow-[0_0_12px_rgba(139,92,246,0.6)]" />
-        </div>
+    <div className="relative flex size-28 shrink-0 items-center justify-center" aria-hidden>
+      {/* แสงเรืองรองด้านหลังแบบนุ่มนวล สุขุม */}
+      <div className="absolute inset-1 rounded-full bg-indigo-500/10 blur-xl animate-aura-breathe" />
+
+      {/* วงแหวนบางเบา */}
+      <div className="absolute inset-3 rounded-full border border-indigo-200/60 bg-gradient-to-b from-white via-indigo-50/40 to-blue-50/50 shadow-[0_8px_30px_rgba(79,70,229,0.12)]" />
+
+      {/* ดวงดาวหลักตรงกลาง + ดาวดวงเล็กกะพริบสลับจังหวะเล็ก-ใหญ่ */}
+      <div className="relative flex size-16 items-center justify-center">
+        {/* ดวงหลักตรงกลาง */}
+        <FourPointStar className="size-10 text-indigo-600 drop-shadow-[0_2px_10px_rgba(79,70,229,0.28)] animate-sparkle-main" />
+        {/* ดวงรองมุมขวาบน */}
+        <FourPointStar className="absolute right-0.5 top-0.5 size-4 text-blue-500 animate-sparkle-twinkle-1" />
+        {/* ดวงรองมุมซ้ายล่าง */}
+        <FourPointStar className="absolute bottom-1 left-0.5 size-3.5 text-violet-500 animate-sparkle-twinkle-2" />
+        {/* ดวงเล็กมุมซ้ายบน */}
+        <FourPointStar className="absolute left-2 top-2 size-2.5 text-indigo-400 animate-sparkle-twinkle-3" />
       </div>
     </div>
   );

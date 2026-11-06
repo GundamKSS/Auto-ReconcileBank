@@ -67,7 +67,7 @@ export default function MatchConfirmModal({
               ยืนยันการจับคู่ {groups.length} กลุ่ม
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              รวม Bank {totalBankCount} รายการ กับ BC365 {totalGlCount} รายการ จะถูกบันทึกเป็น {groups.length} รายการจับคู่แยกกัน
+              Bank {totalBankCount} รายการ · BC365 {totalGlCount} รายการ · บันทึกแยก {groups.length} กลุ่ม
             </p>
           </div>
           <button

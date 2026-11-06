@@ -1,4 +1,6 @@
 // รูปแบบข้อมูลจาก GET /api/reconcile/balance — ใช้ร่วมกันระหว่างป้ายยอดคงเหลือกับหน้าต่างสรุปยอด
+import type { PeriodWorkflow } from '../../../lib/periodWorkflow';
+import type { PeriodCheck } from '../../../lib/periodCloseChecks';
 
 export type BalanceDay = {
   date: string;
@@ -25,6 +27,9 @@ export type BalanceData = {
     statementClosing: number | null;
     chainOk: boolean;
     lineCount: number;
+    /** วันที่ของรายการสุดท้ายในไฟล์ แยกตามฝั่ง ใช้ตรวจว่านำเข้าถึงวันสิ้นงวดแล้วหรือยัง */
+    lastDateIn: string | null;
+    lastDateOut: string | null;
   };
   gl: {
     opening: number | null;
@@ -43,6 +48,8 @@ export type BalanceData = {
   breakdown: {
     openingDifference: number | null;
     bankUnmatched: { count: number; net: number };
+    /** รายการธนาคารที่ยังไม่จับคู่ แยกตามฝั่ง (เงินเข้า = AR, เงินออก = AP) */
+    bankUnmatchedByDirection: { IN: { count: number; net: number }; OUT: { count: number; net: number } };
     glUnmatched: { count: number; net: number };
     glSuspense: { count: number; net: number };
     glOffset: { count: number; net: number };
@@ -68,9 +75,18 @@ export type BalanceData = {
   daily: BalanceDay[];
   // null = ยังไม่รัน sql/008_period_close.sql — ฟีเจอร์ปิดงวดใช้ไม่ได้ ซ่อน UI ที่เกี่ยวข้องทั้งหมด
   periodClose: PeriodCloseStatus | null;
+  workApproval: PeriodWorkflow;
+  /**
+   * ผลตรวจเงื่อนไขปิดงวดตาม docs/spec-matching-period-close.md
+   * โหมดปัจจุบันคือเตือนอย่างเดียว ยังยืนยันงานและปิดงวดได้ตามปกติ
+   * undefined = เซิร์ฟเวอร์รุ่นเก่าที่ยังไม่ส่งมา
+   */
+  checks?: PeriodCheck[];
 };
 
 export type PeriodCloseStatus = {
+  periodStart: string | null;
+  periodEnd: string | null;
   status: 'OPEN' | 'CLOSED' | 'REOPENED';
   closedBy: string | null;
   closedAt: string | null;

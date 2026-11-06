@@ -2,8 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
 import { requireRole } from '../../../../lib/session';
+import { assertWorkSides, WorkPermissionError } from '../../../../lib/workRolesDb';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { assertDatesOpen, isoDate, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
+import { glSignedSql } from '../../../../lib/glAmount';
 
 type UnsuspendItem = {
   matchId: number;
@@ -66,19 +68,20 @@ export async function POST(req: NextRequest) {
           if (allIds.length > 0) {
             const idsCsv = allIds.join(',');
             const datesResult = await new sql.Request(transaction).input('matchId', sql.Int, matchId).query(`
-              SELECT b.TranDate AS Dt FROM ReconciliationMatchLine rml
+              SELECT b.TranDate AS Dt, CASE WHEN b.Credit IS NOT NULL THEN 'IN' ELSE 'OUT' END AS Direction FROM ReconciliationMatchLine rml
                 JOIN BankStatementLine b ON b.LineId = rml.BankLineId
                 WHERE rml.MatchId = @matchId AND rml.SourceType = 'BANK' AND rml.BankLineId IN (${idsCsv})
               UNION ALL
-              SELECT g.Posting_Date AS Dt FROM ReconciliationMatchLine rml
+              SELECT g.Posting_Date AS Dt, CASE WHEN ${glSignedSql('g')} > 0 THEN 'IN' ELSE 'OUT' END AS Direction FROM ReconciliationMatchLine rml
                 JOIN BankAccountLedgerEntries g ON g.Entry_No = rml.GLEntryNo
                 WHERE rml.MatchId = @matchId AND rml.SourceType = 'GL' AND rml.GLEntryNo IN (${idsCsv})
             `);
             await assertDatesOpen(
               transaction,
               BankAccountNo,
-              datesResult.recordset.map((r) => isoDate(r.Dt))
+              datesResult.recordset.map((r) => ({ date: isoDate(r.Dt), direction: r.Direction }))
             );
+            await assertWorkSides(auth.session, datesResult.recordset.map((r) => r.Direction), transaction);
           }
         }
 
@@ -124,6 +127,7 @@ export async function POST(req: NextRequest) {
     } catch (err) {
       await transaction.rollback();
       // ไม่พบ MatchId / ไม่ใช่รายการ Suspense = ข้อมูลที่เลือกมาไม่ตรงกับของจริงแล้ว ตอบ 409
+      if (err instanceof WorkPermissionError) return NextResponse.json({ error: err.message }, { status: err.status });
       if (err instanceof Error) {
         return NextResponse.json({ error: err.message }, { status: 409 });
       }

@@ -1,5 +1,7 @@
 'use client';
 
+import { memo } from 'react';
+
 import { Area, AreaChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { STATUS_COLOR, STATUS_LABEL, formatCount, type DashboardData } from './shared';
 
@@ -37,7 +39,7 @@ function legendFormatter(key: unknown): string {
   return KEY_LABEL[String(key)] ?? String(key);
 }
 
-export default function DailyChart({ data }: { data: DashboardData }) {
+function DailyChart({ data }: { data: DashboardData }) {
   // เดือนปัจจุบันหยุดกราฟไว้ที่วันนี้ ไม่ลากหางศูนย์ไปจนสิ้นเดือน (asOf คำนวณมาจาก API แล้ว)
   const end = data.asOf >= data.from ? data.asOf : data.from;
 
@@ -54,7 +56,7 @@ export default function DailyChart({ data }: { data: DashboardData }) {
   });
 
   return (
-    <div className="h-[300px] w-full">
+    <div className="dashboard-chart-enter h-[300px] w-full">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={series} margin={{ top: 5, right: 8, bottom: 0, left: -12 }}>
           <defs>
@@ -82,19 +84,25 @@ export default function DailyChart({ data }: { data: DashboardData }) {
             tickFormatter={(v: number) => formatCount(v)}
           />
 
-          <Tooltip labelFormatter={labelFormatter} formatter={tooltipFormatter} />
+          <Tooltip
+            labelFormatter={labelFormatter}
+            formatter={tooltipFormatter}
+            contentStyle={{ borderRadius: 16, border: '1px solid #e2e8f0', boxShadow: '0 10px 35px rgba(30,64,175,0.06)', fontSize: 12 }}
+          />
 
           <Legend formatter={legendFormatter} iconType="circle" wrapperStyle={{ fontSize: 12 }} />
 
           <Area
+            isAnimationActive={false}
             type="monotone"
             dataKey="matched"
             stroke={STATUS_COLOR.MATCHED}
             strokeWidth={3}
             fill="url(#dailyMatched)"
           />
-          <Area type="monotone" dataKey="suspense" stroke={STATUS_COLOR.SUSPENSE} strokeWidth={2} fill="transparent" />
+          <Area isAnimationActive={false} type="monotone" dataKey="suspense" stroke={STATUS_COLOR.SUSPENSE} strokeWidth={2} fill="transparent" />
           <Area
+            isAnimationActive={false}
             type="monotone"
             dataKey="unmatched"
             stroke={STATUS_COLOR.UNMATCHED}
@@ -106,3 +114,5 @@ export default function DailyChart({ data }: { data: DashboardData }) {
     </div>
   );
 }
+
+export default memo(DailyChart, (previous, next) => previous.data.daily === next.data.daily && previous.data.from === next.data.from && previous.data.asOf === next.data.asOf);

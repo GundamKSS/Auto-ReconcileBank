@@ -23,7 +23,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
     <MotionConfig reducedMotion="user">
       <RouteGuard>
         {showSidebar && <Sidebar />}
-        <div key={pathname} className="page-enter">
+        <div key={pathname} className={pathname === '/dashboard' ? 'page-enter page-enter-fade' : 'page-enter'}>
           {children}
         </div>
       </RouteGuard>

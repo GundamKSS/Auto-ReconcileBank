@@ -13,6 +13,7 @@
 //   SUSPENSE General Ledger (BC365) →  การ์ดบัญชีพักโอน          (ไม่มีฝั่ง Bank เพราะยังรอคู่)
 //   EXCLUDED General Ledger (BC365) ⊘  การ์ดไม่นำมาจับคู่
 
+import HelpTooltip from '../../../../components/HelpTooltip';
 import { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
@@ -157,6 +158,11 @@ function LineRow({
         .filter(Boolean)
         .join(" · ") || "—";
 
+  const senderInfo = isBank
+    ? [line.senderBank, line.senderAccountNo, line.senderAccountName].filter(Boolean).join(" · ") ||
+      (line.rawDescription && line.rawDescription !== line.description ? line.rawDescription : null)
+    : null;
+
   return (
     <div
       onMouseEnter={() => onHoverGroup(entry.num)}
@@ -230,6 +236,11 @@ function LineRow({
         <p className={`truncate text-xs ${reversed ? "text-gray-400 line-through" : "text-gray-600"}`} title={detail}>
           {detail}
         </p>
+        {senderInfo && (
+          <p className="truncate text-[11px] text-gray-500 font-mono mt-0.5" title={senderInfo}>
+            {senderInfo}
+          </p>
+        )}
       </div>
       <span
         className={`whitespace-nowrap pt-0.5 text-sm font-semibold tabular-nums ${
@@ -414,7 +425,7 @@ function DestinationCard({
           {icon}
         </span>
         <div className="min-w-0">
-          <p className={`truncate text-xs font-semibold ${isAmber ? "text-amber-900" : "text-slate-800"}`}>{title}</p>
+          <div className="flex items-center gap-1"><p className={`truncate text-xs font-semibold ${isAmber ? "text-amber-900" : "text-slate-800"}`}>{title}</p><HelpTooltip label={`เกี่ยวกับ${title}`}>{note}</HelpTooltip></div>
           <p className={`truncate text-[10px] ${isAmber ? "text-amber-600" : "text-slate-500"}`}>{subtitle}</p>
         </div>
       </div>
@@ -444,14 +455,7 @@ function DestinationCard({
         </div>
       </div>
 
-      <div
-        className={`border-t border-dashed px-3 py-2 text-[11px] leading-relaxed ${
-          isAmber ? "border-amber-200 text-amber-800" : "border-slate-200 text-slate-600"
-        }`}
-      >
-        {note}
-        {footer}
-      </div>
+      {footer && <div className={`border-t border-dashed px-3 py-2 text-[11px] leading-relaxed ${isAmber ? "border-amber-200 text-amber-800" : "border-slate-200 text-slate-600"}`}>{footer}</div>}
     </div>
   );
 }

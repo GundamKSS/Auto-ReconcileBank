@@ -1,5 +1,7 @@
 import sql from 'mssql';
 import { getPool } from './db';
+import { findBlockingApproval, workLabel, type WorkDate } from './periodWorkflow';
+import { lockReconciliationAccount, readWorkApprovals, workApprovalReady } from './periodWorkflowDb';
 
 // รัน sql/008_period_close.sql ไปแล้วหรือยัง — แพทเทิร์นเดียวกับ reconcileExtrasReady
 const READY_RECHECK_MS = 30_000;
@@ -61,9 +63,11 @@ export function findBlockingClosedPeriod(dates: string[], closedPeriods: ClosedP
 export async function assertDatesOpen(
   connection: sql.ConnectionPool | sql.Transaction,
   bankAccountNo: string,
-  dates: string[]
+  dates: (string | WorkDate)[]
 ): Promise<void> {
   if (dates.length === 0) return;
+  if (connection instanceof sql.Transaction) await lockReconciliationAccount(connection, bankAccountNo);
+  const workDates = dates.map((d) => typeof d === 'string' ? { date: d } : d);
   const req = connection instanceof sql.Transaction ? new sql.Request(connection) : new sql.Request(connection);
   const result = await req.input('acc_pc', sql.NVarChar, bankAccountNo).query(`
     SELECT PeriodStart, PeriodEnd, ClosedBy, ClosedAt
@@ -76,11 +80,17 @@ export async function assertDatesOpen(
     periodEnd: isoDate(row.PeriodEnd),
     closedBy: row.ClosedBy,
   }));
-  const blocking = findBlockingClosedPeriod(dates, closedPeriods);
+  const blocking = findBlockingClosedPeriod(workDates.map((d) => d.date), closedPeriods);
   if (blocking) {
     throw new PeriodClosedError(
       `งวด ${blocking.periodStart} ถึง ${blocking.periodEnd} ของบัญชีนี้ปิดแล้ว (ปิดโดย ${blocking.closedBy}) — ` +
         'ต้องเปิดงวดนี้ก่อนจึงจะแก้ไขได้'
     );
+  }
+  if (await workApprovalReady(connection)) {
+    const approval = findBlockingApproval(workDates, await readWorkApprovals(connection, bankAccountNo));
+    if (approval) {
+      throw new PeriodClosedError(`งาน ${workLabel(approval.direction)} ช่วง ${approval.periodStart} ถึง ${approval.periodEnd} ยืนยันแล้วโดย ${approval.confirmedBy} — เปิดงานฝั่งนี้อีกครั้งก่อนแก้ไข`);
+    }
   }
 }

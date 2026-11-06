@@ -14,7 +14,7 @@ import {
   Check,
   Pencil,
   Link2,
-  WandSparkles,
+  Sparkles,
   AlertTriangle,
   Ban,
   ListChecks,
@@ -26,13 +26,16 @@ import { ReconcileSession } from "./types";
 import { extractDisplayNo, shortAccountLabel } from "../../../lib/bankAccounts";
 import MatchAssistantModal from "./MatchAssistantModal";
 import SuspenseConfirmModal from "./SuspenseConfirmModal";
+import { suspenseSelectionProblem } from "../../../lib/suspenseSelection";
 import MatchConfirmModal, { type MatchGroupSummary } from "./MatchConfirmModal";
 import BalanceBadge from "./BalanceBadge";
 import BalanceModal from "./BalanceModal";
 import RemarkActionModal from "./RemarkActionModal";
 import OffsetConfirmModal from "./OffsetConfirmModal";
 import type { BalanceData } from "./balanceTypes";
-import { AURA_GRADIENT } from "./AuraOrb";
+import type { WorkApprovalAction } from "./PeriodWorkflowPanel";
+import { workLabel } from "../../../lib/periodWorkflow";
+import { directionWorkRole, missingWorkSide, visibleWorkSides } from "../../../lib/workRoles";
 import { readTabValue, removeTabValue, tabStorageKey, writeTabValue } from "../../../lib/tabWorkspace";
 
 import { formatAmount } from '../../../lib/formatAmount';
@@ -52,6 +55,11 @@ type BankApiLine = {
   ref: string;
   direction: Direction;
   description: string;
+  rawDescription?: string | null;
+  senderBank?: string | null;
+  senderAccountNo?: string | null;
+  senderAccountName?: string | null;
+  senderHint?: string | null;
   amount: number;
 };
 
@@ -77,6 +85,8 @@ type LineItem = {
   ref: string;
   direction: Direction;
   description: string;
+  senderInfo?: string | null;
+  senderHint?: string | null;
   amount: number;
 };
 
@@ -288,7 +298,7 @@ function DirectionBadge({ direction }: { direction: Direction }) {
   );
 }
 
-function FilterTabs({ value, onChange }: { value: Direction; onChange: (v: Direction) => void }) {
+function FilterTabs({ value, onChange, blocked = [] }: { value: Direction; onChange: (v: Direction) => void; blocked?: Direction[] }) {
   const options: Direction[] = ["IN", "OUT"];
   return (
     <div className="flex items-center gap-1 shrink-0">
@@ -296,7 +306,9 @@ function FilterTabs({ value, onChange }: { value: Direction; onChange: (v: Direc
         <button
           key={opt}
           onClick={() => onChange(opt)}
-          className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+          disabled={blocked.includes(opt)}
+          title={blocked.includes(opt) ? `ไม่มีสิทธิ์ ${directionWorkRole(opt)} — เปิดได้เฉพาะฝั่งที่ได้รับสิทธิ์` : undefined}
+          className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:text-gray-400 ${
             value === opt
               ? opt === "IN"
                 ? "bg-purple-600 text-white"
@@ -551,6 +563,16 @@ function DateGroupRow({
                       )}
                     </div>
                     <p className="text-sm text-gray-800 truncate">{item.description}</p>
+                    {item.senderInfo && (
+                      <p className="text-[11px] text-gray-500 font-mono truncate" title={item.senderInfo}>
+                        {item.senderInfo}
+                      </p>
+                    )}
+                    {item.senderHint && (
+                      <p className="text-[10px] text-emerald-600 font-medium truncate" title={item.senderHint}>
+                        💡 {item.senderHint}
+                      </p>
+                    )}
                   </div>
                   <span className="text-sm text-gray-700 tabular-nums whitespace-nowrap">{formatAmount(item.amount)}</span>
                 </label>
@@ -575,6 +597,7 @@ function Panel({
   onToggle,
   filter,
   onFilterChange,
+  blockedFilters,
   loading,
   matchReadyDates,
   expandedDates,
@@ -604,6 +627,8 @@ function Panel({
   onToggle: (id: string) => void;
   filter: Direction;
   onFilterChange: (v: Direction) => void;
+  // แท็บฝั่งที่ไม่มีสิทธิ์ AP/AR — กดเปลี่ยนไปไม่ได้
+  blockedFilters?: Direction[];
   loading: boolean;
   matchReadyDates: Set<string>;
   expandedDates: Set<string>;
@@ -688,7 +713,7 @@ function Panel({
             )}
             {extraActions}
           </div>
-          <FilterTabs value={filter} onChange={onFilterChange} />
+          <FilterTabs value={filter} onChange={onFilterChange} blocked={blockedFilters} />
         </div>
       </div>
 
@@ -739,6 +764,7 @@ function ClusterKindToggle({
   checked,
   tone,
   title,
+  disabled,
   onClick,
 }: {
   label: string;
@@ -746,6 +772,7 @@ function ClusterKindToggle({
   checked: boolean;
   tone: "green" | "amber";
   title: string;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   const onStyle =
@@ -754,7 +781,7 @@ function ClusterKindToggle({
   return (
     <button
       onClick={onClick}
-      disabled={count === 0}
+      disabled={count === 0 || disabled}
       title={title}
       className={`flex items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
         checked ? onStyle : "border-gray-200 bg-white text-gray-500 hover:bg-gray-50"
@@ -833,7 +860,8 @@ export default function ActiveWorkspace({
   }, []);
 
   const [glGroupTab, setGlGroupTab] = useState("ALL");
-  const [directionFilter, setDirectionFilter] = useState<Direction>("IN");
+  // แท็บที่ผู้ใช้กดเลือก — ค่าที่ใช้จริงคือ directionFilter (ด้านล่าง) ที่บังคับตามสิทธิ์ AP/AR
+  const [pickedDirection, setDirectionFilter] = useState<Direction>("IN");
   const [selectedBank, setSelectedBank] = useState<Set<string>>(new Set());
   const [selectedGl, setSelectedGl] = useState<Set<string>>(new Set());
 
@@ -882,6 +910,12 @@ export default function ActiveWorkspace({
 
   // ยอดคงเหลือ Bank เทียบ GL ของทั้งงวด — โหลดใหม่ทุกครั้งที่ตารางโหลดใหม่ (หลัง Match/พัก/ยกเลิก)
   const [balanceData, setBalanceData] = useState<BalanceData | null>(null);
+  // สิทธิ์ฝั่งเดียว (AP หรือ AR) → เปิดได้แค่แท็บฝั่งนั้น แม้ draft ที่จำไว้จะเป็นอีกฝั่ง
+  // มีทั้งสองฝั่ง (AP+AR, MASTER, Admin/Dev) หรือยังไม่ได้ติดตั้งสิทธิ์ ดูได้ทั้งสองแท็บ
+  const workPermissions = balanceData?.workApproval?.permissions;
+  const visibleDirections = visibleWorkSides(workPermissions);
+  const blockedDirections: Direction[] = (["IN", "OUT"] as const).filter((d) => !visibleDirections.includes(d));
+  const directionFilter: Direction = blockedDirections.includes(pickedDirection) ? visibleDirections[0] : pickedDirection;
   const [balanceLoading, setBalanceLoading] = useState(false);
   const [balanceError, setBalanceError] = useState("");
   const [balanceOpen, setBalanceOpen] = useState(false);
@@ -1057,6 +1091,15 @@ export default function ActiveWorkspace({
     });
   }, [draftKey, loadData]);
 
+  // เมื่อซิงค์ข้อมูลจาก BC365 เสร็จสิ้น (ทั้งจากเบื้องหลังหลัง Login หรือกดปุ่มซิงค์ที่ Sidebar) ให้รีเฟรชตารางอัตโนมัติ
+  useEffect(() => {
+    const onGlSynced = () => {
+      void loadData();
+    };
+    window.addEventListener("autorecon:gl-synced", onGlSynced);
+    return () => window.removeEventListener("autorecon:gl-synced", onGlSynced);
+  }, [loadData]);
+
   useEffect(() => {
     if (!draftReadyRef.current || loading) return;
     const draft: WorkspaceDraft = {
@@ -1180,13 +1223,31 @@ export default function ActiveWorkspace({
     }
   }
 
+  async function handleWorkApproval(action: WorkApprovalAction): Promise<string | null> {
+    if (!session.bankAccountNo) return "ต้องเลือกบัญชีก่อน";
+    if (busy || syncingGl) return "กรุณารอให้รายการที่กำลังบันทึกหรือซิงก์เสร็จก่อน";
+    try {
+      const res = await fetch("/api/reconcile/work-approval", {
+        method: action.reopen ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...action, bankAccountNo: session.bankAccountNo, acknowledged: true }),
+      });
+      const data = await res.json();
+      await loadBalance();
+      return res.ok ? null : data.error || "บันทึกสถานะงานไม่สำเร็จ";
+    } catch {
+      return "ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาลองใหม่";
+    }
+  }
+
   async function handleReopenPeriod(reason: string): Promise<string | null> {
     if (!session.bankAccountNo) return "ต้องเลือกบัญชีก่อน";
     try {
       const res = await fetch("/api/reconcile/period-close", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bankAccountNo: session.bankAccountNo, periodStart: session.periodStart, reason }),
+        body: JSON.stringify({ bankAccountNo: session.bankAccountNo,
+          periodStart: balanceData?.periodClose?.periodStart ?? session.periodStart, reason }),
       });
       const data = await res.json();
       if (!res.ok) return data.error || "เปิดงวดคืนไม่สำเร็จ";
@@ -1244,15 +1305,26 @@ export default function ActiveWorkspace({
 
   const bankLines: LineItem[] = useMemo(
     () =>
-      bankLinesRaw.map((l) => ({
-        id: l.id,
-        groupKey: l.bankCode,
-        date: l.date,
-        ref: l.ref,
-        direction: l.direction,
-        description: l.description,
-        amount: l.amount,
-      })),
+      bankLinesRaw.map((l) => {
+        const senderParts = [l.senderBank, l.senderAccountNo, l.senderAccountName].filter(Boolean);
+        const senderInfo =
+          senderParts.length > 0
+            ? senderParts.join(" · ")
+            : l.rawDescription && l.rawDescription !== l.description
+            ? l.rawDescription
+            : null;
+        return {
+          id: l.id,
+          groupKey: l.bankCode,
+          date: l.date,
+          ref: l.ref,
+          direction: l.direction,
+          description: l.description,
+          senderInfo,
+          senderHint: l.senderHint ?? null,
+          amount: l.amount,
+        };
+      }),
     [bankLinesRaw]
   );
 
@@ -1435,10 +1507,23 @@ export default function ActiveWorkspace({
 
   const amountMatches = Math.abs(difference) < AMOUNT_TOLERANCE;
   // Suspense พักได้แค่ฝั่ง GL (BC365) เท่านั้น — Bank Statement เป็นข้อมูลหลักจากธนาคาร ห้ามแก้ไข/ห้ามพัก
-  const canMoveToSuspense = selectedGlItems.length > 0;
+  const suspenseProblem = suspenseSelectionProblem(selectedBankItems.length, selectedGlItems.length);
+  const canMoveToSuspense = suspenseProblem === null;
   // งวดนี้ปิดแล้ว — ปิดปุ่มที่แก้ไขข้อมูลกระทบยอดทั้งหมด (server บังคับเหมือนกันอยู่แล้ว แต่ปิดที่ UI ด้วย
   // กันผู้ใช้กดแล้วเจอ error ทั้งที่เห็นแถบ "ปิดงวดแล้ว" อยู่บนจอแล้ว)
-  const periodClosed = balanceData?.periodClose?.status === "CLOSED";
+  const finalPeriodClosed = balanceData?.periodClose?.status === "CLOSED";
+  const sideApproval = balanceData?.workApproval?.approvals.find((a) => a.direction === directionFilter);
+  // ฝั่งที่ไม่ใช่ของตัวเอง (AR แก้งานเงินออก / AP แก้งานเงินเข้า) ล็อกเหมือนงานที่ยืนยันแล้ว — server บังคับซ้ำอีกชั้น
+  const noSideRole = Boolean(missingWorkSide(workPermissions, [directionFilter]));
+  // รายการหักล้างมีทั้งขาเข้าและขาออกเสมอ — มีสิทธิ์ AP หรือ AR ฝั่งใดฝั่งหนึ่งก็ทำได้ (server บังคับแบบเดียวกัน)
+  const noOffsetRole = Boolean(missingWorkSide(workPermissions, ["IN", "OUT"], "any"));
+  const periodClosed = finalPeriodClosed || Boolean(sideApproval) || noSideRole;
+  const anyWorkLocked = finalPeriodClosed || Boolean(balanceData?.workApproval?.approvals.length);
+  const lockMessage = finalPeriodClosed ? "ปิดงวดรวมแล้ว — เปิดงวดอีกครั้งที่หน้ายอดคงเหลือก่อนแก้ไข"
+    : sideApproval ? `งาน ${workLabel(directionFilter)} ยืนยันแล้ว — เปิดงานฝั่งนี้อีกครั้งที่หน้ายอดคงเหลือก่อนแก้ไข`
+      : `ไม่มีสิทธิ์ ${directionWorkRole(directionFilter)} — ดูได้อย่างเดียว แก้ไขได้เฉพาะฝั่งที่ได้รับสิทธิ์`;
+  const lockLabel = finalPeriodClosed ? "ปิดงวดรวมแล้ว"
+    : sideApproval ? `ยืนยัน ${directionWorkRole(directionFilter)} แล้ว` : `ไม่มีสิทธิ์ ${directionWorkRole(directionFilter)}`;
 
   // ล้างเฉพาะรายการที่เลือกไว้ "ในทิศทางที่กำลังดูอยู่" — อีกฝั่งที่อีกคนเลือกไว้ไม่ถูกแตะ
   function handleClear() {
@@ -1594,7 +1679,7 @@ export default function ActiveWorkspace({
   );
 
   function handleMatchClick() {
-    if (!canMatch || busy || syncingGl) return;
+    if (!canMatch || busy || syncingGl || periodClosed) return;
     if (matchPlan.needsRemark) {
       setRemarkError("");
       setRemarkModal("match");
@@ -1611,7 +1696,7 @@ export default function ActiveWorkspace({
   }
 
   async function handleMatch(remark?: string) {
-    if (!canMatch || busy || syncingGl || matchInFlightRef.current) return;
+    if (!canMatch || busy || syncingGl || periodClosed || matchInFlightRef.current) return;
     const startedAt = Date.now();
     matchInFlightRef.current = true;
     setBusy(true);
@@ -1679,11 +1764,11 @@ export default function ActiveWorkspace({
   }
 
   async function handleMoveToSuspense() {
-    if (!canMoveToSuspense || busy || syncingGl) return;
+    if (!canMoveToSuspense || busy || syncingGl || periodClosed) return;
     setBusy(true);
     try {
       const grouped = groupSelectionByDateDirection();
-      // ส่งเฉพาะฝั่ง GL เข้ากลุ่ม suspense — ไม่ส่ง bankLineIds แม้จะมีฝั่ง Bank ถูกเลือกอยู่ด้วยก็ตาม
+      // ผ่านเงื่อนไขเลือกเฉพาะ GL แล้ว จึงสร้างกลุ่มพักโดยไม่มีรายการธนาคาร
       const groups = [...grouped.values()]
         .filter((g) => g.glIds.length > 0)
         .map((g) => ({ bankLineIds: [], glEntryNos: g.glIds }));
@@ -1718,7 +1803,7 @@ export default function ActiveWorkspace({
   // ไม่นำมาจับคู่ — รายการ GL ที่ไม่มีวันมีคู่ในธนาคาร เช่น JV ปรับปรุงยอดท้ายเดือน (ประชุม 17 ก.ย. 2026)
   // ต่างจากพัก: ไม่ได้รอเคลียร์ในอนาคต จึงแยกสถานะให้ดูออกในรายงาน
   async function handleExclude(remark: string) {
-    if (selectedGlItems.length === 0 || busy || syncingGl) return;
+    if (selectedGlItems.length === 0 || busy || syncingGl || periodClosed) return;
     setBusy(true);
     setRemarkError("");
     try {
@@ -1780,7 +1865,7 @@ export default function ActiveWorkspace({
     return { inCount, outCount: offsetSelection.length - inCount };
   }, [offsetSelection]);
   async function handleOffsetSelection(groups: number[][]) {
-    if (groups.length === 0 || busy || syncingGl) return;
+    if (groups.length === 0 || busy || syncingGl || anyWorkLocked || noOffsetRole) return;
     setBusy(true);
     setError("");
     try {
@@ -2062,18 +2147,19 @@ export default function ActiveWorkspace({
             onSaveOpening={handleSaveOpening}
             onUndoExcluded={handleUndoExcluded}
             onClosePeriod={handleClosePeriod}
+            onWorkApproval={handleWorkApproval}
             onReopenPeriod={handleReopenPeriod}
           />
         )}
       </AnimatePresence>
       <AnimatePresence>
-        {confirmSuspenseOpen && (
+        {confirmSuspenseOpen && canMoveToSuspense && !periodClosed && (
           <SuspenseConfirmModal
             key="suspense-confirm"
             lines={selectedGlItems}
             direction={directionFilter}
             autoMatchedCount={selectedGlItems.filter((l) => clusterOf.has(l.id)).length}
-            busy={busy}
+            busy={busy || syncingGl}
             onCancel={() => setConfirmSuspenseOpen(false)}
             onConfirm={async () => {
               await handleMoveToSuspense();
@@ -2133,18 +2219,18 @@ export default function ActiveWorkspace({
             floating
             onOpen={() => setBalanceOpen(true)}
           />
-          {periodClosed && (
-            <button
-              type="button"
-              onClick={() => setBalanceOpen(true)}
-              className="flex shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700"
-              title="งวดนี้ปิดแล้ว — กดเพื่อดูรายละเอียดหรือเปิดงวดคืน"
-            >
-              <Lock size={11} /> ปิดงวดแล้ว
-            </button>
-          )}
-
           <div className="ml-auto flex shrink-0 items-center gap-1.5">
+              {/* จอ lg: อยู่กลุ่มปุ่มขวา — ถ้าวางต่อจากข้อความซ้ายจะโดน BalanceBadge ที่ลอยกลางแถบบังมิด */}
+              {periodClosed && (
+                <button
+                  type="button"
+                  onClick={() => setBalanceOpen(true)}
+                  className="hidden shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 lg:flex"
+                  title={lockMessage}
+                >
+                  <Lock size={11} /> {lockLabel}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleReloadData}
@@ -2158,19 +2244,24 @@ export default function ActiveWorkspace({
               <button
                 type="button"
                 onClick={() => setAssistantOpen(true)}
-                disabled={loading || busy || syncingGl}
-                className="relative overflow-hidden rounded-xl p-[1.5px] disabled:opacity-50"
-                title="ค้นหาคู่แนะนำ รวมถึงรายการต่างวันที่ กรุณาตรวจสอบก่อนยืนยันจับคู่"
+                disabled={loading || busy || syncingGl || periodClosed}
+                className="group relative flex h-9 items-center gap-1.5 overflow-hidden rounded-xl border border-indigo-200/90 bg-gradient-to-r from-indigo-50/80 via-white to-violet-50/80 px-3 text-xs font-semibold text-indigo-900 shadow-xs transition-all duration-200 hover:border-indigo-300 hover:from-indigo-100/90 hover:via-white hover:to-violet-100/90 hover:shadow-[0_2px_10px_rgba(99,102,241,0.15)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                title={periodClosed ? lockMessage : "ค้นหาคู่แนะนำ รวมถึงรายการต่างวันที่ กรุณาตรวจสอบก่อนยืนยันจับคู่"}
               >
+                {/* แสงประกายสะท้อนผิวปุ่มอย่างนุ่มนวลเป็นจังหวะ ดูสุขุมและน่าเชื่อถือ */}
                 <span
                   aria-hidden
-                  className="absolute left-1/2 top-1/2 aspect-square w-[200%] -translate-x-1/2 -translate-y-1/2 animate-aura-spin"
-                  style={{ background: AURA_GRADIENT }}
+                  className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-indigo-300/30 to-transparent transition-transform duration-700 ease-out group-hover:translate-x-full"
                 />
-                <span className="relative flex h-8 items-center gap-1.5 rounded-[10px] bg-white px-3 text-xs font-semibold text-violet-700">
-                  <WandSparkles size={14} />
-                  <span className="hidden 2xl:inline">ผู้ช่วยจับคู่</span>
-                </span>
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 animate-assistant-sheen bg-gradient-to-r from-transparent via-indigo-400/20 to-transparent"
+                />
+                <Sparkles
+                  size={14}
+                  className="shrink-0 text-indigo-600 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-12"
+                />
+                <span className="hidden 2xl:inline tracking-tight">ผู้ช่วยจับคู่</span>
               </button>
               <button
                 type="button"
@@ -2224,6 +2315,7 @@ export default function ActiveWorkspace({
             onToggle={toggleBank}
             filter={directionFilter}
             onFilterChange={setDirectionFilter}
+            blockedFilters={blockedDirections}
             loading={loading}
             matchReadyDates={matchReadyDates}
             expandedDates={expandedBankDates}
@@ -2251,10 +2343,10 @@ export default function ActiveWorkspace({
             <button
               type="button"
               onClick={() => setBalanceOpen(true)}
-              className="mx-4 flex shrink-0 items-center gap-1 self-start rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 sm:mx-6"
-              title="งวดนี้ปิดแล้ว — กดเพื่อดูรายละเอียดหรือเปิดงวดคืน"
+              className="mx-4 flex shrink-0 items-center gap-1 self-start rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 sm:mx-6 lg:hidden"
+              title={lockMessage}
             >
-              <Lock size={11} /> ปิดงวดแล้ว
+              <Lock size={11} /> {lockLabel}
             </button>
           )}
 
@@ -2270,6 +2362,7 @@ export default function ActiveWorkspace({
             onToggle={toggleGl}
             filter={directionFilter}
             onFilterChange={setDirectionFilter}
+            blockedFilters={blockedDirections}
             loading={loading}
             expandedDates={expandedGlDates}
             onToggleExpand={toggleGlExpand}
@@ -2286,9 +2379,9 @@ export default function ActiveWorkspace({
             extraActions={
               <button
                 onClick={toggleRemainingGl}
-                disabled={loading || busy || syncingGl || remainingGlIds.length === 0}
+                disabled={loading || busy || syncingGl || remainingGlIds.length === 0 || noSideRole}
                 aria-pressed={remainingGlSelected}
-                title="เลือกรายการ BC365 ที่ไม่มีคู่แนะนำในแท็บนี้ เพื่อพักหลายรายการพร้อมกัน กดอีกครั้งเพื่อยกเลิกการเลือก"
+                title={noSideRole ? lockMessage : "เลือกรายการ BC365 ที่ไม่มีคู่แนะนำในแท็บนี้ เพื่อพักหลายรายการพร้อมกัน กดอีกครั้งเพื่อยกเลิกการเลือก"}
                 className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-full border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   remainingGlSelected
                     ? "border-blue-200 bg-blue-50 text-blue-700"
@@ -2343,7 +2436,8 @@ export default function ActiveWorkspace({
               count={clusterKinds.oneToOne.count}
               checked={isKindSelected(clusterKinds.oneToOne)}
               tone="green"
-              title="เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ธนาคาร 1 รายการ ยอดตรงกับ BC365 1 รายการ ในวันเดียวกัน"
+              title={noSideRole ? lockMessage : "เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ธนาคาร 1 รายการ ยอดตรงกับ BC365 1 รายการ ในวันเดียวกัน"}
+              disabled={noSideRole}
               onClick={() => toggleKind(clusterKinds.oneToOne)}
             />
             <ClusterKindToggle
@@ -2351,7 +2445,8 @@ export default function ActiveWorkspace({
               count={clusterKinds.lumpSum.count}
               checked={isKindSelected(clusterKinds.lumpSum)}
               tone="amber"
-              title="เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ต้องรวมหลายรายการเข้าด้วยกันยอดจึงเท่า อาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"
+              title={noSideRole ? lockMessage : "เลือกหรือยกเลิกการเลือกทั้งหมด — คู่ที่ต้องรวมหลายรายการเข้าด้วยกันยอดจึงเท่า อาจตรงกันโดยบังเอิญ ควรตรวจก่อนกดจับคู่"}
+              disabled={noSideRole}
               onClick={() => toggleKind(clusterKinds.lumpSum)}
             />
             <button onClick={handleClear} className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 px-3 py-2">
@@ -2362,10 +2457,12 @@ export default function ActiveWorkspace({
                 setError("");
                 setOffsetConfirmOpen(true);
               }}
-              disabled={loading || busy || syncingGl || glLinesRaw.length === 0 || periodClosed}
+              disabled={loading || busy || syncingGl || glLinesRaw.length === 0 || anyWorkLocked || noOffsetRole}
               title={
-                periodClosed
-                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                noOffsetRole
+                  ? "ต้องมีสิทธิ์ AP หรือ AR ฝั่งใดฝั่งหนึ่งจึงจะหักล้างรายการได้"
+                  : anyWorkLocked
+                  ? "รายการหักล้างกระทบทั้งเงินเข้าและเงินออก ต้องเปิดงานทั้งสองฝั่งก่อน"
                   : "รายการ BC365 เงินเข้ากับเงินออกที่ล้างกันเอง ไม่มีคู่ในธนาคาร — เปิดหน้าต่างเลือกได้ทั้งสองฝั่งในที่เดียว"
               }
               className="flex items-center gap-1.5 rounded-full border border-teal-200 bg-teal-50 px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-40"
@@ -2383,7 +2480,7 @@ export default function ActiveWorkspace({
               disabled={selectedGlItems.length === 0 || busy || syncingGl || periodClosed}
               title={
                 periodClosed
-                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                  ? lockMessage
                   : "ใช้กับ JV ปรับปรุงที่บันทึกใน BC365 แล้ว รายการที่เลือกจะไม่นำไปจับคู่กับธนาคาร และจะใช้คำนวณยอดพักโอน"
               }
               className="flex items-center gap-1.5 text-sm font-medium text-slate-700 bg-white border border-slate-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50"
@@ -2391,12 +2488,16 @@ export default function ActiveWorkspace({
               <Ban size={14} /> ระบุเป็น JV ปรับปรุง
             </button>
             <button
-              onClick={() => setConfirmSuspenseOpen(true)}
+              onClick={() => {
+                if (canMoveToSuspense && !busy && !syncingGl && !periodClosed) {
+                  setConfirmSuspenseOpen(true);
+                }
+              }}
               disabled={!canMoveToSuspense || busy || syncingGl || periodClosed}
               title={
                 periodClosed
-                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
-                  : "พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
+                  ? lockMessage
+                  : suspenseProblem ?? "พักรายการ BC365 ที่เลือกไว้เพื่อรอจับคู่ภายหลัง สามารถคืนรายการได้ที่หน้ารายการพัก"
               }
               className="text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-full disabled:opacity-40 disabled:cursor-not-allowed hover:bg-amber-100"
             >
@@ -2407,7 +2508,7 @@ export default function ActiveWorkspace({
               disabled={!canMatch || busy || syncingGl || periodClosed}
               title={
                 periodClosed
-                  ? "งวดนี้ปิดแล้ว — เปิดงวดคืนที่หน้ายอดคงเหลือก่อนจึงจะแก้ไขได้"
+                  ? lockMessage
                   : matchPlan.problem ??
                     (matchPlan.needsRemark
                       ? "ยอดทั้งสองฝั่งไม่เท่ากัน ระบบจะจับคู่ตามยอดจริงและพักเฉพาะส่วนต่าง โดยต้องระบุหมายเหตุ"

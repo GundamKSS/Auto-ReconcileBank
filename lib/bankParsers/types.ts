@@ -9,6 +9,9 @@ export type NormalizedStatementLine = {
   chequeNo: string | null;
   channel: string | null;
   rawDescription: string | null;
+  senderBank: string | null;
+  senderAccountNo: string | null;
+  senderAccountName: string | null;
 };
 
 export type ParseResult = {

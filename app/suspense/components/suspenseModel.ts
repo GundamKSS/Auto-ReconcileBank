@@ -28,6 +28,7 @@ export type RawGlLine = {
   num: number;
   date: string;
   ref?: string;
+  accountNo?: string;
   accountName?: string;
   direction: Direction;
   amount: number;

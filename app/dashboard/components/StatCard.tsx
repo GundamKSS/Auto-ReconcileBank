@@ -34,11 +34,11 @@ export default function StatCard({
     : `${delta! > 0 ? '↗ +' : '↘ '}${delta!.toFixed(1)}${deltaUnit === 'pct' ? ' pp' : '%'}`;
 
   return (
-    <div className="rounded-[20px] border border-white/80 bg-white p-6 shadow-[0_10px_35px_rgba(30,64,175,0.06)] transition duration-300 hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(30,64,175,0.1)]">
-      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">{title}</p>
+    <div className="dashboard-card-enter min-w-0 rounded-[20px] border border-white/80 bg-white p-5 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
+      <p className="text-xs font-semibold text-slate-400">{title}</p>
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
-        <h3 className={`text-3xl font-bold tabular-nums tracking-tight ${valueColor}`}>{value}</h3>
+        <h3 className={`min-w-0 break-words text-3xl font-bold tabular-nums tracking-tight ${valueColor}`}>{value}</h3>
 
         {delta !== null && (
           <span

@@ -34,6 +34,30 @@ describe('statementBalance — ยอดยกมา/ยอดคงเหลื
     expect(result.chainOk).toBe(true);
   });
 
+  it('ต่อสาย Balance ได้แม้ AP กับ AR นำเข้าคนละครั้ง (LineId ของวันเดียวกันไม่เรียงตามไฟล์)', () => {
+    // ไฟล์จริง: +10 (110) → −5 (105) → +20 (125) → −25 (100) — AP นำเข้าเงินออกก่อนจึงได้ LineId น้อยกว่า
+    const result = statementBalance([
+      line({ lineId: 1, signed: -5, balance: 105 }),
+      line({ lineId: 2, signed: -25, balance: 100 }),
+      line({ lineId: 11, signed: 10, balance: 110 }),
+      line({ lineId: 12, signed: 20, balance: 125 }),
+      line({ lineId: 3, date: '2026-08-02', signed: -50, balance: 50 }),
+    ]);
+
+    expect(result.opening).toBe(100);
+    expect(result.closing).toBe(50);
+    expect(result.chainOk).toBe(true);
+    expect(result.closingByDate.get('2026-08-01')).toBe(100);
+  });
+
+  it('เพิ่งนำเข้าฝั่งเดียว สายยังขาด — chainOk = false จนกว่าอีกฝั่งจะนำเข้าครบ', () => {
+    const result = statementBalance([
+      line({ lineId: 1, signed: -5, balance: 105 }),
+      line({ lineId: 2, signed: -25, balance: 100 }),
+    ]);
+    expect(result.chainOk).toBe(false);
+  });
+
   it('ติดธง chainOk = false เมื่อ Balance ต่อกันไม่ได้ไม่ว่าจะเรียงแบบไหน', () => {
     const result = statementBalance([
       line({ lineId: 1, signed: 10, balance: 110 }),

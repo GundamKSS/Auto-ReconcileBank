@@ -7,6 +7,10 @@ import { RECONCILE_ROLES } from '../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../lib/apiInput';
 import { bankSignedSql, glAmount, glDirection, glSignedSql } from '../../../lib/glAmount';
 import { reconcileExtrasReady } from '../../../lib/reconcileExtrasDb';
+import { readWorkPermissions } from '../../../lib/workRolesDb';
+import { visibleWorkSides } from '../../../lib/workRoles';
+import { statementSenderColumnsReady } from '../../../lib/bankAccountDb';
+import { extractSenderFromText } from '../../../lib/bankParsers/senderExtractor';
 const PAGE_SIZE = 50;
 
 // ประเภทของ ReconciliationMatch ทั้งหมดที่ระบบสร้างได้ (ดู app/api/reconcile/match/route.ts)
@@ -35,7 +39,8 @@ type MatchTypeValue = (typeof MATCH_TYPES)[number];
  *   from, to  - ช่วงวันที่ YYYY-MM-DD (ไม่ใส่ = ไม่กรองวันที่)
  *   q         - ค้นหาทั้ง MatchId, Line/Entry No., ยอดเงิน, รายละเอียด/เช็คฝั่ง Bank,
  *               เลขเอกสาร/เลขบัญชี/ชื่อบัญชีฝั่ง GL, ธนาคาร และผู้จับคู่
- *   offset    - เริ่มที่ Match ลำดับที่เท่าไร (infinite scroll ทีละ 50 Match)
+ *   pageBy    - 'group' แบ่งตามแถวกลุ่มย่อยสำหรับหน้าประวัติ; ไม่ใส่ = ทีละ Match (หน้ารายการพัก)
+ *   offset    - ลำดับเริ่มต้นของหน่วยที่เลือก (ครั้งละ 50)
  *
  * ตอบกลับ total + bankCodes + sideCounts + typeCounts เฉพาะตอนโหลดหน้าแรก (offset = 0)
  * เพื่อไม่ให้ต้องนับใหม่ทุกครั้งที่ scroll — typeCounts นับโดยไม่สนตัวกรองประเภท เพื่อให้แท็บประเภท
@@ -68,7 +73,11 @@ export async function GET(req: NextRequest) {
     const rawQ = params.get('q');
     const q = rawQ && rawQ.trim() ? rawQ.trim() : null;
     const qCompact = q?.replace(/,/g, '') ?? null;
-    const offset = Math.max(0, Number(params.get('offset') ?? '0') || 0);
+    const pageBy = params.get('pageBy') ?? 'match';
+    if (pageBy !== 'match' && pageBy !== 'group') return badRequest('pageBy ต้องเป็น match หรือ group');
+    const groupPaging = pageBy === 'group';
+    const offset = Number(params.get('offset') ?? '0');
+    if (!Number.isInteger(offset) || offset < 0 || offset > 2_147_483_647 - PAGE_SIZE) return badRequest('offset ต้องเป็นจำนวนเต็มตั้งแต่ 0');
     const extrasReady = await reconcileExtrasReady();
     // หน้า Suspense ต้องรวมทั้งรายการที่พักทั้งแถว และผลต่างของ MATCHED ที่ยอด Bank/BC ไม่เท่ากัน
     const includeDifferenceSuspense =
@@ -195,8 +204,32 @@ export async function GET(req: NextRequest) {
           ? `AND (rm.MatchType IN (${matchTypeParams}) OR (${differenceSuspenseSql}))`
           : `AND rm.MatchType IN (${matchTypeParams})`;
 
+    // ผู้มีสิทธิ์ AP หรือ AR ฝั่งเดียวเห็นเฉพาะ Match ที่มีรายการฝั่งของตัวเอง — ใส่ไว้ใน WHERE ฐาน
+    // จึงครอบทั้งรายการ จำนวนต่อแท็บ และยอดสรุปหน้ารายการพัก (หน้ารายการพักใช้เกณฑ์ฝั่งเดียวกับแท็บรับ/จ่าย)
+    const [pool, hasSender] = await Promise.all([getPool(), statementSenderColumnsReady()]);
+    const workPermissions = await readWorkPermissions(auth.session, pool);
+    const visibleSides = visibleWorkSides(workPermissions);
+    function lineDirectionExists(dir: 'IN' | 'OUT') {
+      return `(
+        EXISTS (
+          SELECT 1 FROM ReconciliationMatchLine p_rml
+          JOIN BankStatementLine p_b ON p_b.LineId = p_rml.BankLineId
+          WHERE p_rml.MatchId = rm.MatchId AND p_rml.SourceType = 'BANK' AND p_b.Credit IS ${dir === 'IN' ? 'NOT NULL' : 'NULL'}
+        )
+        OR EXISTS (
+          SELECT 1 FROM ReconciliationMatchLine p_rml
+          JOIN BankAccountLedgerEntries p_e ON p_e.Entry_No = p_rml.GLEntryNo
+          WHERE p_rml.MatchId = rm.MatchId AND p_rml.SourceType = 'GL' AND ${glSignedSql('p_e')} ${dir === 'IN' ? '>' : '<='} 0
+        )
+      )`;
+    }
+    const permittedSide = visibleSides.length === 1 ? visibleSides[0] : null;
+    const permissionCondition = permittedSide === null ? ''
+      : `AND ${includeDifferenceSuspense ? suspenseSideCondition(permittedSide) : lineDirectionExists(permittedSide)}`;
+
     const whereWithoutType = `
       WHERE 1=1
+        ${permissionCondition}
         ${bankCode ? 'AND rm.BankCode = @bankCode' : ''}
         ${dateBasis === 'CREATED' && fromDate ? 'AND rm.CreatedAt >= @from' : ''}
         ${dateBasis === 'CREATED' && toDateExclusive ? 'AND rm.CreatedAt < @to' : ''}
@@ -261,16 +294,18 @@ export async function GET(req: NextRequest) {
       return request;
     }
 
-    const pool = await getPool();
-
     // 1) หา MatchId ของหน้านี้ก่อน (ล่าสุดก่อน, ทีละ 50) แล้วค่อยไป join รายละเอียดเฉพาะชุดนี้
     //    — กันไม่ให้ต้อง join รายละเอียดของ Match ทั้งหมดในระบบทุกครั้งที่โหลด เหมือนโค้ดเดิม
     const idRequest = bindFilters(pool.request());
     idRequest.input('offset', sql.Int, offset);
-    idRequest.input('limit', sql.Int, PAGE_SIZE);
+    // อ่านเพิ่ม 1 กลุ่มเพื่อรู้ว่ามีหน้าถัดไป โดยไม่ต้องนับจำนวนกลุ่มใหม่ทุกครั้งที่เลื่อน
+    idRequest.input('limit', sql.Int, PAGE_SIZE + (groupPaging ? 1 : 0));
     const idResult = await idRequest.query(`
-      SELECT rm.MatchId
+      SELECT rm.MatchId ${groupPaging ? ', pageGroup.Num' : ''}
       FROM ReconciliationMatch rm
+      ${groupPaging ? `CROSS APPLY (
+        SELECT DISTINCT pg.Num FROM ReconciliationMatchLine pg WHERE pg.MatchId = rm.MatchId
+      ) pageGroup` : ''}
       ${
         dateBasis === 'BANK'
           ? `OUTER APPLY (
@@ -289,13 +324,29 @@ export async function GET(req: NextRequest) {
           ? 'ORDER BY CASE WHEN ord.FirstBankDate IS NULL THEN 1 ELSE 0 END, ord.FirstBankDate ASC, rm.MatchId ASC'
           : 'ORDER BY rm.CreatedAt DESC, rm.MatchId DESC'
       }
+      ${groupPaging ? ', pageGroup.Num ASC' : ''}
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
-    const pageMatchIds: number[] = idResult.recordset.map((r) => Number(r.MatchId));
+    const pageGroups = idResult.recordset.slice(0, PAGE_SIZE).map((r) => ({ matchId: Number(r.MatchId), num: Number(r.Num) }));
+    const pageMatchIds = [...new Set(pageGroups.map((g) => g.matchId))];
+    const pagination = groupPaging ? {
+      hasMore: idResult.recordset.length > PAGE_SIZE,
+      nextOffset: idResult.recordset.length > PAGE_SIZE ? offset + pageGroups.length : null,
+    } : {};
+    // ตัดเฉพาะกลุ่มของหน้านี้ และดึง Bank/GL ให้ครบทั้งกลุ่มเสมอ แม้ Match เดียวจะมีหลายร้อยกลุ่ม
+    const groupCondition = groupPaging
+      ? `AND (${pageGroups.map((_, i) => `(rm.MatchId = @pageMatch${i} AND rml.Num = @pageNum${i})`).join(' OR ') || '1=0'})` : '';
+    function bindPageGroups(request: sql.Request) {
+      if (groupPaging) pageGroups.forEach((g, i) => {
+        request.input(`pageMatch${i}`, sql.Int, g.matchId);
+        request.input(`pageNum${i}`, sql.Int, g.num);
+      });
+      return request;
+    }
 
     // หน้าแรกว่างก็ยังต้องนับจำนวนต่อแท็บ — แท็บ AP อาจว่างแต่ AR มีรายการ ผู้ใช้ต้องเห็นเลขนั้นเพื่อกดสลับไป
     if (pageMatchIds.length === 0 && offset > 0) {
-      return NextResponse.json({ matches: [] });
+      return NextResponse.json({ matches: [], ...pagination });
     }
     // MatchId มาจาก query ของเราเอง (Number() แล้วทุกตัว) ไม่ใช่ input ดิบจาก client — ปลอดภัยจาก SQL injection
     const idsCsv = pageMatchIds.length > 0 ? pageMatchIds.join(',') : 'NULL';
@@ -310,17 +361,19 @@ export async function GET(req: NextRequest) {
     `);
 
     // 3) รายละเอียดฝั่ง Bank เฉพาะ MatchId หน้านี้ (join กลับ BankStatementLine) — ดึง Num มาด้วย
-    const bankLinesResult = await pool.request().query(`
+    const bankLinesResult = await bindPageGroups(pool.request()).query(`
       SELECT rm.MatchId, rml.Num, rml.Status, rml.ReversedAt, rml.ReversedBy, rml.ReversedReason,
-             bsl.LineId, bsl.TranDate, bsl.Description, bsl.ChequeNo, bsl.Debit, bsl.Credit
+             bsl.LineId, bsl.TranDate, bsl.Description, bsl.ChequeNo, bsl.Debit, bsl.Credit,
+             bsl.RawDescription,
+             ${hasSender ? 'bsl.SenderBank, bsl.SenderAccountNo, bsl.SenderAccountName' : 'NULL AS SenderBank, NULL AS SenderAccountNo, NULL AS SenderAccountName'}
       FROM ReconciliationMatch rm
       JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'BANK'
       JOIN BankStatementLine bsl ON bsl.LineId = rml.BankLineId
-      WHERE rm.MatchId IN (${idsCsv})
+      WHERE rm.MatchId IN (${idsCsv}) ${groupCondition}
     `);
 
     // 4) รายละเอียดฝั่ง GL เฉพาะ MatchId หน้านี้ (join กลับ BankAccountLedgerEntries)
-    const glLinesResult = await pool.request().query(`
+    const glLinesResult = await bindPageGroups(pool.request()).query(`
       SELECT rm.MatchId, rml.Num, rml.Status, rml.ReversedAt, rml.ReversedBy, rml.ReversedReason,
              e.Entry_No, e.Posting_Date, e.Document_No, e.Bank_Account_No, e.Source_Code,
              m.BankAccountName, e.Debit_Amount_LCY, e.Credit_Amount_LCY
@@ -328,19 +381,31 @@ export async function GET(req: NextRequest) {
       JOIN ReconciliationMatchLine rml ON rml.MatchId = rm.MatchId AND rml.SourceType = 'GL'
       JOIN BankAccountLedgerEntries e ON e.Entry_No = rml.GLEntryNo
       LEFT JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
-      WHERE rm.MatchId IN (${idsCsv})
+      WHERE rm.MatchId IN (${idsCsv}) ${groupCondition}
     `);
 
     // รวมทั้ง 3 query เข้าด้วยกัน กลุ่มตาม MatchId
     const bankLinesByMatch = new Map<number, unknown[]>();
     for (const r of bankLinesResult.recordset) {
       const list = bankLinesByMatch.get(r.MatchId) ?? [];
+      const fallback =
+        !r.SenderBank && !r.SenderAccountNo && !r.SenderAccountName
+          ? extractSenderFromText(r.RawDescription)
+          : null;
+      const senderBank = r.SenderBank ?? fallback?.senderBank ?? null;
+      const senderAccountNo = r.SenderAccountNo ?? fallback?.senderAccountNo ?? null;
+      const senderAccountName = r.SenderAccountName ?? fallback?.senderAccountName ?? null;
+
       list.push({
         lineId: Number(r.LineId),
         num: r.Num,
         date: r.TranDate,
         ref: r.ChequeNo,
         description: r.Description,
+        rawDescription: r.RawDescription ?? null,
+        senderBank,
+        senderAccountNo,
+        senderAccountName,
         direction: r.Credit !== null ? 'IN' : 'OUT',
         amount: r.Credit !== null ? r.Credit : r.Debit,
         status: r.Status ?? 'ACTIVE',
@@ -412,7 +477,7 @@ export async function GET(req: NextRequest) {
       });
 
     if (offset > 0) {
-      return NextResponse.json({ matches });
+      return NextResponse.json({ matches, ...pagination });
     }
 
     // นับ total + รายชื่อธนาคาร เฉพาะตอนโหลดหน้าแรก ไม่ต้องนับซ้ำทุกครั้งที่เลื่อนโหลดเพิ่ม
@@ -527,12 +592,15 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       matches,
+      ...pagination,
       total,
       sideCounts,
       suspenseSideCounts,
       typeCounts: { ...typeCounts, ALL: typeCountAll },
       suspenseSummary,
       bankCodes: bankCodesResult.recordset.map((r) => String(r.BankCode)),
+      // หน้าประวัติ/รายการพักใช้ล็อกแท็บฝั่งและปุ่มส่งกลับตามสิทธิ์ (server บังคับซ้ำที่ unmatch/unsuspend)
+      workPermissions,
     });
   } catch (err) {
     console.error('Match history API error:', err);

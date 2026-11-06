@@ -7,6 +7,10 @@ import { useOffsetList } from "../../components/useOffsetList";
 type Line = {
   LineId: number;
   Description: string | null;
+  RawDescription: string | null;
+  SenderBank: string | null;
+  SenderAccountNo: string | null;
+  SenderAccountName: string | null;
   Debit: number | null;
   Credit: number | null;
   Balance: number | null;
@@ -14,6 +18,13 @@ type Line = {
   Channel: string | null;
   MatchStatus: "UNMATCHED" | "MATCHED" | "SUSPENSE";
 };
+
+function formatSenderSubline(l: Line): string | null {
+  const senderParts = [l.SenderBank, l.SenderAccountNo, l.SenderAccountName].filter(Boolean);
+  if (senderParts.length > 0) return senderParts.join(" · ");
+  if (l.RawDescription && l.RawDescription !== l.Description) return l.RawDescription;
+  return null;
+}
 
 function amountOrDash(n: number | null) {
   return n === null || n === undefined ? "-" : formatAmount(n);
@@ -64,21 +75,25 @@ export default function BankDayDetail({ params, day }: { params: string; day: st
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {items.map((l) => (
-              <tr key={l.LineId} className="hover:bg-blue-50/40">
-                <td className="max-w-[280px] truncate px-3 py-1.5 text-gray-800" title={l.Description ?? undefined}>
-                  {l.Description}
-                </td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-red-600">{amountOrDash(l.Debit)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-teal-700">{amountOrDash(l.Credit)}</td>
-                <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{amountOrDash(l.Balance)}</td>
-                <td className="px-3 py-1.5 text-gray-500">{l.ChequeNo || "-"}</td>
-                <td className="px-3 py-1.5 text-gray-500">{l.Channel || "-"}</td>
-                <td className="px-3 py-1.5 text-center">
-                  <StatusBadge status={l.MatchStatus} />
-                </td>
-              </tr>
-            ))}
+            {items.map((l) => {
+              const subline = formatSenderSubline(l);
+              return (
+                <tr key={l.LineId} className="hover:bg-blue-50/40">
+                  <td className="max-w-[320px] px-3 py-1.5 text-gray-800" title={l.RawDescription ?? l.Description ?? undefined}>
+                    <div className="truncate">{l.Description}</div>
+                    {subline && <div className="truncate text-[11px] text-gray-500 font-mono">{subline}</div>}
+                  </td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-red-600">{amountOrDash(l.Debit)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-teal-700">{amountOrDash(l.Credit)}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{amountOrDash(l.Balance)}</td>
+                  <td className="px-3 py-1.5 text-gray-500">{l.ChequeNo || "-"}</td>
+                  <td className="px-3 py-1.5 text-gray-500">{l.Channel || "-"}</td>
+                  <td className="px-3 py-1.5 text-center">
+                    <StatusBadge status={l.MatchStatus} />
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

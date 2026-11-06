@@ -1,4 +1,5 @@
 import { NormalizedStatementLine, ParseResult, toISODate, toNumber, findColumnIndex } from './types';
+import { extractSenderFromText } from './senderExtractor';
 
 // SCB: หัวตารางอยู่แถวแรก คอลัมน์: Date, Time, Tr Description, Channel, Cheque No.,
 // Withdrawal, Deposit, Outstanding Balance (เก็บเป็น string มี comma เช่น "-3,562,505.84")
@@ -29,16 +30,23 @@ export function parseSCB(rows: unknown[][]): ParseResult {
     const tranDate = toISODate(row[idx.date]);
     if (!tranDate) continue;
 
+    const description = String(row[idx.description] ?? '').trim();
+    const rawDescription = idx.detail !== -1 ? String(row[idx.detail] ?? '').trim() : null;
+    const sender = extractSenderFromText(rawDescription);
+
     // SCB: withdrawal = เงินออก (debit), deposit = เงินเข้า (credit)
     lines.push({
       tranDate,
-      description: String(row[idx.description] ?? '').trim(),
+      description,
       debit: toNumber(row[idx.withdrawal]),
       credit: toNumber(row[idx.deposit]),
       balance: toNumber(row[idx.balance]),
       chequeNo: row[idx.chequeNo] ? String(row[idx.chequeNo]).trim() || null : null,
       channel: row[idx.channel] ? String(row[idx.channel]).trim() : null,
-      rawDescription: idx.detail !== -1 ? String(row[idx.detail] ?? '').trim() : null,
+      rawDescription,
+      senderBank: sender.senderBank,
+      senderAccountNo: sender.senderAccountNo,
+      senderAccountName: sender.senderAccountName,
     });
   }
 

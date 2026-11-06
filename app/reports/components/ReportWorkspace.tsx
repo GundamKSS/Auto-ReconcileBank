@@ -1,5 +1,8 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
+import { SIDE_FILTER_ACTIVE_CLASS, SIDE_FILTER_INACTIVE_CLASS } from '../../../components/sideFilterStyles';
+import { useSidebar } from '../../../components/SidebarContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatAmountOrDash as formatAmount } from '../../../lib/formatAmount';
 import { fullAccountLabel, type BankAccountOption } from '../../../lib/bankAccounts';
@@ -9,11 +12,13 @@ import { isNullableString, oneOf } from '../../../lib/tabWorkspace';
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  BarChart3,
   CalendarRange,
   ChevronLeft,
   ChevronRight,
   Download,
   Loader2,
+  Menu,
   RotateCcw,
   Search,
   SlidersHorizontal,
@@ -110,7 +115,7 @@ const STATUSES: { value: StatusFilter; label: string }[] = [
 ];
 
 const STATUS_BADGE: Record<StatusValue, string> = {
-  MATCHED: "bg-green-100 text-green-700",
+  MATCHED: "bg-emerald-50 text-emerald-600",
   SUSPENSE: "bg-amber-100 text-amber-700",
   OFFSET: "bg-teal-100 text-teal-700",
   EXCLUDED: "bg-slate-200 text-slate-700",
@@ -172,18 +177,18 @@ function SummaryCard({
   sub?: string;
   tone?: "default" | "good" | "bad";
 }) {
-  const valueColor = tone === "good" ? "text-green-600" : tone === "bad" ? "text-red-600" : "text-gray-900";
+  const valueColor = tone === "good" ? "text-emerald-600" : tone === "bad" ? "text-red-600" : "text-slate-900";
   return (
-    <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3">
-      <p className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">{label}</p>
-      <p className={`text-lg font-semibold tabular-nums mt-0.5 ${valueColor}`}>{value}</p>
-      {sub && <p className="text-[11px] text-gray-400 mt-0.5">{sub}</p>}
+    <div className="min-w-0 rounded-[20px] border border-white/80 bg-white p-5 shadow-[0_10px_35px_rgba(30,64,175,0.06)]">
+      <p className="text-xs font-semibold text-slate-400">{label}</p>
+      <p className={`mt-2 break-words text-2xl font-bold tracking-tight tabular-nums ${valueColor}`}>{value}</p>
+      {sub && <p className="mt-1 text-xs text-slate-400">{sub}</p>}
     </div>
   );
 }
 
 function EmptyCell() {
-  return <span className="text-gray-300">—</span>;
+  return <span className="text-slate-300">—</span>;
 }
 
 /**
@@ -192,7 +197,7 @@ function EmptyCell() {
  */
 function MissingSide({ inGroup, first }: { inGroup: boolean; first?: boolean }) {
   if (!inGroup) return <EmptyCell />;
-  return first ? <span className="text-[11px] text-gray-400 whitespace-nowrap">รวมในกลุ่มเดียวกัน</span> : null;
+  return first ? <span className="text-[11px] text-slate-400 whitespace-nowrap">รวมในกลุ่มเดียวกัน</span> : null;
 }
 
 function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStart: boolean; shaded: boolean }) {
@@ -203,8 +208,8 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
 
   return (
     <tr
-      className={`hover:bg-gray-100/60 ${shaded ? "bg-slate-50/70" : ""} ${
-        groupStart ? "border-t border-gray-200" : "border-t border-transparent"
+      className={`transition-colors hover:bg-blue-50/40 ${shaded ? "bg-slate-50/70" : ""} ${
+        groupStart ? "border-t border-slate-200" : "border-t border-transparent"
       }`}
     >
       <td className={`px-3 py-2 align-top whitespace-nowrap ${inGroup ? "border-l-2 border-violet-300" : "border-l-2 border-transparent"}`}>
@@ -213,26 +218,26 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
             <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${STATUS_BADGE[row.status]}`}>
               {STATUS_LABEL[row.status]}
             </span>
-            <p className="text-[10px] text-gray-400 mt-1">
+            <p className="text-[10px] text-slate-400 mt-1">
               {row.matchId ? `#${row.matchId} · กลุ่ม ${row.groupNum}` : "—"}
               {row.bankCode ? ` · ${row.bankCode}` : ""}
               {inGroup ? ` · ${row.groupRows} แถว` : ""}
             </p>
           </>
         ) : (
-          <p className="text-[10px] text-gray-400 pl-1">
+          <p className="text-[10px] text-slate-400 pl-1">
             ↳ {row.pairRn}/{row.groupRows}
           </p>
         )}
       </td>
 
       {/* ฝั่ง Bank Statement */}
-      <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">
+      <td className="px-3 py-2 align-top whitespace-nowrap text-slate-500">
         {row.bank ? formatDay(row.bank.date) : noBankSide ? <EmptyCell /> : <MissingSide inGroup={inGroup} first />}
       </td>
       <td className="px-3 py-2 align-top max-w-[280px]">
         {row.bank ? (
-          <span className="text-gray-700 line-clamp-2">{row.bank.description || "-"}</span>
+          <span className="text-slate-700 line-clamp-2">{row.bank.description || "-"}</span>
         ) : noBankSide ? (
           groupStart && (
             <span className="text-[11px] text-teal-700 whitespace-nowrap">ไม่มีเงินผ่านธนาคาร — BC ยกเลิกกันเอง</span>
@@ -241,26 +246,26 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
           <MissingSide inGroup={inGroup} />
         )}
       </td>
-      <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500">
+      <td className="px-3 py-2 align-top whitespace-nowrap text-slate-500">
         {row.bank ? row.bank.ref || "-" : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top whitespace-nowrap">
         {row.bank ? <DirectionBadge direction={row.bank.direction} /> : <MissingSide inGroup={inGroup} />}
       </td>
-      <td className="px-3 py-2 align-top whitespace-nowrap text-right tabular-nums text-gray-900">
+      <td className="px-3 py-2 align-top whitespace-nowrap text-right tabular-nums text-slate-900">
         {row.bank ? formatAmount(row.bank.amount) : <MissingSide inGroup={inGroup} />}
       </td>
 
       {/* ฝั่ง BC365 (GL) */}
-      <td className="px-3 py-2 align-top whitespace-nowrap text-gray-500 border-l border-gray-100">
+      <td className="px-3 py-2 align-top whitespace-nowrap text-slate-500 border-l border-slate-100">
         {row.gl ? formatDay(row.gl.date) : <MissingSide inGroup={inGroup} first />}
       </td>
-      <td className="px-3 py-2 align-top whitespace-nowrap text-gray-700">
+      <td className="px-3 py-2 align-top whitespace-nowrap text-slate-700">
         {row.gl ? row.gl.documentNo || "-" : <MissingSide inGroup={inGroup} />}
       </td>
       <td className="px-3 py-2 align-top max-w-[220px]">
         {row.gl ? (
-          <span className="text-gray-500 line-clamp-2">{row.gl.accountName || row.gl.accountNo || "-"}</span>
+          <span className="text-slate-500 line-clamp-2">{row.gl.accountName || row.gl.accountNo || "-"}</span>
         ) : (
           <MissingSide inGroup={inGroup} />
         )}
@@ -268,20 +273,20 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
       <td className="px-3 py-2 align-top whitespace-nowrap">
         {row.gl ? <DirectionBadge direction={row.gl.direction} /> : <MissingSide inGroup={inGroup} />}
       </td>
-      <td className="px-3 py-2 align-top whitespace-nowrap text-right tabular-nums text-gray-900">
+      <td className="px-3 py-2 align-top whitespace-nowrap text-right tabular-nums text-slate-900">
         {row.gl ? formatAmount(row.gl.amount) : <MissingSide inGroup={inGroup} />}
       </td>
 
       {/* ผลต่างคิดทั้งกลุ่ม แสดงครั้งเดียวที่แถวสุดท้ายของกลุ่ม */}
       <td
-        className={`px-3 py-2 align-top whitespace-nowrap text-right tabular-nums border-l border-gray-100 ${
-          hasDiff ? "text-red-600 font-medium" : "text-gray-300"
+        className={`px-3 py-2 align-top whitespace-nowrap text-right tabular-nums border-l border-slate-100 ${
+          hasDiff ? "text-red-600 font-medium" : "text-slate-300"
         }`}
       >
         {row.diff === null ? null : (
           <>
             {formatAmount(hasDiff ? row.diff : 0)}
-            {inGroup && <span className="block text-[10px] font-normal text-gray-400">รวมทั้งกลุ่ม</span>}
+            {inGroup && <span className="block text-[10px] font-normal text-slate-400">รวมทั้งกลุ่ม</span>}
           </>
         )}
       </td>
@@ -290,11 +295,15 @@ function ReportTableRow({ row, groupStart, shaded }: { row: ReportRow; groupStar
 }
 
 export default function ReportWorkspace() {
+  const { toggleMobileOpen, mobileOpen } = useSidebar();
   // เปิดมาที่งวดที่กำลังกระทบยอดอยู่ หรืองวดล่าสุดที่มีข้อมูล แทนเดือนปัจจุบันที่มักยังว่าง
   const initialPeriod = useInitialPeriod('reports');
   const initialRange = initialPeriod.range;
 
-  const [side, setSide] = useSessionState<Side>("reports:side", "AR", oneOf('AR', 'AP'));
+  const [pickedSide, setSide] = useSessionState<Side>("reports:side", "AR", oneOf('AR', 'AP'));
+  // สิทธิ์ AP/AR ฝั่งเดียว: server ล็อกแท็บอีกฝั่ง (lockedSides) และตอบฝั่งของตัวเองเสมอ — ค่าที่จำไว้เป็นอีกฝั่งก็สลับให้
+  const [lockedSides, setLockedSides] = useState<Side[]>([]);
+  const side: Side = lockedSides.includes(pickedSide) ? (pickedSide === "AR" ? "AP" : "AR") : pickedSide;
   const [status, setStatus] = useSessionState<StatusFilter>("reports:status", "MATCHED", oneOf('MATCHED', 'UNMATCHED', 'SUSPENSE', 'OFFSET', 'EXCLUDED', 'ALL'));
   const [bankCode, setBankCode] = useSessionState("reports:bankCode", "ALL");
   // หน้ากระทบยอดทำงานทีละบัญชี รายงานจึงต้องแคบได้ถึงระดับบัญชีเหมือนกัน
@@ -394,6 +403,7 @@ export default function ReportWorkspace() {
         setSummary(data.summary ?? null);
         if (Array.isArray(data.bankCodes)) setBankCodes(data.bankCodes);
         setSideCounts(data.sideCounts ?? null);
+        setLockedSides(Array.isArray(data.lockedSides) ? data.lockedSides : []);
         setCoverage(data.coverage ?? null);
       } catch {
         if (!cancelled && reqId === requestIdRef.current) {
@@ -522,219 +532,230 @@ export default function ReportWorkspace() {
   }, [rows]);
 
   return (
-    <div className="flex-1 min-w-0 p-4 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-1">
-        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">รายงานการกระทบยอด</h1>
+    <main className="w-full min-w-0 px-3 py-4 sm:p-6 xl:p-8">
+      <header className="mb-6 flex min-w-0 flex-wrap items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <button type="button" onClick={toggleMobileOpen} aria-label="เปิดเมนูหลัก" aria-expanded={mobileOpen}
+            className="flex size-11 shrink-0 items-center justify-center rounded-xl text-slate-500 hover:bg-slate-100 lg:hidden"><Menu size={22} /></button>
+          <div className="hidden size-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-blue-600 shadow-lg shadow-blue-500/20 sm:flex">
+            <BarChart3 size={22} className="text-white" />
+          </div>
+          <div className="min-w-0">
+            <h1 className="break-words text-xl font-bold tracking-tight text-slate-900 sm:text-3xl">รายงานการกระทบยอด</h1>
+            <p className="mt-1 text-sm text-slate-500">{monthLabel(from)}</p>
+          </div>
+        </div>
         <button
           onClick={handleExport}
           disabled={exporting || loading}
-          className="inline-flex items-center gap-2 text-sm font-medium px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-gray-800 disabled:opacity-50 transition-colors"
+          className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-blue-500 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-blue-200 transition-colors hover:bg-blue-600 disabled:opacity-50"
         >
           {exporting ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
           ดาวน์โหลด Excel ({side})
         </button>
-      </div>
-      <p className="text-sm text-gray-500 mb-5">
-        สรุปผลการกระทบยอดของ {monthLabel(from)} แยกเป็นเงินเข้า (AR) และเงินออก (AP)
-        แสดงรายการธนาคารเทียบกับ BC365 ตามกลุ่มที่บันทึกไว้ และโหลดเพิ่มครั้งละ 50 รายการ
-      </p>
+      </header>
 
-      {/* ---------- แท็บ AR / AP ---------- */}
-      <div className="flex items-center gap-1 mb-4 border-b border-gray-200">
-        {SIDES.map((sd) => {
-          const active = side === sd.value;
-          return (
-            <button
-              key={sd.value}
-              onClick={() => setSide(sd.value)}
-              className={`-mb-px inline-flex items-center gap-2 px-4 py-2.5 text-sm font-semibold border-b-2 transition-colors ${
-                active ? "border-gray-900 text-gray-900" : "border-transparent text-gray-400 hover:text-gray-700"
-              }`}
-            >
-              {sd.label}
-              <span className="text-xs font-normal">{sd.hint}</span>
-              <span
-                className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full tabular-nums ${
-                  active ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500"
+      <section aria-label="ตัวกรองรายงาน" className="mb-6 min-w-0 rounded-[20px] border border-white/80 bg-white p-4 shadow-[0_10px_35px_rgba(30,64,175,0.06)] sm:p-6">
+        {/* ---------- แท็บ AR / AP ---------- */}
+        <div className="mb-5 max-w-full overflow-x-auto pb-1">
+        <div className="inline-flex items-center gap-1 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
+          {SIDES.map((sd) => {
+            const active = side === sd.value;
+            const locked = lockedSides.includes(sd.value);
+            return (
+              <button
+                key={sd.value}
+                onClick={() => setSide(sd.value)}
+                disabled={locked}
+                title={locked ? "เห็นได้เฉพาะฝั่งที่ได้รับสิทธิ์ AP / AR" : undefined}
+                aria-pressed={active}
+                className={`inline-flex min-h-11 items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+                  active ? SIDE_FILTER_ACTIVE_CLASS[sd.value] : SIDE_FILTER_INACTIVE_CLASS
                 }`}
               >
-                {sideCounts ? sideCounts[sd.value].toLocaleString() : "…"}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
-
-      {/* ---------- แถบ filter ---------- */}
-      <div className="flex items-center gap-1.5 mb-3 flex-wrap">
-        {STATUSES.map((s) => (
-          <button
-            key={s.value}
-            onClick={() => setStatus(s.value)}
-            className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
-              status === s.value ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
-            {s.label}
-          </button>
-        ))}
-        <span className="w-px h-5 bg-gray-200 mx-1" />
-        {["ALL", ...bankCodes].map((code) => (
-          <button
-            key={code}
-            onClick={() => {
-              setBankCode(code);
-              // บัญชีที่เลือกค้างไว้อาจไม่ได้อยู่ในธนาคารใหม่ — ล้างทิ้งไม่ให้ได้รายงานว่างโดยไม่รู้สาเหตุ
-              setBankAccountNo((prev) =>
-                prev !== "ALL" && code !== "ALL" && accounts.find((a) => a.bankAccountNo === prev)?.bankCode !== code
-                  ? "ALL"
-                  : prev
-              );
-            }}
-            className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
-              bankCode === code ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-500 hover:bg-gray-200"
-            }`}
-          >
-            {code === "ALL" ? "ทุกธนาคาร" : BANK_LABEL[code] ?? code}
-          </button>
-        ))}
-      </div>
-
-      <div className="mb-5 flex flex-wrap items-end gap-3 rounded-xl border border-gray-100 bg-gray-50/60 p-3.5">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wide pb-1.5">
-          <SlidersHorizontal size={13} /> กรอง
+                {sd.value === 'AR' ? <ArrowDownLeft size={16} className="shrink-0" aria-hidden="true" /> : <ArrowUpRight size={16} className="shrink-0" aria-hidden="true" />}
+                {sd.label}
+                <span className="text-xs font-normal">{sd.hint}</span>
+                <span
+                  className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full tabular-nums ${
+                    active ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                  }`}
+                >
+                  {locked ? "—" : sideCounts ? sideCounts[sd.value].toLocaleString() : "…"}
+                </span>
+              </button>
+            );
+          })}
+        </div>
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">บัญชีธนาคาร</label>
-          <select
-            value={bankAccountNo}
-            onChange={(e) => {
-              const next = e.target.value;
-              setBankAccountNo(next);
-              // เลือกบัญชีแล้วให้ปุ่มธนาคารตามไปด้วย ตัวเลขบนจอจะได้ไม่ขัดกับปุ่มที่ไฮไลต์อยู่
-              const acc = accounts.find((a) => a.bankAccountNo === next);
-              if (acc?.bankCode) setBankCode(acc.bankCode);
-            }}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700 max-w-[270px]"
-          >
-            <option value="ALL">ทุกบัญชี{bankCode === "ALL" ? "" : `ของ ${BANK_LABEL[bankCode] ?? bankCode}`}</option>
-            {accountOptions.map((a) => (
-              <option key={a.bankAccountNo} value={a.bankAccountNo}>
-                {fullAccountLabel(a)}
-              </option>
-            ))}
-          </select>
-        </div>
+        {error && <p role="alert" className="mb-4 rounded-xl border border-red-100 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">เกณฑ์วันที่</label>
-          <div className="flex bg-white border border-gray-200 rounded-lg p-0.5">
+        {/* ---------- แถบ filter ---------- */}
+        <div className="flex items-center gap-1.5 mb-3 flex-wrap">
+          {STATUSES.map((s) => (
             <button
-              onClick={() => setBasis("BANK")}
-              className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
-                basis === "BANK" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"
+              key={s.value}
+              onClick={() => setStatus(s.value)}
+              aria-pressed={status === s.value}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                status === s.value ? "bg-blue-500 text-white shadow-md shadow-blue-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              วันที่รายการธนาคาร
+              {s.label}
             </button>
+          ))}
+          <span className="w-px h-5 bg-slate-200 mx-1" />
+          {["ALL", ...bankCodes].map((code) => (
             <button
-              onClick={() => setBasis("GL")}
-              className={`text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
-                basis === "GL" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-700"
+              key={code}
+              aria-pressed={bankCode === code}
+              onClick={() => {
+                setBankCode(code);
+                // บัญชีที่เลือกค้างไว้อาจไม่ได้อยู่ในธนาคารใหม่ — ล้างทิ้งไม่ให้ได้รายงานว่างโดยไม่รู้สาเหตุ
+                setBankAccountNo((prev) =>
+                  prev !== "ALL" && code !== "ALL" && accounts.find((a) => a.bankAccountNo === prev)?.bankCode !== code
+                    ? "ALL"
+                    : prev
+                );
+              }}
+              className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+                bankCode === code ? "bg-blue-500 text-white shadow-md shadow-blue-200" : "bg-slate-100 text-slate-600 hover:bg-slate-200"
               }`}
             >
-              วันที่รายการ BC365
+              {code === "ALL" ? "ทุกธนาคาร" : BANK_LABEL[code] ?? code}
             </button>
+          ))}
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-slate-100 pt-5">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 uppercase tracking-wide pb-1.5">
+            <SlidersHorizontal size={13} /> กรอง
           </div>
-        </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">ตั้งแต่วันที่</label>
-          <input
-            type="date"
-            value={from}
-            max={to || undefined}
-            onChange={(e) => setFrom(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">ถึงวันที่</label>
-          <input
-            type="date"
-            value={to}
-            min={from || undefined}
-            onChange={(e) => setTo(e.target.value)}
-            className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-white text-gray-700"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-[11px] font-medium text-gray-500">เลือกเดือน</label>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={() => shiftMonth(-1)}
-              title="เดือนก่อนหน้า"
-              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-slate-500">บัญชีธนาคาร</label>
+            <select
+              value={bankAccountNo}
+              onChange={(e) => {
+                const next = e.target.value;
+                setBankAccountNo(next);
+                // เลือกบัญชีแล้วให้ปุ่มธนาคารตามไปด้วย ตัวเลขบนจอจะได้ไม่ขัดกับปุ่มที่ไฮไลต์อยู่
+                const acc = accounts.find((a) => a.bankAccountNo === next);
+                if (acc?.bankCode) setBankCode(acc.bankCode);
+              }}
+              className="min-h-10 w-full max-w-[270px] rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={resetToThisMonth}
-              className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white text-gray-600 hover:text-gray-900"
-            >
-              <CalendarRange size={13} /> เดือนนี้
-            </button>
-            <button
-              onClick={() => shiftMonth(1)}
-              title="เดือนถัดไป"
-              className="p-1.5 rounded-lg border border-gray-200 bg-white text-gray-500 hover:text-gray-800"
-            >
-              <ChevronRight size={14} />
-            </button>
+              <option value="ALL">ทุกบัญชี{bankCode === "ALL" ? "" : `ของ ${BANK_LABEL[bankCode] ?? bankCode}`}</option>
+              {accountOptions.map((a) => (
+                <option key={a.bankAccountNo} value={a.bankAccountNo}>
+                  {fullAccountLabel(a)}
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
 
-        <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
-          <label className="text-[11px] font-medium text-gray-500">ค้นหา</label>
-          <div className="relative">
-            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1"><span className="text-[11px] font-medium text-slate-500">เกณฑ์วันที่</span>
+              <HelpTooltip label="วิธีแสดงรายการตามวันที่">รายการจับคู่จะแสดงครบกลุ่มเมื่อฝั่งที่เลือกอยู่ในช่วงวันที่ หากไม่มีข้อมูลฝั่งนั้นจะใช้วันที่อีกฝั่ง รายการรอจับคู่ใช้วันที่ของตัวเอง แถบสีม่วงหมายถึงการจับคู่หลายรายการ โดยแสดงผลต่างที่แถวสุดท้าย</HelpTooltip>
+            </div>
+            <div className="flex min-h-10 rounded-xl border border-slate-200 bg-slate-50/50 p-1">
+              <button
+                onClick={() => setBasis("BANK")}
+                className={`text-xs font-medium px-2.5 py-1 rounded-lg transition-colors ${
+                  basis === "BANK" ? "bg-blue-500 text-white shadow-md shadow-blue-200" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                วันที่รายการธนาคาร
+              </button>
+              <button
+                onClick={() => setBasis("GL")}
+                className={`text-xs font-medium px-2.5 py-1 rounded-lg transition-colors ${
+                  basis === "GL" ? "bg-blue-500 text-white shadow-md shadow-blue-200" : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                วันที่รายการ BC365
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-slate-500">ตั้งแต่วันที่</label>
             <input
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="รายละเอียด / Ref / Document No / ชื่อบัญชี / Match ID"
-              className="w-full text-sm border border-gray-200 rounded-lg pl-8 pr-2.5 py-1.5 bg-white text-gray-700"
+              type="date"
+              value={from}
+              max={to || undefined}
+              onChange={(e) => setFrom(e.target.value)}
+              className="min-h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-slate-500">ถึงวันที่</label>
+            <input
+              type="date"
+              value={to}
+              min={from || undefined}
+              onChange={(e) => setTo(e.target.value)}
+              className="min-h-10 rounded-xl border border-slate-200 bg-slate-50/50 px-3 py-2 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-medium text-slate-500">เลือกเดือน</label>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => shiftMonth(-1)}
+                title="เดือนก่อนหน้า"
+                className="flex size-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-blue-600"
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                onClick={resetToThisMonth}
+                className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-blue-600"
+              >
+                <CalendarRange size={13} /> เดือนนี้
+              </button>
+              <button
+                onClick={() => shiftMonth(1)}
+                title="เดือนถัดไป"
+                className="flex size-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-blue-600"
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1 flex-1 min-w-[180px]">
+            <label className="text-[11px] font-medium text-slate-500">ค้นหา</label>
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="รายละเอียด / Ref / Document No / ชื่อบัญชี / Match ID"
+                className="min-h-10 w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2 pl-8 pr-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              />
+            </div>
+          </div>
+
+          {(searchInput || bankCode !== "ALL" || bankAccountNo !== "ALL" || status !== "MATCHED") && (
+            <button
+              onClick={() => {
+                setSearchInput("");
+                setBankCode("ALL");
+                setBankAccountNo("ALL");
+                setStatus("MATCHED");
+              }}
+              className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800 pb-2"
+            >
+              <RotateCcw size={13} /> ล้างตัวกรอง
+            </button>
+          )}
         </div>
-
-        {(searchInput || bankCode !== "ALL" || bankAccountNo !== "ALL" || status !== "MATCHED") && (
-          <button
-            onClick={() => {
-              setSearchInput("");
-              setBankCode("ALL");
-              setBankAccountNo("ALL");
-              setStatus("MATCHED");
-            }}
-            className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-800 pb-2"
-          >
-            <RotateCcw size={13} /> ล้างตัวกรอง
-          </button>
-        )}
-      </div>
-
-      <p className="text-[11px] text-gray-400 -mt-3 mb-4">
-        รายการที่จับคู่แล้วจะแสดงครบทั้งกลุ่มเมื่อฝั่งที่เลือกมีรายการอยู่ในช่วงวันที่ แม้คู่ของอีกรายการจะอยู่ต่างเดือน
-        หากไม่มีข้อมูลฝั่งที่เลือก เช่น รายการพักที่มีเฉพาะ BC365 ระบบจะใช้วันที่ของอีกฝั่ง ส่วนรายการรอจับคู่ใช้วันที่ของรายการนั้น
-        การจับคู่หลายรายการแสดงด้วยแถบสีม่วง และแสดงผลต่างรวมที่แถวสุดท้ายของกลุ่ม
-        รายการหักล้าง BC365 ที่สุทธิเป็นศูนย์จะแสดงเงินเข้าและเงินออกครบทั้งกลุ่ม ตามฝั่งของรายการเดิม
-      </p>
-
+      </section>
       {/* ---------- การ์ดสรุป ---------- */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard
           label="จำนวนรายการ"
           value={loading && !t ? "…" : total.toLocaleString()}
@@ -777,7 +798,8 @@ export default function ReportWorkspace() {
               .join(" · ")}
           </span>
           <span className="text-amber-700">
-            — รวม {formatAmount(coverage.pendingImportNet)} บาท เป็นยอดฝั่ง BC365 ที่ยังไม่มีคู่เทียบ ไม่ใช่ผลต่างจากการกระทบยอด
+            รวม {formatAmount(coverage.pendingImportNet)} บาท
+            <HelpTooltip label="ยอดที่ยังไม่นำเข้า statement">ยอด BC365 ที่ยังไม่มี statement เทียบ จึงยังไม่นับรวมในผลต่างจากการกระทบยอด</HelpTooltip>
           </span>
         </div>
       )}
@@ -787,7 +809,7 @@ export default function ReportWorkspace() {
           {summary.buckets.map((b) => (
             <span
               key={`${b.status}-${b.bankCode}`}
-              className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white border border-gray-200 text-gray-600"
+              className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-white border border-slate-200 text-slate-600"
             >
               <span className={`w-1.5 h-1.5 rounded-full ${STATUS_BADGE[b.status].split(" ")[0]}`} />
               {STATUS_LABEL[b.status]} · {b.bankCode} · {b.rows.toLocaleString()} รายการ · สุทธิ {formatAmount(b.bankNet - b.glNet)}
@@ -797,23 +819,27 @@ export default function ReportWorkspace() {
       )}
 
       {/* ---------- ตาราง ---------- */}
-      <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">
+      <section aria-label="รายการกระทบยอด" className="min-w-0 rounded-[20px] border border-white/80 bg-white p-3 shadow-[0_10px_35px_rgba(30,64,175,0.06)] sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold text-slate-800">รายการกระทบยอด · {side}</h2>
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">{loading ? 'กำลังโหลด…' : `${total.toLocaleString()} รายการ`}</span>
+        </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse">
-            <thead className="bg-gray-50 text-gray-500">
+          <table className="w-full min-w-[1100px] border-collapse text-sm">
+            <thead className="bg-slate-50/80 text-slate-400">
               <tr>
                 <th rowSpan={2} className="px-3 py-2 text-left text-xs font-semibold whitespace-nowrap">
                   สถานะ
                 </th>
-                <th colSpan={5} className="px-3 py-1.5 text-left text-xs font-semibold border-b border-gray-100 text-sky-700">
+                <th colSpan={5} className="px-3 py-1.5 text-left text-xs font-semibold border-b border-slate-100 text-sky-700">
                   ฝั่งธนาคาร
                 </th>
-                <th colSpan={5} className="px-3 py-1.5 text-left text-xs font-semibold border-b border-l border-gray-100 text-violet-700">
+                <th colSpan={5} className="px-3 py-1.5 text-left text-xs font-semibold border-b border-l border-slate-100 text-violet-700">
                   ฝั่ง BC365 (GL)
                 </th>
-                <th rowSpan={2} className="px-3 py-2 text-right text-xs font-semibold whitespace-nowrap border-l border-gray-100">
+                <th rowSpan={2} className="px-3 py-2 text-right text-xs font-semibold whitespace-nowrap border-l border-slate-100">
                   ผลต่างของกลุ่ม
-                  <span className="block text-[10px] font-normal text-gray-400">ธนาคาร − BC365</span>
+                  <span className="block text-[10px] font-normal text-slate-400">ธนาคาร − BC365</span>
                 </th>
               </tr>
               <tr className="text-[11px] font-medium">
@@ -822,7 +848,7 @@ export default function ReportWorkspace() {
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">เลขอ้างอิง</th>
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">ทิศทาง</th>
                 <th className="px-3 py-1.5 text-right whitespace-nowrap">จำนวนเงิน</th>
-                <th className="px-3 py-1.5 text-left whitespace-nowrap border-l border-gray-100">วันที่</th>
+                <th className="px-3 py-1.5 text-left whitespace-nowrap border-l border-slate-100">วันที่</th>
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">เลขที่เอกสาร</th>
                 <th className="px-3 py-1.5 text-left">ชื่อบัญชี</th>
                 <th className="px-3 py-1.5 text-left whitespace-nowrap">ทิศทาง</th>
@@ -838,17 +864,17 @@ export default function ReportWorkspace() {
         </div>
 
         {loading && (
-          <div className="flex items-center gap-2 text-sm text-gray-400 py-10 justify-center">
+          <div className="flex items-center gap-2 text-sm text-slate-400 py-10 justify-center">
             <Loader2 size={16} className="animate-spin" /> กำลังโหลด...
           </div>
         )}
 
         {!loading && rows.length === 0 && (
-          <div className="text-center text-sm text-gray-400 py-10">ไม่พบรายการในช่วงวันที่และเงื่อนไขที่เลือก</div>
+          <div className="text-center text-sm text-slate-400 py-10">ไม่พบรายการในช่วงวันที่และเงื่อนไขที่เลือก</div>
         )}
 
         {!loading && rows.length > 0 && (
-          <div ref={sentinelRef} className="py-4 text-center text-xs text-gray-400">
+          <div ref={sentinelRef} className="py-4 text-center text-xs text-slate-400">
             {loadingMore ? (
               <span className="inline-flex items-center gap-2">
                 <Loader2 size={14} className="animate-spin" /> กำลังโหลดเพิ่ม...
@@ -857,7 +883,7 @@ export default function ReportWorkspace() {
               <span className="inline-flex items-center gap-2">
                 แสดง {rows.length.toLocaleString()} จาก {total.toLocaleString()} รายการ
                 {/* ปกติโหลดต่อเองตอนเลื่อนถึงท้ายตาราง ปุ่มนี้ไว้กดเองเผื่อ IntersectionObserver ไม่ทำงาน */}
-                <button onClick={loadMore} className="font-medium text-gray-600 underline underline-offset-2 hover:text-gray-900">
+                <button onClick={loadMore} className="font-medium text-blue-500 underline underline-offset-2 hover:text-blue-600">
                   โหลดเพิ่ม
                 </button>
               </span>
@@ -866,7 +892,7 @@ export default function ReportWorkspace() {
             )}
           </div>
         )}
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

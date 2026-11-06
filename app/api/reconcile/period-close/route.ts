@@ -1,24 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import sql from 'mssql';
 import { getPool } from '../../../../lib/db';
-import { auditActor, requireRole } from '../../../../lib/session';
+import { auditWorkActor as auditActor, requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { badRequest, parseIsoDateParam } from '../../../../lib/apiInput';
 import { resolveBankAccount } from '../../../../lib/bankAccountDb';
-import { computeBalanceProof } from '../../../../lib/balanceProof';
+import { closePeriodInTransaction } from '../../../../lib/periodCloseDb';
 import { PERIOD_CLOSE_MIGRATION_HINT, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
 import { remarkProblem } from '../../../../lib/matchRemark';
+import { assertWorkRole, WorkPermissionError } from '../../../../lib/workRolesDb';
+import { lockReconciliationAccount, recordPeriodEvent, workApprovalReady,
+  WORK_APPROVAL_MIGRATION_HINT } from '../../../../lib/periodWorkflowDb';
 
 /**
  * ปิด/เปิดงวดการกระทบยอด — เงื่อนไขเดียวกับที่หน้า "ยอดคงเหลือ" ใช้ตัดสิน (settled = remaining ≈ 0)
  * ปิดแล้วห้ามแก้ไขรายการของงวดนั้นอีก (ดู lib/periodClose.ts: assertDatesOpen ที่ Match/Unmatch/
  * Un-suspend/แก้ยอดยกมา/ลบไฟล์ Bank Statement เรียกก่อนเขียนจริงทุกจุด)
  *
- * สิทธิ์ปิด/เปิดงวดใช้ RECONCILE_ROLES เดียวกับทุกจุดที่แก้ข้อมูลกระทบยอด — ไม่มีการแยกสิทธิ์ใหม่
- * (ทีมยืนยันว่า Dev ต้องทำได้ทุกจุดเพื่อทดสอบระบบ)
+ * ปกติงวดปิดเองตอน AP และ AR ยืนยันครบ (ดู work-approval/route.ts) — POST ที่นี่เหลือไว้ให้ Master Admin
+ * ปิดงวดที่ยืนยันครบไว้ก่อนเปลี่ยนมาปิดอัตโนมัติ ส่วน PATCH (เปิดงวดคืน) ใช้ได้เฉพาะ Master Admin
+ * (Dev/Admin ระบบกลาง หรือ User ที่ได้ MASTER) — ตรวจใหม่ใน transaction ทุกครั้ง
  */
-
-const EPS = 0.005;
 
 export async function POST(req: NextRequest) {
   const auth = await requireRole(RECONCILE_ROLES);
@@ -40,42 +42,26 @@ export async function POST(req: NextRequest) {
     if (!account) return badRequest('ไม่พบบัญชีธนาคารนี้');
 
     const pool = await getPool();
-    const proof = await computeBalanceProof(pool, account, periodStart, periodEnd);
-    const remaining = proof.adjustment.remaining;
-    if (remaining === null || Math.abs(remaining) >= EPS) {
-      return NextResponse.json(
-        {
-          error:
-            remaining === null
-              ? 'ยังไม่รู้ยอดคงเหลือครบทั้งสองฝั่ง (ขาดยอดยกมา) — ปิดงวดไม่ได้'
-              : `ยอดคงเหลือยังไม่เท่ากัน (เหลือ ${remaining.toFixed(2)}) — ปิดงวดไม่ได้`,
-        },
-        { status: 409 }
-      );
+    if (!(await workApprovalReady(pool))) {
+      return NextResponse.json({ error: WORK_APPROVAL_MIGRATION_HINT }, { status: 409 });
     }
-
-    await pool
-      .request()
-      .input('acc', sql.NVarChar, account.bankAccountNo)
-      .input('periodStart', sql.Date, periodStart)
-      .input('periodEnd', sql.Date, periodEnd)
-      .input('bankClosing', sql.Decimal(18, 2), proof.bank.closing)
-      .input('glClosing', sql.Decimal(18, 2), proof.gl.closing)
-      .input('by', sql.NVarChar(100), auditActor(auth.session))
-      .query(`
-        MERGE ReconciliationPeriodClose WITH (HOLDLOCK) AS t
-        USING (SELECT @acc AS BankAccountNo, @periodStart AS PeriodStart) AS s
-          ON t.BankAccountNo = s.BankAccountNo AND t.PeriodStart = s.PeriodStart
-        WHEN MATCHED THEN
-          UPDATE SET PeriodEnd = @periodEnd, Status = 'CLOSED',
-                     BankClosingBalance = @bankClosing, GlClosingBalance = @glClosing,
-                     ClosedBy = @by, ClosedAt = SYSDATETIMEOFFSET()
-        WHEN NOT MATCHED THEN
-          INSERT (BankAccountNo, PeriodStart, PeriodEnd, BankClosingBalance, GlClosingBalance, ClosedBy)
-          VALUES (@acc, @periodStart, @periodEnd, @bankClosing, @glClosing, @by);
-      `);
-
-    return NextResponse.json({ success: true, closedBy: auditActor(auth.session) });
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      await assertWorkRole(auth.session, 'MASTER', transaction);
+      await lockReconciliationAccount(transaction, account.bankAccountNo);
+      await closePeriodInTransaction(transaction, pool, account, periodStart, periodEnd, auditActor(auth.session),
+        'AP/AR ยืนยันครบและยอดผ่านการตรวจสอบ');
+      await transaction.commit();
+      return NextResponse.json({ success: true, closedBy: auditActor(auth.session) });
+    } catch (err) {
+      await transaction.rollback();
+      if (err instanceof WorkPermissionError) return NextResponse.json({ error: err.message }, { status: err.status });
+      if (err instanceof Error && !(err instanceof sql.RequestError)) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
   } catch (err) {
     console.error('Period close POST error:', err);
     return NextResponse.json({ error: 'ปิดงวดไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });
@@ -103,22 +89,46 @@ export async function PATCH(req: NextRequest) {
     if (!account) return badRequest('ไม่พบบัญชีธนาคารนี้');
 
     const pool = await getPool();
-    const result = await pool
-      .request()
-      .input('acc', sql.NVarChar, account.bankAccountNo)
-      .input('periodStart', sql.Date, periodStart)
-      .input('by', sql.NVarChar(100), auditActor(auth.session))
-      .input('reason', sql.NVarChar(500), reason)
-      .query(`
-        UPDATE ReconciliationPeriodClose
-        SET Status = 'REOPENED', ReopenedBy = @by, ReopenedAt = SYSDATETIMEOFFSET(), ReopenReason = @reason
-        WHERE BankAccountNo = @acc AND PeriodStart = @periodStart AND Status = 'CLOSED'
-      `);
-    if ((result.rowsAffected[0] ?? 0) === 0) {
-      return NextResponse.json({ error: 'งวดนี้ไม่ได้ปิดอยู่ กรุณารีเฟรชหน้าใหม่' }, { status: 409 });
+    if (!(await workApprovalReady(pool))) {
+      return NextResponse.json({ error: WORK_APPROVAL_MIGRATION_HINT }, { status: 409 });
     }
-
-    return NextResponse.json({ success: true });
+    const transaction = new sql.Transaction(pool);
+    await transaction.begin();
+    try {
+      await assertWorkRole(auth.session, 'MASTER', transaction);
+      await lockReconciliationAccount(transaction, account.bankAccountNo);
+      const existing = await new sql.Request(transaction).input('acc', sql.NVarChar, account.bankAccountNo)
+        .input('from', sql.Date, periodStart).query(`SELECT PeriodEnd FROM ReconciliationPeriodClose
+          WHERE BankAccountNo=@acc AND PeriodStart=@from AND Status='CLOSED'`);
+      if (!existing.recordset.length) throw new Error('งวดนี้ไม่ได้ปิดอยู่ กรุณารีเฟรชหน้าใหม่');
+      const periodEnd = new Date(existing.recordset[0].PeriodEnd);
+      await new sql.Request(transaction)
+        .input('acc', sql.NVarChar, account.bankAccountNo)
+        .input('periodStart', sql.Date, periodStart)
+        .input('by', sql.NVarChar(100), auditActor(auth.session))
+        .input('reason', sql.NVarChar(500), reason)
+        .query(`
+          UPDATE ReconciliationPeriodClose
+          SET Status = 'REOPENED', ReopenedBy = @by, ReopenedAt = SYSDATETIMEOFFSET(), ReopenReason = @reason
+          WHERE BankAccountNo = @acc AND PeriodStart = @periodStart AND Status = 'CLOSED'
+        `);
+      // Final reopening requires fresh confirmation from both teams; retain old events for audit.
+      await new sql.Request(transaction).input('acc', sql.NVarChar, account.bankAccountNo)
+        .input('from', sql.Date, periodStart).input('to', sql.Date, periodEnd).query(`
+          DELETE FROM ReconciliationWorkApproval WHERE BankAccountNo=@acc AND PeriodStart<=@to AND PeriodEnd>=@from
+        `);
+      await recordPeriodEvent(transaction, account.bankAccountNo, periodStart, periodEnd, 'REOPEN_PERIOD', null,
+        auditActor(auth.session), reason);
+      await transaction.commit();
+      return NextResponse.json({ success: true });
+    } catch (err) {
+      await transaction.rollback();
+      if (err instanceof WorkPermissionError) return NextResponse.json({ error: err.message }, { status: err.status });
+      if (err instanceof Error && !(err instanceof sql.RequestError)) {
+        return NextResponse.json({ error: err.message }, { status: 409 });
+      }
+      throw err;
+    }
   } catch (err) {
     console.error('Period close PATCH error:', err);
     return NextResponse.json({ error: 'เปิดงวดคืนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง' }, { status: 500 });

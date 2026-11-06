@@ -1,5 +1,6 @@
 "use client";
 
+import HelpTooltip from '../../../components/HelpTooltip';
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { motion } from "framer-motion";
@@ -22,6 +23,13 @@ function formatDMY(iso: string) {
 }
 function signedOf(l: OffsetSelectionLine) {
   return l.direction === "IN" ? l.amount : -l.amount;
+}
+// ค้นด้วยเลขเอกสารหรือยอดเงิน — ยอดพิมพ์มีหรือไม่มีจุลภาคก็ได้ (1,234.50 หรือ 1234.50)
+export function matchesQuery(l: OffsetSelectionLine, query: string) {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const digits = q.replace(/,/g, "");
+  return l.ref.toLowerCase().includes(q) || (digits !== "" && formatAmount(l.amount).replace(/,/g, "").includes(digits));
 }
 
 /**
@@ -53,19 +61,19 @@ export default function OffsetConfirmModal({
 }) {
   const [picked, setPicked] = useState<Set<string>>(() => new Set(initialSelectedIds));
   const [groups, setGroups] = useState<string[][]>([]);
-  const [query, setQuery] = useState("");
+  // ช่องค้นหาแยกฝั่ง — หายอดขาเข้าแล้วฝั่งขาออกยังอยู่ครบให้ไล่หาคู่ต่อได้
+  const [queries, setQueries] = useState<Record<"IN" | "OUT", string>>({ IN: "", OUT: "" });
 
   const byId = useMemo(() => new Map(lines.map((l) => [l.id, l])), [lines]);
   // รายการที่พักไว้ในกลุ่มแล้วต้องไม่ถูกเลือกซ้ำในกลุ่มอื่น
   const staged = useMemo(() => new Set(groups.flat()), [groups]);
 
   const available = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return lines
       .filter((l) => !staged.has(l.id))
-      .filter((l) => (q ? l.ref.toLowerCase().includes(q) || formatAmount(l.amount).includes(q) : true))
+      .filter((l) => matchesQuery(l, queries[l.direction]))
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : b.amount - a.amount));
-  }, [lines, staged, query]);
+  }, [lines, staged, queries]);
 
   const pickedLines = useMemo(
     () => [...picked].map((id) => byId.get(id)).filter((l): l is OffsetSelectionLine => Boolean(l) && !staged.has(l!.id)),
@@ -124,6 +132,18 @@ export default function OffsetConfirmModal({
             </span>
           </p>
         </div>
+        <div className="relative mb-1.5">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            value={queries[direction]}
+            onChange={(e) => setQueries((prev) => ({ ...prev, [direction]: e.target.value }))}
+            placeholder={`ค้นหาเลขเอกสารหรือยอดเงิน${isIn ? "ขาเข้า" : "ขาออก"}`}
+            aria-label={`ค้นหารายการ${isIn ? "ขาเข้า" : "ขาออก"}`}
+            className={`w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs focus:outline-none ${
+              isIn ? "focus:border-purple-400" : "focus:border-red-400"
+            }`}
+          />
+        </div>
         <ul className="min-h-0 flex-1 divide-y divide-gray-100 overflow-y-auto rounded-xl border border-gray-100">
           {items.length === 0 && <li className="px-3 py-3 text-xs text-gray-400">ไม่มีรายการ</li>}
           {items.map((l) => {
@@ -177,12 +197,10 @@ export default function OffsetConfirmModal({
       >
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
-            <h2 id="offset-confirm-title" className="text-base font-semibold text-gray-900">
-              หักล้างเงินเข้ากับเงินออกใน BC365
-            </h2>
-            <p className="mt-0.5 text-xs text-gray-500">
-              เลือกรายการเงินเข้าและเงินออกใน BC365 ที่หักล้างกันจนสุทธิเป็นศูนย์ โดยไม่มีเงินผ่านธนาคาร สามารถจัดหลายกลุ่มก่อนยืนยันได้
-            </p>
+            <div className="flex items-center gap-1.5">
+              <h2 id="offset-confirm-title" className="text-base font-semibold text-gray-900">หักล้างเงินเข้ากับเงินออกใน BC365</h2>
+              <HelpTooltip label="วิธีหักล้างรายการ">เลือกรายการที่หักล้างกันจนสุทธิเป็นศูนย์และไม่มีเงินผ่านธนาคาร จัดหลายกลุ่มก่อนยืนยันได้</HelpTooltip>
+            </div>
           </div>
           <button
             onClick={() => !busy && onCancel()}
@@ -192,18 +210,6 @@ export default function OffsetConfirmModal({
           >
             <X size={18} />
           </button>
-        </div>
-
-        <div className="shrink-0 px-5 pt-3">
-          <div className="relative">
-            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="ค้นหาเลขเอกสารหรือยอดเงิน"
-              className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs focus:border-teal-400 focus:outline-none"
-            />
-          </div>
         </div>
 
         <div className="flex min-h-0 flex-1 gap-4 px-5 py-3">
