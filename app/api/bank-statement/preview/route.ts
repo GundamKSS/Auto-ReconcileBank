@@ -204,9 +204,10 @@ export async function POST(req: NextRequest) {
         widePeriodDays: periodDays !== null && periodDays > WIDE_PERIOD_DAYS ? periodDays : null,
         // รายการที่นำเข้าไว้แล้ว (แม้ชื่อไฟล์หรือ hash ต่างกัน) — ตอนนำเข้าจะข้ามไป และบันทึกเฉพาะ newCount รายการ
         overlap:
-          overlap.overlapCount > 0
+          overlap.overlapCount > 0 || overlap.updateCount > 0
             ? {
                 overlapCount: overlap.overlapCount,
+                updateCount: overlap.updateCount,
                 newCount: overlap.newLines.length,
                 newPeriodStart: newDates[0] ?? null,
                 newPeriodEnd: newDates[newDates.length - 1] ?? null,

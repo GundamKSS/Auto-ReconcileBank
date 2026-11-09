@@ -7,11 +7,13 @@ import {
   BarChart3,
   History,
   ShieldCheck,
+  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
 
 import type { UserSession } from './trwApi';
 import { ADMIN_ROLES, RECONCILE_ROLES, VIEWER_ROLES, storedAppRole, type AppRole } from './roles';
+
 
 // นิยาม Role/normalizeRole ย้ายไปอยู่ lib/roles.ts แล้ว เพราะฝั่ง server ต้องใช้ร่วมด้วย
 // (ไฟล์นี้ import ไอคอนจาก lucide-react จึงลากเข้า route handler ไม่ได้)
@@ -76,6 +78,12 @@ export const menuItems: MenuItem[] = [
     name: 'รายงาน',
     href: '/reports',
     icon: BarChart3,
+    auth: VIEWER_ROLES,
+  },
+  {
+    name: 'คู่มือ',
+    href: '/manual',
+    icon: BookOpen,
     auth: VIEWER_ROLES,
   },
 ];

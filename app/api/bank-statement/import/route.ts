@@ -6,7 +6,7 @@ import { parseBankStatement, BankCode, NormalizedStatementLine } from '../../../
 import { readStatementRows, MAX_FILE_BYTES, MAX_IMPORT_ROWS } from '../../../../lib/bankParsers/workbook';
 import { requireRole } from '../../../../lib/session';
 import { RECONCILE_ROLES } from '../../../../lib/roles';
-import { findOverlapWithImportedLines } from '../../../../lib/bankStatementOverlap';
+import { findOverlapWithImportedLines, type LineToUpdate } from '../../../../lib/bankStatementOverlap';
 import { bankAccountColumnsReady, CLOSED_ACCOUNT_ERROR, resolveBankAccount, statementSenderColumnsReady } from '../../../../lib/bankAccountDb';
 import { assertDatesOpen, isoDate, PeriodClosedError, reconcilePeriodCloseReady } from '../../../../lib/periodClose';
 import { readWorkPermissions } from '../../../../lib/workRolesDb';
@@ -78,6 +78,40 @@ async function insertLinesInBatches(
       INSERT INTO BankStatementLine
         (ImportId, BankCode, ${bankAccountNo ? 'BankAccountNo, ' : ''}TranDate, Description, Debit, Credit, Balance, ChequeNo, Channel, RawDescription${hasSenderColumns ? ', SenderBank, SenderAccountNo, SenderAccountName' : ''})
       VALUES ${valueRows.join(', ')}
+    `);
+  }
+}
+
+// อัปเดตเฉพาะค่า Debit และ Credit ของแถวเดิมในฐานข้อมูลที่เคยถูกนำเข้าไว้เป็น NULL
+// โดยใช้คีย์ (LineId + TranDate + Balance) เพื่อไม่ให้อัปเดตผิดแถว และไม่แตะต้อง MatchStatus เด็ดขาด
+async function updateLinesInBatches(
+  transaction: sql.Transaction,
+  linesToUpdate: LineToUpdate[]
+) {
+  for (let start = 0; start < linesToUpdate.length; start += INSERT_BATCH_SIZE) {
+    const batch = linesToUpdate.slice(start, start + INSERT_BATCH_SIZE);
+    const request = new sql.Request(transaction);
+
+    const valueRows: string[] = [];
+    batch.forEach((item, i) => {
+      request.input(`id${i}`, sql.Int, item.lineId);
+      request.input(`d${i}`, sql.Date, item.line.tranDate);
+      request.input(`db${i}`, sql.Decimal(18, 2), item.line.debit);
+      request.input(`cr${i}`, sql.Decimal(18, 2), item.line.credit);
+      request.input(`ba${i}`, sql.Decimal(18, 2), item.line.balance);
+      valueRows.push(`(@id${i}, @d${i}, @db${i}, @cr${i}, @ba${i})`);
+    });
+
+    await request.query(`
+      UPDATE l
+      SET l.Debit = v.Debit,
+          l.Credit = v.Credit
+      FROM BankStatementLine l
+      JOIN (VALUES ${valueRows.join(', ')}) AS v(LineId, TranDate, Debit, Credit, Balance)
+        ON l.LineId = v.LineId
+       AND l.TranDate = v.TranDate
+       AND (l.Balance = v.Balance OR (l.Balance IS NULL AND v.Balance IS NULL))
+      WHERE l.MatchStatus <> 'DELETED'
     `);
   }
 }
@@ -250,7 +284,7 @@ export async function POST(req: NextRequest) {
         periodEnd,
         bankAccountNo
       );
-      if (overlap.newLines.length === 0) {
+      if (overlap.newLines.length === 0 && overlap.linesToUpdate.length === 0) {
         await transaction.rollback();
         const sources = overlap.imports
           .map((i) => `${i.fileName} เมื่อ ${formatImportedAt(i.importedAt)}`)
@@ -260,6 +294,7 @@ export async function POST(req: NextRequest) {
           bankCode,
           bankAccountNo,
           rowCount: 0,
+          updatedCount: 0,
           skippedCount: overlap.overlapCount,
           side: importSide,
           otherSideCount: 0,
@@ -269,39 +304,78 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // ช่วงวันที่และจำนวนของหัวไฟล์นับตามรายการที่นำเข้าจริง ไม่ใช่ทั้งไฟล์ —
-      // หน้า Reconcile ใช้ PeriodStart/PeriodEnd นี้เติมช่วงวันที่ให้ตอนเริ่ม session
       const newLines = overlap.newLines;
-      if (bankAccountNo && await reconcilePeriodCloseReady()) {
-        await assertDatesOpen(transaction, bankAccountNo, newLines.map((l) => ({
-          date: isoDate(l.tranDate), direction: l.credit !== null ? 'IN' : 'OUT',
-        })));
+      const linesToUpdate = overlap.linesToUpdate;
+
+      if (linesToUpdate.length > 0) {
+        await updateLinesInBatches(transaction, linesToUpdate);
       }
-      const newDates = newLines.map((l) => l.tranDate).sort();
-      const newPeriodStart = newDates[0];
-      const newPeriodEnd = newDates[newDates.length - 1];
 
-      const importRequest = new sql.Request(transaction);
-      importRequest
-        .input('bankCode', sql.NVarChar, bankCode)
-        .input('fileName', sql.NVarChar, fileName)
-        .input('periodStart', sql.Date, newPeriodStart)
-        .input('periodEnd', sql.Date, newPeriodEnd)
-        .input('rowCount', sql.Int, newLines.length)
-        .input('fileHash', sql.Char(64), fileHash);
-      if (bankAccountNo) importRequest.input('bankAccountNo', sql.NVarChar, bankAccountNo);
+      let importId: number | null = overlap.imports[0]?.importId ?? linesToUpdate[0]?.importId ?? null;
+      let activePeriodStart = periodStart;
+      let activePeriodEnd = periodEnd;
 
-      const importResult = await importRequest.query(`
-          INSERT INTO BankStatementImport
-            (BankCode, ${bankAccountNo ? 'BankAccountNo, ' : ''}FileName, PeriodStart, PeriodEnd, ImportedRowCount, FileHash, Status)
-          OUTPUT INSERTED.ImportId
-          VALUES (@bankCode, ${bankAccountNo ? '@bankAccountNo, ' : ''}@fileName, @periodStart, @periodEnd, @rowCount, @fileHash, 'SUCCESS')
-        `);
+      if (newLines.length > 0) {
+        if (bankAccountNo && await reconcilePeriodCloseReady()) {
+          await assertDatesOpen(transaction, bankAccountNo, newLines.map((l) => ({
+            date: isoDate(l.tranDate), direction: l.credit !== null ? 'IN' : 'OUT',
+          })));
+        }
+        const newDates = newLines.map((l) => l.tranDate).sort();
+        const newPeriodStart = newDates[0];
+        const newPeriodEnd = newDates[newDates.length - 1];
+        activePeriodStart = newPeriodStart;
+        activePeriodEnd = newPeriodEnd;
 
-      const importId = importResult.recordset[0].ImportId;
-      const hasSenderColumns = await statementSenderColumnsReady();
+        const hasSenderColumns = await statementSenderColumnsReady();
+        const sameFileImport = overlap.imports.find(
+          (i) => i.fileName.trim().toLowerCase() === fileName.trim().toLowerCase()
+        );
 
-      await insertLinesInBatches(transaction, importId, bankCode, newLines, bankAccountNo, hasSenderColumns);
+        if (sameFileImport) {
+          importId = sameFileImport.importId;
+          await insertLinesInBatches(transaction, importId, bankCode, newLines, bankAccountNo, hasSenderColumns);
+
+          const updateImportRequest = new sql.Request(transaction);
+          updateImportRequest
+            .input('importId', sql.Int, importId)
+            .input('periodStart', sql.Date, newPeriodStart)
+            .input('periodEnd', sql.Date, newPeriodEnd)
+            .input('fileHash', sql.Char(64), fileHash);
+
+          await updateImportRequest.query(`
+            UPDATE BankStatementImport
+            SET ImportedRowCount = (
+                  SELECT COUNT(*) FROM BankStatementLine
+                  WHERE ImportId = @importId AND MatchStatus <> 'DELETED'
+                ),
+                PeriodStart = CASE WHEN @periodStart < PeriodStart THEN @periodStart ELSE PeriodStart END,
+                PeriodEnd = CASE WHEN @periodEnd > PeriodEnd THEN @periodEnd ELSE PeriodEnd END,
+                FileHash = @fileHash
+            WHERE ImportId = @importId
+          `);
+        } else {
+          const importRequest = new sql.Request(transaction);
+          importRequest
+            .input('bankCode', sql.NVarChar, bankCode)
+            .input('fileName', sql.NVarChar, fileName)
+            .input('periodStart', sql.Date, newPeriodStart)
+            .input('periodEnd', sql.Date, newPeriodEnd)
+            .input('rowCount', sql.Int, newLines.length)
+            .input('fileHash', sql.Char(64), fileHash);
+          if (bankAccountNo) importRequest.input('bankAccountNo', sql.NVarChar, bankAccountNo);
+
+          const importResult = await importRequest.query(`
+              INSERT INTO BankStatementImport
+                (BankCode, ${bankAccountNo ? 'BankAccountNo, ' : ''}FileName, PeriodStart, PeriodEnd, ImportedRowCount, FileHash, Status)
+              OUTPUT INSERTED.ImportId
+              VALUES (@bankCode, ${bankAccountNo ? '@bankAccountNo, ' : ''}@fileName, @periodStart, @periodEnd, @rowCount, @fileHash, 'SUCCESS')
+            `);
+
+          importId = importResult.recordset[0].ImportId as number;
+          await insertLinesInBatches(transaction, importId, bankCode, newLines, bankAccountNo, hasSenderColumns);
+        }
+      }
 
       await transaction.commit();
 
@@ -310,12 +384,13 @@ export async function POST(req: NextRequest) {
         bankCode,
         bankAccountNo,
         rowCount: newLines.length,
+        updatedCount: linesToUpdate.length,
         skippedCount: overlap.overlapCount,
         side: importSide,
         // รายการของอีกฝั่งที่ไม่ได้นำเข้ารอบนี้ (เป็นงานของอีกทีม)
         otherSideCount,
-        periodStart: newPeriodStart,
-        periodEnd: newPeriodEnd,
+        periodStart: activePeriodStart,
+        periodEnd: activePeriodEnd,
       });
     } catch (err) {
       await transaction.rollback();

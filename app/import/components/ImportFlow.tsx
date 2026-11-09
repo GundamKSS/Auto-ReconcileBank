@@ -46,6 +46,7 @@ type PreviewResponse = {
     // รายการที่นำเข้าไว้แล้ว ตอนนำเข้าจะข้ามไปและบันทึกเฉพาะ newCount รายการ
     overlap: {
       overlapCount: number;
+      updateCount?: number;
       newCount: number;
       newPeriodStart: string | null;
       newPeriodEnd: string | null;
@@ -86,7 +87,7 @@ export default function ImportFlow() {
 
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState("");
-  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; skippedCount: number; otherSideCount: number; message?: string } | null>(null);
+  const [importSuccess, setImportSuccess] = useState<{ rowCount: number; updatedCount: number; skippedCount: number; otherSideCount: number; message?: string } | null>(null);
 
   // ฝั่งที่นำเข้าตามสิทธิ์ AP/AR (lib/importSide.ts) — AP เงินออก, AR เงินเข้า, มีทั้งคู่/Master เลือกทุกครั้ง
   // server ตรวจซ้ำทั้งตอน preview และนำเข้า ค่าที่นี่มีไว้ให้หน้าจอพาไปถูกทาง
@@ -277,7 +278,8 @@ export default function ImportFlow() {
         return;
       }
       setImportSuccess({
-        rowCount: data.rowCount,
+        rowCount: data.rowCount ?? 0,
+        updatedCount: data.updatedCount ?? 0,
         skippedCount: data.skippedCount ?? 0,
         otherSideCount: data.otherSideCount ?? 0,
         message: data.message,
@@ -845,7 +847,9 @@ export default function ImportFlow() {
                         </span>
                       </div>
                     )}
-                    {preview.warnings.overlap && preview.warnings.overlap.newCount === 0 && (
+                    {preview.warnings.overlap &&
+                      preview.warnings.overlap.newCount === 0 &&
+                      (preview.warnings.overlap.updateCount ?? 0) === 0 && (
                       <div className="flex items-start gap-2">
                         <AlertTriangle size={18} className="text-red-500 mt-0.5 shrink-0" />
                         <span className="text-sm text-red-700">
@@ -854,12 +858,29 @@ export default function ImportFlow() {
                         </span>
                       </div>
                     )}
+                    {preview.warnings.overlap && (preview.warnings.overlap.updateCount ?? 0) > 0 && (
+                      <div className="flex items-start gap-2">
+                        <CheckCircle2 size={18} className="text-blue-500 mt-0.5 shrink-0" />
+                        <span className="text-sm text-slate-700">
+                          พบรายการเดิมที่ต้องอัปเดตยอด Debit/Credit{" "}
+                          <span className="font-semibold">
+                            {(preview.warnings.overlap.updateCount ?? 0).toLocaleString()} รายการ
+                          </span>{" "}
+                          (ไม่กระทบรายการที่จับคู่แล้ว)
+                        </span>
+                      </div>
+                    )}
                     {preview.warnings.overlap && preview.warnings.overlap.newCount > 0 && (
                       <div className="flex items-start gap-2">
                         <AlertTriangle size={18} className="text-yellow-500 mt-0.5 shrink-0" />
                         <span className="text-sm text-slate-700">
-                          ข้าม {preview.warnings.overlap.overlapCount.toLocaleString()} รายการที่นำเข้าแล้ว (
-                          {preview.warnings.overlap.imports.map((i) => i.fileName).join(", ")}) · จะนำเข้าเฉพาะ{" "}
+                          {preview.warnings.overlap.overlapCount > 0 && (
+                            <>
+                              ข้าม {preview.warnings.overlap.overlapCount.toLocaleString()} รายการที่นำเข้าแล้ว (
+                              {preview.warnings.overlap.imports.map((i) => i.fileName).join(", ")}) ·{" "}
+                            </>
+                          )}
+                          จะนำเข้าเฉพาะ{" "}
                           <span className="font-semibold">
                             {preview.warnings.overlap.newCount.toLocaleString()} รายการใหม่
                           </span>{" "}
@@ -877,10 +898,12 @@ export default function ImportFlow() {
                 )}
 
                 {importSuccess ? (
-                  <div className={`p-4 rounded-xl text-sm border ${importSuccess.rowCount > 0 ? "bg-green-50 border-green-100 text-green-700" : "bg-amber-50 border-amber-100 text-amber-800"}`}>
-                    {importSuccess.rowCount > 0 ? (
+                  <div className={`p-4 rounded-xl text-sm border ${importSuccess.rowCount > 0 || importSuccess.updatedCount > 0 ? "bg-green-50 border-green-100 text-green-700" : "bg-amber-50 border-amber-100 text-amber-800"}`}>
+                    {importSuccess.rowCount > 0 || importSuccess.updatedCount > 0 ? (
                       <>
-                        นำเข้าสำเร็จ {importSuccess.rowCount.toLocaleString()} รายการ
+                        {importSuccess.rowCount > 0 && `นำเข้าใหม่สำเร็จ ${importSuccess.rowCount.toLocaleString()} รายการ`}
+                        {importSuccess.rowCount > 0 && importSuccess.updatedCount > 0 && " · "}
+                        {importSuccess.updatedCount > 0 && `อัปเดตยอด Debit/Credit ของรายการเดิม ${importSuccess.updatedCount.toLocaleString()} รายการ`}
                         {importSuccess.skippedCount > 0 &&
                           ` · ข้ามรายการที่นำเข้าแล้ว ${importSuccess.skippedCount.toLocaleString()} รายการ`}
                         {importSuccess.otherSideCount > 0 &&
@@ -898,14 +921,25 @@ export default function ImportFlow() {
                   <div className="mt-auto flex flex-col gap-3">
                     <button
                       onClick={handleConfirmImport}
-                      disabled={importing || preview.warnings.overlap?.newCount === 0}
+                      disabled={
+                        importing ||
+                        (preview.warnings.overlap !== null &&
+                          preview.warnings.overlap.newCount === 0 &&
+                          (preview.warnings.overlap.updateCount ?? 0) === 0)
+                      }
                       className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium shadow-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       {importing && <Loader2 size={16} className="animate-spin" />}
-                      {preview.warnings.overlap?.newCount === 0
+                      {preview.warnings.overlap !== null &&
+                      preview.warnings.overlap.newCount === 0 &&
+                      (preview.warnings.overlap.updateCount ?? 0) === 0
                         ? "ไม่มีรายการใหม่ให้นำเข้า"
                         : importing
                         ? "กำลังนำเข้า..."
+                        : preview.warnings.overlap && (preview.warnings.overlap.updateCount ?? 0) > 0 && preview.warnings.overlap.newCount === 0
+                        ? `ยืนยันอัปเดตข้อมูลเดิม ${(preview.warnings.overlap.updateCount ?? 0).toLocaleString()} รายการ`
+                        : preview.warnings.overlap && (preview.warnings.overlap.updateCount ?? 0) > 0 && preview.warnings.overlap.newCount > 0
+                        ? `ยืนยันนำเข้า ${preview.warnings.overlap.newCount.toLocaleString()} รายการใหม่ · อัปเดต ${(preview.warnings.overlap.updateCount ?? 0).toLocaleString()} รายการเดิม`
                         : `ยืนยันนำเข้า ${(preview.warnings.overlap?.newCount ?? preview.totalRows).toLocaleString()} รายการ`}
                     </button>
                     <button
