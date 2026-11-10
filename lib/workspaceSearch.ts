@@ -7,6 +7,8 @@ export interface SearchableLineItem {
   description: string;
   senderInfo?: string | null;
   senderHint?: string | null;
+  offsetRemark?: string | null;
+  offsetCounterpartRef?: string | null;
   amount: number;
 }
 
@@ -44,6 +46,8 @@ export function matchesWorkspaceItem(item: SearchableLineItem, query: string): b
       (item.description && item.description.toLowerCase().includes(token)) ||
       (Boolean(item.senderInfo) && item.senderInfo!.toLowerCase().includes(token)) ||
       (Boolean(item.senderHint) && item.senderHint!.toLowerCase().includes(token)) ||
+      (Boolean(item.offsetRemark) && item.offsetRemark!.toLowerCase().includes(token)) ||
+      (Boolean(item.offsetCounterpartRef) && item.offsetCounterpartRef!.toLowerCase().includes(token)) ||
       (item.date && item.date.includes(token)) ||
       (dmy !== "" && dmy.includes(token)) ||
       amountFormatted.toLowerCase().includes(token) ||

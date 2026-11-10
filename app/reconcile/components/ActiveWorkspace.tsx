@@ -50,6 +50,14 @@ type Direction = "IN" | "OUT";
 // (app/api/reconcile/match/route.ts) ไม่งั้นปุ่มกดได้แต่ server ปฏิเสธ
 const AMOUNT_TOLERANCE = 0.005;
 
+type UndoOffsetTarget = {
+  matchId: number;
+  num: number;
+  ref: string;
+  amount: number;
+  remark: string | null;
+};
+
 type BankApiLine = {
   id: string;
   lineId: number;
@@ -66,6 +74,14 @@ type BankApiLine = {
   senderAccountName?: string | null;
   senderHint?: string | null;
   amount: number;
+  isOffset?: boolean;
+  offsetMatchId?: number | null;
+  offsetNum?: number | null;
+  offsetRemark?: string | null;
+  offsetBy?: string | null;
+  offsetCounterpartRef?: string | null;
+  offsetCounterpartDate?: string | null;
+  offsetCounterpartDescription?: string | null;
 };
 
 type GlApiLine = {
@@ -81,6 +97,14 @@ type GlApiLine = {
   direction: Direction;
   description: string;
   amount: number;
+  isOffset?: boolean;
+  offsetMatchId?: number | null;
+  offsetNum?: number | null;
+  offsetRemark?: string | null;
+  offsetBy?: string | null;
+  offsetCounterpartRef?: string | null;
+  offsetCounterpartDate?: string | null;
+  offsetCounterpartDescription?: string | null;
 };
 
 type LineItem = {
@@ -93,6 +117,14 @@ type LineItem = {
   senderInfo?: string | null;
   senderHint?: string | null;
   amount: number;
+  isOffset?: boolean;
+  offsetMatchId?: number | null;
+  offsetNum?: number | null;
+  offsetRemark?: string | null;
+  offsetBy?: string | null;
+  offsetCounterpartRef?: string | null;
+  offsetCounterpartDate?: string | null;
+  offsetCounterpartDescription?: string | null;
 };
 
 // รายการในกลุ่มที่ระบบติ๊กให้ แยกตามประเภท — ใช้กับปุ่มเลือก/ยกเลิกทั้งหมดตามประเภท
@@ -369,11 +401,13 @@ function CircleCheckbox({
   checked,
   indeterminate,
   ready,
+  disabled,
   onClick,
 }: {
   checked: boolean;
   indeterminate?: boolean;
   ready?: boolean;
+  disabled?: boolean;
   onClick: (e: React.MouseEvent) => void;
 }) {
   const activeColor = ready ? "bg-green-600 border-green-600" : "bg-blue-600 border-blue-600";
@@ -392,9 +426,15 @@ function CircleCheckbox({
         }
       `}</style>
       <button
+        type="button"
+        disabled={disabled}
         onClick={onClick}
-        className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition-all duration-150 active:scale-90 ${
-          checked || indeterminate ? `${activeColor} scale-100` : "border-gray-300 bg-white hover:border-gray-400"
+        className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 border transition-all duration-150 ${
+          disabled
+            ? "border-slate-300 bg-slate-100 opacity-50 cursor-not-allowed"
+            : checked || indeterminate
+            ? `${activeColor} scale-100 active:scale-90`
+            : "border-gray-300 bg-white hover:border-gray-400 active:scale-90"
         }`}
         aria-label="เลือกรายการ"
       >
@@ -436,6 +476,8 @@ function DateGroupRow({
   clusterOf,
   dateClusterNumbering,
   lumpClusterIds,
+  onRequestUndoOffset,
+  undoDisabled,
 }: {
   date: string;
   items: LineItem[];
@@ -451,10 +493,16 @@ function DateGroupRow({
   clusterOf: Map<string, number>;
   dateClusterNumbering: Map<string, Map<number, number>>;
   lumpClusterIds: Set<number>;
+  onRequestUndoOffset?: (target: UndoOffsetTarget) => void;
+  undoDisabled?: boolean;
 }) {
-  const total = items.reduce((sum, i) => sum + (i.amount ?? 0), 0);
-  const selectedInGroup = items.filter((i) => selected.has(i.id)).length;
-  const allSelected = selectedInGroup === items.length && items.length > 0;
+  const selectableItems = items.filter((i) => !i.isOffset);
+  const offsetItems = items.filter((i) => i.isOffset);
+  const allOffsetOnly = selectableItems.length === 0 && offsetItems.length > 0;
+  const total = selectableItems.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const offsetTotal = offsetItems.reduce((sum, i) => sum + (i.amount ?? 0), 0);
+  const selectedInGroup = selectableItems.filter((i) => selected.has(i.id)).length;
+  const allSelected = selectedInGroup === selectableItems.length && selectableItems.length > 0;
   const someSelected = selectedInGroup > 0 && !allSelected;
 
   // เลขกลุ่มที่แสดง (1, 2, 3, ...) ต้องมาจาก map กลางที่คำนวณครั้งเดียวใน ActiveWorkspace แล้วส่งลงมา
@@ -468,15 +516,18 @@ function DateGroupRow({
 
   function toggleGroup(e: React.MouseEvent) {
     e.stopPropagation();
+    if (selectableItems.length === 0) return;
     const shouldSelect = !allSelected;
-    items.forEach((item) => {
+    selectableItems.forEach((item) => {
       const isSel = selected.has(item.id);
       if (shouldSelect && !isSel) onToggle(item.id);
       if (!shouldSelect && isSel) onToggle(item.id);
     });
   }
 
-  const rowBg = matchReady
+  const rowBg = allOffsetOnly
+    ? "bg-slate-50/80"
+    : matchReady
     ? "bg-green-50/60"
     : someSelected || allSelected
     ? "bg-blue-50/40"
@@ -494,7 +545,13 @@ function DateGroupRow({
       }`}
     >
       <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer" onClick={onToggleExpand}>
-        <CircleCheckbox checked={allSelected} indeterminate={someSelected} ready={matchReady} onClick={toggleGroup} />
+        <CircleCheckbox
+          checked={allSelected}
+          indeterminate={someSelected}
+          ready={matchReady}
+          disabled={allOffsetOnly}
+          onClick={toggleGroup}
+        />
         <ChevronRight
           size={14}
           className="text-gray-400 shrink-0 transition-transform duration-200 ease-out"
@@ -502,8 +559,15 @@ function DateGroupRow({
         />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap mb-1">
-            <span className="text-sm text-gray-800 font-medium">{date}</span>
-            <span className="text-[11px] text-gray-400">{items.length} รายการ</span>
+            <span className={`text-sm font-medium ${allOffsetOnly ? "text-slate-500" : "text-gray-800"}`}>{date}</span>
+            {selectableItems.length > 0 && (
+              <span className="text-[11px] text-gray-400">{selectableItems.length} รายการ</span>
+            )}
+            {offsetItems.length > 0 && (
+              <span className="text-[10px] font-semibold text-slate-600 bg-slate-200/80 border border-slate-300/80 px-2 py-0.5 rounded-full">
+                หักล้างแล้ว {offsetItems.length} รายการ
+              </span>
+            )}
             {matchReady && (
               <span className="text-[10px] font-semibold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
                 ยอดรวมตรงกัน
@@ -520,8 +584,10 @@ function DateGroupRow({
           </div>
         </div>
         <div className="text-right shrink-0">
-          <p className="text-[10px] text-gray-400">ยอดรวมวันนี้</p>
-          <p className="text-base font-semibold text-gray-900 tabular-nums">{formatAmount(total)}</p>
+          <p className="text-[10px] text-gray-400">{allOffsetOnly ? "ยอดที่หักล้างแล้ว" : "ยอดรวมวันนี้"}</p>
+          <p className={`text-base font-semibold tabular-nums ${allOffsetOnly ? "text-slate-400 line-through decoration-slate-300" : "text-gray-900"}`}>
+            {formatAmount(allOffsetOnly ? offsetTotal : total)}
+          </p>
         </div>
       </div>
 
@@ -532,33 +598,49 @@ function DateGroupRow({
         <div className="overflow-hidden">
           <div className="bg-gray-50/60">
             {hasOpened && items.map((item) => {
-              const isSelected = selected.has(item.id);
+              const isOffset = Boolean(item.isOffset);
+              const isSelected = !isOffset && selected.has(item.id);
               const rawCluster = clusterOf.get(item.id);
               const groupNo = rawCluster !== undefined ? localClusterNo.get(rawCluster) : undefined;
               const groupColor = groupNo !== undefined ? GROUP_COLORS[(groupNo - 1) % GROUP_COLORS.length] : "";
+              const counterpartDirLabel = item.direction === "IN" ? "เงินออก (OUT)" : "เงินเข้า (IN)";
               return (
                 <label
                   key={item.id}
-                  className={`group flex items-center gap-3 pl-12 pr-4 py-2.5 cursor-pointer transition-colors border-t border-gray-100 ${
-                    isSelected ? "bg-blue-50/60" : "hover:bg-gray-100/60"
+                  className={`group flex items-start gap-3 pl-12 pr-4 py-2.5 transition-colors border-t border-gray-100 ${
+                    isOffset
+                      ? "bg-slate-100/90 text-slate-400 cursor-not-allowed"
+                      : isSelected
+                      ? "bg-blue-50/60 cursor-pointer"
+                      : "hover:bg-gray-100/60 cursor-pointer"
                   }`}
                 >
                   <input
                     type="checkbox"
                     checked={isSelected}
-                    onChange={() => onToggle(item.id)}
-                    className="w-4 h-4 rounded border-gray-300 shrink-0"
+                    disabled={isOffset}
+                    onChange={() => {
+                      if (!isOffset) onToggle(item.id);
+                    }}
+                    className={`mt-1 w-4 h-4 rounded border-gray-300 shrink-0 ${
+                      isOffset ? "opacity-40 cursor-not-allowed" : ""
+                    }`}
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 text-xs text-gray-400 mb-0.5 flex-wrap">
-                      <span className="whitespace-nowrap">{item.ref}</span>
+                      <span className={`whitespace-nowrap ${isOffset ? "text-slate-500 font-medium" : ""}`}>{item.ref}</span>
                       <DirectionBadge direction={item.direction} />
-                      {groupNo !== undefined && (
+                      {isOffset && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-slate-300 bg-slate-200/80 text-slate-700">
+                          หักล้างแล้ว{item.offsetMatchId ? ` #${item.offsetMatchId}` : ""}
+                        </span>
+                      )}
+                      {!isOffset && groupNo !== undefined && (
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${groupColor}`}>
                           กลุ่ม {groupNo}
                         </span>
                       )}
-                      {rawCluster !== undefined && lumpClusterIds.has(rawCluster) && (
+                      {!isOffset && rawCluster !== undefined && lumpClusterIds.has(rawCluster) && (
                         <span
                           className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-amber-200 bg-amber-50 text-amber-700"
                           title="กลุ่มรวมยอด กรุณาตรวจสอบก่อนจับคู่"
@@ -567,19 +649,60 @@ function DateGroupRow({
                         </span>
                       )}
                     </div>
-                    <p className="text-sm text-gray-800 truncate">{item.description}</p>
+                    <p className={`text-sm truncate ${isOffset ? "text-slate-500" : "text-gray-800"}`}>{item.description}</p>
                     {item.senderInfo && (
                       <p className="text-[11px] text-gray-500 font-mono truncate" title={item.senderInfo}>
                         {item.senderInfo}
                       </p>
                     )}
-                    {item.senderHint && (
+                    {!isOffset && item.senderHint && (
                       <p className="text-[10px] text-emerald-600 font-medium truncate" title={item.senderHint}>
                         💡 {item.senderHint}
                       </p>
                     )}
+                    {isOffset && (
+                      <div className="mt-1.5 rounded-lg border border-slate-200/90 bg-white/85 px-2.5 py-1.5 text-[11px] text-slate-600 shadow-2xs">
+                        <p className="font-medium text-slate-700 break-words">
+                          หมายเหตุที่อีกฝั่งเขียนไว้:{" "}
+                          <span className="font-semibold text-slate-900">
+                            &ldquo;{item.offsetRemark || "ไม่ได้ระบุเหตุผล"}&rdquo;
+                          </span>
+                        </p>
+                        <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
+                          <span>
+                            หักล้างคู่กับฝั่ง{counterpartDirLabel}
+                            {item.offsetCounterpartRef ? ` · ${item.offsetCounterpartRef}` : ""}
+                            {item.offsetCounterpartDate ? ` (${formatDMY(formatDate(item.offsetCounterpartDate))})` : ""}
+                            {item.offsetBy ? ` · โดย ${item.offsetBy}` : ""}
+                          </span>
+                          {onRequestUndoOffset && item.offsetMatchId && (
+                            <button
+                              type="button"
+                              disabled={undoDisabled}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                onRequestUndoOffset({
+                                  matchId: item.offsetMatchId!,
+                                  num: item.offsetNum ?? 1,
+                                  ref: item.ref,
+                                  amount: item.amount,
+                                  remark: item.offsetRemark ?? null,
+                                });
+                              }}
+                              title="หากอีกฝั่งหักล้างผิดคู่ สามารถกดยกเลิกเพื่อดึงรายการกลับมาแก้ไขได้"
+                              className="rounded-md border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              ยกเลิกหักล้าง
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <span className="text-sm text-gray-700 tabular-nums whitespace-nowrap">{formatAmount(item.amount ?? 0)}</span>
+                  <span className={`text-sm tabular-nums whitespace-nowrap ${isOffset ? "text-slate-400 line-through decoration-slate-300" : "text-gray-700"}`}>
+                    {formatAmount(item.amount ?? 0)}
+                  </span>
                 </label>
               );
             })}
@@ -620,6 +743,8 @@ function Panel({
   scrollRef,
   onScroll,
   searchQuery = "",
+  onRequestUndoOffset,
+  undoDisabled,
 }: {
   title: string;
   // ระบุฝั่งของ panel ใน shared frame — ใช้กำหนดเส้นแบ่งกลางและการจัดหัวข้อให้สมมาตร
@@ -653,6 +778,8 @@ function Panel({
   scrollRef?: RefObject<HTMLDivElement | null>;
   onScroll?: (event: UIEvent<HTMLDivElement>) => void;
   searchQuery?: string;
+  onRequestUndoOffset?: (target: UndoOffsetTarget) => void;
+  undoDisabled?: boolean;
 }) {
   const byGroup = groupTab === "ALL" ? allItems : allItems.filter((i) => i.groupKey === groupTab);
   const inDirection = byGroup.filter((item) => item.direction === filter);
@@ -664,13 +791,18 @@ function Panel({
     return inDirection.filter((item) => selected.has(item.id) || matchesWorkspaceItem(item, searchQuery));
   }, [inDirection, isSearching, searchQuery, selected]);
 
-  // นับ "selected" เฉพาะฝั่งทิศทางที่กำลังดูอยู่ (filter) — ไม่ใช่ selected.size ดิบซึ่งรวมอีกฝั่งที่ไม่เกี่ยวด้วย
-  const selectedInDirection = inDirection.filter((item) => selected.has(item.id)).length;
+  // นับ "selected" และ "รอจับคู่" เฉพาะรายการที่ยังไม่ได้หักล้าง (!item.isOffset)
+  // ส่วนรายการที่หักล้างไปแล้วจะแสดงเป็นสีเทาเพื่อแจ้งเหตุผล แต่ไม่นับรวมในยอดรอจับคู่
+  const selectedInDirection = inDirection.filter((item) => !item.isOffset && selected.has(item.id)).length;
+  const pendingCount = filtered.filter((item) => !item.isOffset).length;
+  const offsetCount = filtered.filter((item) => item.isOffset).length;
   const { byDate, pendingTotal } = useMemo(() => {
     const map = new Map<string, LineItem[]>();
     let total = 0;
     for (const item of filtered) {
-      total += (item.amount ?? 0);
+      if (!item.isOffset) {
+        total += (item.amount ?? 0);
+      }
       const d = formatDate(item.date);
       if (!map.has(d)) map.set(d, []);
       map.get(d)!.push(item);
@@ -701,7 +833,7 @@ function Panel({
           <span className="whitespace-nowrap text-xs text-gray-400">
             {isSearching
               ? `พบ ${filtered.length} จาก ${inDirection.length} รายการ (เลือก ${selectedInDirection})`
-              : `เลือกแล้ว ${selectedInDirection} · รอจับคู่ ${filtered.length}`}
+              : `เลือกแล้ว ${selectedInDirection} · รอจับคู่ ${pendingCount}${offsetCount > 0 ? ` · หักล้างแล้ว ${offsetCount}` : ""}`}
           </span>
           <p
             className={`whitespace-nowrap text-[11px] font-medium tracking-wide text-gray-400 ${
@@ -787,6 +919,8 @@ function Panel({
               clusterOf={clusterOf}
               dateClusterNumbering={dateClusterNumbering}
               lumpClusterIds={lumpClusterIds}
+              onRequestUndoOffset={onRequestUndoOffset}
+              undoDisabled={undoDisabled}
             />
           ))}
       </div>
@@ -945,6 +1079,10 @@ export default function ActiveWorkspace({
   const [offsetConfirmOpen, setOffsetConfirmOpen] = useState(false);
   // หักล้างรายการฝั่ง Bank Statement (เช็คเด้ง / ปรับปรุงยอด)
   const [bankOffsetOpen, setBankOffsetOpen] = useState(false);
+  // เป้าหมายการยกเลิกรายการหักล้าง (เมื่ออีกฝั่งพบว่าหักล้างผิดคู่)
+  const [undoOffsetTarget, setUndoOffsetTarget] = useState<UndoOffsetTarget | null>(null);
+  const [undoOffsetReason, setUndoOffsetReason] = useState("");
+  const [undoOffsetError, setUndoOffsetError] = useState("");
   const [remarkError, setRemarkError] = useState("");
 
   // ยอดคงเหลือ Bank เทียบ GL ของทั้งงวด — โหลดใหม่ทุกครั้งที่ตารางโหลดใหม่ (หลัง Match/พัก/ยกเลิก)
@@ -1107,11 +1245,13 @@ export default function ActiveWorkspace({
       setUnassignedBankLines(Number(data.unassignedBankLines ?? 0));
 
       // ครั้งแรกของ workspace ใหม่จะ auto-tick ตามปกติ แต่ถ้ากลับมาจากหน้าอื่นให้คืนสิ่งที่ user เลือกไว้
-      // พร้อมกรอง id ที่ถูกคนอื่น Match/ย้าย Suspense ไปแล้วออก ไม่ปล่อย selection เก่าค้างเป็นข้อมูลผี
-      const { readyBankIds, readyGlIds, clusterOf: newClusterOf } = computeReadyIds(data.bankLines, data.glLines);
+      // พร้อมกรอง id ที่ถูกคนอื่น Match/ย้าย Suspense/หักล้างไปแล้วออก ไม่ปล่อย selection เก่าค้างเป็นข้อมูลผี
+      const unmatchedBank = (data.bankLines as BankApiLine[]).filter((line) => !line.isOffset);
+      const unmatchedGl = (data.glLines as GlApiLine[]).filter((line) => !line.isOffset);
+      const { readyBankIds, readyGlIds, clusterOf: newClusterOf } = computeReadyIds(unmatchedBank, unmatchedGl);
       if (draftToRestore) {
-        const availableBank = new Set<string>(data.bankLines.map((line: BankApiLine) => line.id));
-        const availableGl = new Set<string>(data.glLines.map((line: GlApiLine) => line.id));
+        const availableBank = new Set<string>(unmatchedBank.map((line: BankApiLine) => line.id));
+        const availableGl = new Set<string>(unmatchedGl.map((line: GlApiLine) => line.id));
         setSelectedBank(new Set(draftToRestore.selectedBank.filter((id) => availableBank.has(id))));
         setSelectedGl(new Set(draftToRestore.selectedGl.filter((id) => availableGl.has(id))));
         restoreScrollPositions(draftToRestore);
@@ -1390,6 +1530,14 @@ export default function ActiveWorkspace({
           senderInfo,
           senderHint: l.senderHint ?? null,
           amount: Number(l.amount ?? 0),
+          isOffset: Boolean(l.isOffset),
+          offsetMatchId: l.offsetMatchId ?? null,
+          offsetNum: l.offsetNum ?? null,
+          offsetRemark: l.offsetRemark ?? null,
+          offsetBy: l.offsetBy ?? null,
+          offsetCounterpartRef: l.offsetCounterpartRef ?? null,
+          offsetCounterpartDate: l.offsetCounterpartDate ?? null,
+          offsetCounterpartDescription: l.offsetCounterpartDescription ?? null,
         };
       }),
     [bankLinesRaw]
@@ -1407,6 +1555,14 @@ export default function ActiveWorkspace({
         // จึงแสดงชื่อบัญชีแทน — เดิมต่อเป็น "Document_No · ชื่อบัญชี" ทำให้เลขเอกสารขึ้นซ้ำ 2 ครั้งทุกแถว
         description: l.accountName ?? l.description,
         amount: Number(l.amount ?? 0),
+        isOffset: Boolean(l.isOffset),
+        offsetMatchId: l.offsetMatchId ?? null,
+        offsetNum: l.offsetNum ?? null,
+        offsetRemark: l.offsetRemark ?? null,
+        offsetBy: l.offsetBy ?? null,
+        offsetCounterpartRef: l.offsetCounterpartRef ?? null,
+        offsetCounterpartDate: l.offsetCounterpartDate ?? null,
+        offsetCounterpartDescription: l.offsetCounterpartDescription ?? null,
       })),
     [glLinesRaw]
   );
@@ -1433,9 +1589,11 @@ export default function ActiveWorkspace({
 
   // เช็คแยกอิสระต่อทิศทาง: วันไหนยอด IN ของ bank กับ GL เท่ากันพอดี ถือว่า ready แล้ว
   // ไม่ต้องรอให้ OUT ของวันเดียวกันตรงด้วย (และกลับกัน) เพราะบัญชีมองแยกกันจริงๆ
+  // ไม่นับรายการที่ถูกหักล้างไปแล้ว (isOffset)
   const sumByDateDirection = useCallback((lines: LineItem[]) => {
     const map = new Map<string, number>();
     for (const l of lines) {
+      if (l.isOffset) continue;
       const key = `${formatDate(l.date)}_${l.direction}`;
       map.set(key, (map.get(key) ?? 0) + l.amount);
     }
@@ -1542,6 +1700,8 @@ export default function ActiveWorkspace({
   }
 
   function toggleBank(id: string) {
+    const target = bankLinesRaw.find((l) => l.id === id);
+    if (target?.isOffset) return;
     setSelectedBank((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -1549,6 +1709,8 @@ export default function ActiveWorkspace({
     });
   }
   function toggleGl(id: string) {
+    const target = glLinesRaw.find((l) => l.id === id);
+    if (target?.isOffset) return;
     setSelectedGl((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
@@ -1560,11 +1722,11 @@ export default function ActiveWorkspace({
   // แต่ "การกระทำ" (totals, Match, Move to suspense, Clear) ต้องเห็นแค่ฝั่งทิศทางที่กำลังเปิดดูอยู่เท่านั้น
   // เพราะ IN/OUT มักเป็นคนละคนรับผิดชอบ — กด Match ตอนอยู่แท็บ IN ต้องไม่ไปยุ่งกับ OUT ที่อีกคนเลือกค้างไว้
   const selectedBankItems = useMemo(
-    () => bankLinesRaw.filter((l) => selectedBank.has(l.id) && l.direction === directionFilter),
+    () => bankLinesRaw.filter((l) => !l.isOffset && selectedBank.has(l.id) && l.direction === directionFilter),
     [selectedBank, bankLinesRaw, directionFilter]
   );
   const selectedGlItems = useMemo(
-    () => glLinesRaw.filter((l) => selectedGl.has(l.id) && l.direction === directionFilter),
+    () => glLinesRaw.filter((l) => !l.isOffset && selectedGl.has(l.id) && l.direction === directionFilter),
     [selectedGl, glLinesRaw, directionFilter]
   );
 
@@ -1904,9 +2066,9 @@ export default function ActiveWorkspace({
   }
 
   // เลือก GL ที่ระบบหาคู่ไม่เจอทั้งหมดในแท็บที่ดูอยู่ — ทีมบัญชีจับคู่ครบแล้วจะพักที่เหลือทีเดียว
-  // (ในที่ประชุมสั่งซ้ำหลายรอบว่า "ที่ยังไม่เจอ กดทั้งหมดแล้วพักไป") ไม่รวมรายการที่ระบบจับกลุ่มกับ Bank ได้
+  // (ในที่ประชุมสั่งซ้ำหลายรอบว่า "ที่ยังไม่เจอ กดทั้งหมดแล้วพักไป") ไม่รวมรายการที่ระบบจับกลุ่มกับ Bank ได้ หรือรายการที่หักล้างไปแล้ว
   const remainingGlIds = useMemo(
-    () => glLinesRaw.filter((l) => l.direction === directionFilter && !clusterOf.has(l.id)).map((l) => l.id),
+    () => glLinesRaw.filter((l) => !l.isOffset && l.direction === directionFilter && !clusterOf.has(l.id)).map((l) => l.id),
     [glLinesRaw, directionFilter, clusterOf]
   );
   const remainingGlSelected = remainingGlIds.length > 0 && remainingGlIds.every((id) => selectedGl.has(id));
@@ -1924,9 +2086,54 @@ export default function ActiveWorkspace({
   // ติ๊กค้างไว้ข้ามแท็บ IN/OUT ได้อยู่แล้ว (selectedGl เก็บทั้งสองทิศ) — ยกไปเป็นกลุ่มตั้งต้นในหน้าต่างจับชน
   // ต่างจากปุ่มอื่นในแถบล่างที่ตั้งใจให้เห็นเฉพาะทิศที่เปิดดูอยู่ เพราะ IN/OUT มักคนละคนดูแล
   const offsetSelection = useMemo(
-    () => glLinesRaw.filter((l) => selectedGl.has(l.id)),
+    () => glLinesRaw.filter((l) => !l.isOffset && selectedGl.has(l.id)),
     [glLinesRaw, selectedGl]
   );
+
+  function openUndoOffsetModal(target: UndoOffsetTarget) {
+    if (busy || syncingGl || anyWorkLocked || noOffsetRole) return;
+    setUndoOffsetTarget(target);
+    setUndoOffsetReason("");
+    setUndoOffsetError("");
+  }
+
+  async function handleConfirmUndoOffset() {
+    if (!undoOffsetTarget || busy || syncingGl || anyWorkLocked || noOffsetRole) return;
+    const cleanReason = undoOffsetReason.trim();
+    if (cleanReason.length < 3) {
+      setUndoOffsetError("กรุณาระบุเหตุผลในการยกเลิกการหักล้างอย่างน้อย 3 ตัวอักษร");
+      return;
+    }
+    setBusy(true);
+    setUndoOffsetError("");
+    try {
+      const res = await fetch("/api/reconcile/unmatch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targets: [{ matchId: undoOffsetTarget.matchId, nums: [undoOffsetTarget.num] }],
+          reason: cleanReason,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setUndoOffsetError(data.error || "ยกเลิกการหักล้างไม่สำเร็จ");
+        return;
+      }
+      const matchId = undoOffsetTarget.matchId;
+      setUndoOffsetTarget(null);
+      setUndoOffsetReason("");
+      setToast({
+        title: "ยกเลิกการหักล้างแล้ว",
+        message: `คืนรายการจาก #${matchId} กลับมาให้กระทบยอดใหม่เรียบร้อยแล้ว`,
+      });
+      await loadData(readWorkspaceDraft(draftKey));
+    } catch {
+      setUndoOffsetError("ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้ กรุณาตรวจสอบการเชื่อมต่อ");
+    } finally {
+      setBusy(false);
+    }
+  }
   async function handleOffsetSelection(groups: number[][], reason: string) {
     if (groups.length === 0 || busy || syncingGl || anyWorkLocked || noOffsetRole) return;
     setBusy(true);
@@ -2024,7 +2231,7 @@ export default function ActiveWorkspace({
   const assistantPreviewAmounts = useMemo(
     () =>
       bankLinesRaw
-        .filter((l) => l.direction === directionFilter && !clusterOf.has(l.id))
+        .filter((l) => !l.isOffset && l.direction === directionFilter && !clusterOf.has(l.id))
         .slice(0, 40)
         .map((l) => Number(l.amount)),
     [bankLinesRaw, directionFilter, clusterOf]
@@ -2229,6 +2436,14 @@ export default function ActiveWorkspace({
               description: l.accountName ?? l.description,
               accountNo: l.accountNo,
               accountName: l.accountName,
+              isOffset: l.isOffset,
+              offsetMatchId: l.offsetMatchId,
+              offsetNum: l.offsetNum,
+              offsetRemark: l.offsetRemark,
+              offsetBy: l.offsetBy,
+              offsetCounterpartRef: l.offsetCounterpartRef,
+              offsetCounterpartDate: l.offsetCounterpartDate,
+              offsetCounterpartDescription: l.offsetCounterpartDescription,
             }))}
             initialSelectedIds={offsetSelection.map((l) => l.id)}
             sourceDirection={directionFilter}
@@ -2239,6 +2454,10 @@ export default function ActiveWorkspace({
             error={error}
             onCancel={() => setOffsetConfirmOpen(false)}
             onConfirm={handleOffsetSelection}
+            onRequestUndoOffset={(info) => {
+              setOffsetConfirmOpen(false);
+              openUndoOffsetModal(info);
+            }}
           />
         )}
       </AnimatePresence>
@@ -2258,9 +2477,93 @@ export default function ActiveWorkspace({
             isMaster={visibleDirections.length > 1}
             busy={busy}
             onConfirm={handleBankOffset}
+            onRequestUndoOffset={(info) => {
+              setBankOffsetOpen(false);
+              openUndoOffsetModal(info);
+            }}
           />
         )}
       </AnimatePresence>
+      {undoOffsetTarget && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black/35 px-4 py-6 backdrop-blur-xs"
+          onClick={() => {
+            if (!busy) setUndoOffsetTarget(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="undo-offset-title"
+            className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 id="undo-offset-title" className="text-base font-semibold text-slate-900">
+                  ยกเลิกการหักล้างรายการ #{undoOffsetTarget.matchId}
+                </h3>
+                <p className="mt-1 text-xs text-slate-500">
+                  รายการ <b className="text-slate-700">{undoOffsetTarget.ref}</b> ยอด{" "}
+                  <b className="tabular-nums text-slate-900">{formatAmount(undoOffsetTarget.amount)}</b> บาท
+                  จะถูกปลดล็อกทั้งสองฝั่ง (เงินเข้าและเงินออก) เพื่อให้กลับมาจับคู่หรือหักล้างใหม่ได้
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setUndoOffsetTarget(null)}
+                className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            {undoOffsetTarget.remark && (
+              <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                หมายเหตุเดิมที่บันทึกไว้: <b className="text-slate-800">&ldquo;{undoOffsetTarget.remark}&rdquo;</b>
+              </div>
+            )}
+            <div className="mt-3">
+              <label htmlFor="undo-offset-reason" className="mb-1.5 block text-xs font-medium text-slate-700">
+                เหตุผลในการยกเลิกหักล้าง <span className="text-red-600">*</span>
+              </label>
+              <textarea
+                id="undo-offset-reason"
+                rows={2}
+                value={undoOffsetReason}
+                disabled={busy}
+                onChange={(e) => setUndoOffsetReason(e.target.value)}
+                placeholder="เช่น หักล้างผิดรายการ ต้องใช้รายการวันที่ 06/10/2026 แทน"
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none"
+              />
+            </div>
+            {undoOffsetError && (
+              <p role="alert" className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+                {undoOffsetError}
+              </p>
+            )}
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setUndoOffsetTarget(null)}
+                className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                ปิด
+              </button>
+              <button
+                type="button"
+                disabled={busy || undoOffsetReason.trim().length < 3}
+                onClick={() => void handleConfirmUndoOffset()}
+                className="flex items-center gap-1.5 rounded-full bg-rose-600 px-4 py-2 text-xs font-semibold text-white hover:bg-rose-700 disabled:opacity-40"
+              >
+                {busy && <Loader2 size={13} className="animate-spin" />}
+                ยืนยันยกเลิกหักล้าง
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <AnimatePresence>
         {balanceOpen && (
           <BalanceModal
@@ -2481,6 +2784,8 @@ export default function ActiveWorkspace({
             scrollRef={bankScrollRef}
             onScroll={(event) => persistScroll("bank", event.currentTarget.scrollTop)}
             searchQuery={searchQuery}
+            onRequestUndoOffset={openUndoOffsetModal}
+            undoDisabled={loading || busy || syncingGl || anyWorkLocked || noOffsetRole}
           />
           {/* จอเล็กที่ตารางเรียงซ้อนกัน ไม่มีรอยต่อให้คร่อม จึงแทรกเป็นชิ้นปกติระหว่างสองตารางแทน */}
           <BalanceBadge
@@ -2548,6 +2853,8 @@ export default function ActiveWorkspace({
             scrollRef={glScrollRef}
             onScroll={(event) => persistScroll("gl", event.currentTarget.scrollTop)}
             searchQuery={searchQuery}
+            onRequestUndoOffset={openUndoOffsetModal}
+            undoDisabled={loading || busy || syncingGl || anyWorkLocked || noOffsetRole}
           />
         </div>
       </div>

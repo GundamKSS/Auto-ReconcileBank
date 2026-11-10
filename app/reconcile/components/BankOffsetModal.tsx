@@ -22,6 +22,14 @@ export type BankModalLine = {
   senderBank?: string | null;
   senderAccountNo?: string | null;
   senderAccountName?: string | null;
+  isOffset?: boolean;
+  offsetMatchId?: number | null;
+  offsetNum?: number | null;
+  offsetRemark?: string | null;
+  offsetBy?: string | null;
+  offsetCounterpartRef?: string | null;
+  offsetCounterpartDate?: string | null;
+  offsetCounterpartDescription?: string | null;
 };
 
 type DisplayLine = Omit<BankModalLine, 'id' | 'accountNo' | 'description'> & {
@@ -58,6 +66,7 @@ export default function BankOffsetModal({
   isMaster = false,
   busy,
   onConfirm,
+  onRequestUndoOffset,
 }: {
   isOpen: boolean;
   onClose: () => void;
@@ -67,8 +76,9 @@ export default function BankOffsetModal({
   isMaster?: boolean;
   busy: boolean;
   onConfirm: (sourceLineId: number, targetLineId: number, reason: string) => Promise<void>;
+  onRequestUndoOffset?: (info: { matchId: number; num: number; ref: string; amount: number; remark: string | null }) => void;
 }) {
-  const [sourceId, setSourceId] = useState<number | null>(() => initialLine?.direction === sourceDirection ? initialLine.lineId : null);
+  const [sourceId, setSourceId] = useState<number | null>(() => initialLine?.direction === sourceDirection && !initialLine?.isOffset ? initialLine.lineId : null);
   const [lookup, setLookup] = useState<BankOffsetLookup | null>(null);
   const [candidateId, setCandidateId] = useState<number | null>(null);
   const [reason, setReason] = useState('');
@@ -81,8 +91,10 @@ export default function BankOffsetModal({
   const submittingRef = useRef(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const locked = busy || submitting;
-  const sources = availableLines.filter((line) => line.direction === activeSourceDir);
-  const selectedSource = sources.find((line) => line.lineId === sourceId) ?? null;
+  const sources = availableLines
+    .filter((line) => line.direction === activeSourceDir)
+    .sort((a, b) => (a.isOffset ? 1 : 0) - (b.isOffset ? 1 : 0));
+  const selectedSource = sources.find((line) => line.lineId === sourceId && !line.isOffset) ?? null;
   const currentSourceId = selectedSource?.lineId ?? null;
 
   function switchSourceDir(dir: "IN" | "OUT") {
@@ -163,7 +175,7 @@ export default function BankOffsetModal({
     const selectedId = isSource ? currentSourceId : selection.candidate?.lineId;
     const visible = list.filter((line) => line.lineId === selectedId || !search ||
       [line.ref, `L-${line.lineId}`, line.description, line.date, formatDMY(line.date), String(line.amount), formatAmount(line.amount),
-        line.senderBank, line.senderAccountNo, line.senderAccountName].some((value) => value?.toLowerCase().includes(search)));
+        line.senderBank, line.senderAccountNo, line.senderAccountName, line.offsetRemark, line.offsetCounterpartRef].some((value) => value?.toLowerCase().includes(search)));
     const title = direction === 'IN' ? 'เงินเข้า (AR)' : 'เงินออก (AP)';
     const subtitle = direction === 'IN' ? 'Credit' : 'Debit';
     const isGreen = direction === 'IN';
@@ -185,20 +197,64 @@ export default function BankOffsetModal({
             ? `เลือกรายการ${activeSourceDir === 'IN' ? 'เงินเข้า' : 'เงินออก'}ก่อน เพื่อค้นหาอีกฝั่ง`
             : search ? 'ไม่มีรายการตรงกับคำค้น' : isSource ? 'ไม่มีรายการในฝั่งนี้' : 'ไม่พบคู่หักล้างที่ยอดเท่ากัน'}</p>
           : visible.map((line) => {
-            const picked = selectedId === line.lineId;
-            const blocked = Boolean(line.isPeriodClosed);
+            const isOffset = Boolean(line.isOffset);
+            const picked = !isOffset && selectedId === line.lineId;
+            const blocked = Boolean(line.isPeriodClosed) || isOffset;
             const sender = [line.senderBank, line.senderAccountNo, line.senderAccountName].filter(Boolean).join(' · ');
-            return <label key={line.lineId} className={`flex items-start gap-2.5 border-t border-gray-50 px-3 py-3 transition-colors first:border-t-0 ${blocked ? 'cursor-not-allowed bg-gray-50 opacity-60' : picked ? (isGreen ? 'bg-emerald-50/70' : 'bg-red-50/70') : (isGreen ? 'cursor-pointer hover:bg-emerald-50/30' : 'cursor-pointer hover:bg-red-50/30')}`}>
+            return <label key={line.lineId} className={`flex items-start gap-2.5 border-t border-gray-50 px-3 py-3 transition-colors first:border-t-0 ${isOffset ? 'cursor-not-allowed bg-slate-100/90 text-slate-400' : blocked ? 'cursor-not-allowed bg-gray-50 opacity-60' : picked ? (isGreen ? 'bg-emerald-50/70' : 'bg-red-50/70') : (isGreen ? 'cursor-pointer hover:bg-emerald-50/30' : 'cursor-pointer hover:bg-red-50/30')}`}>
               <input type="checkbox" checked={picked} disabled={locked || blocked}
                 aria-label={`เลือก${title} ${line.ref}`}
-                onChange={() => { if (isSource) pickSource(line.lineId); else { setCandidateId(picked ? null : line.lineId); setSubmitError(''); } }}
-                className={`mt-1 h-4 w-4 shrink-0 rounded border-gray-300 ${isGreen ? 'accent-emerald-600' : 'accent-red-600'}`} />
+                onChange={() => { if (blocked) return; if (isSource) pickSource(line.lineId); else { setCandidateId(picked ? null : line.lineId); setSubmitError(''); } }}
+                className={`mt-1 h-4 w-4 shrink-0 rounded border-gray-300 ${isOffset ? 'opacity-40 cursor-not-allowed' : isGreen ? 'accent-emerald-600' : 'accent-red-600'}`} />
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1"><span className="text-[11px] tabular-nums text-gray-400">{formatDMY(line.date)}</span><span className="text-sm font-semibold tabular-nums text-gray-900">{formatAmount(line.amount)}</span></div>
-                <p className="mt-0.5 break-words text-sm font-medium text-gray-800">{line.ref}</p>
-                <p className="break-words text-xs text-gray-600">{line.description || 'ไม่มีคำอธิบาย'}</p>
+                <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] tabular-nums text-gray-400">{formatDMY(line.date.slice(0, 10))}</span>
+                    {isOffset && (
+                      <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-200/80 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                        หักล้างแล้ว{line.offsetMatchId ? ` #${line.offsetMatchId}` : ''}
+                      </span>
+                    )}
+                  </div>
+                  <span className={`text-sm font-semibold tabular-nums ${isOffset ? 'text-slate-400 line-through decoration-slate-300' : 'text-gray-900'}`}>{formatAmount(line.amount)}</span>
+                </div>
+                <p className={`mt-0.5 break-words text-sm font-medium ${isOffset ? 'text-slate-500' : 'text-gray-800'}`}>{line.ref}</p>
+                <p className={`break-words text-xs ${isOffset ? 'text-slate-400' : 'text-gray-600'}`}>{line.description || 'ไม่มีคำอธิบาย'}</p>
                 {sender && <p className="mt-1 break-words text-[11px] text-gray-500">{sender}</p>}
-                {blocked && <p className="mt-1 flex items-start gap-1 text-[11px] text-red-600"><Lock size={12} className="mt-0.5 shrink-0" />{line.closedReason || 'งวดปิดแล้ว'}</p>}
+                {isOffset && (
+                  <div className="mt-1.5 rounded-lg border border-slate-200 bg-white/80 px-2.5 py-1.5 text-[11px] text-slate-600">
+                    <p className="font-medium text-slate-700">
+                      หมายเหตุที่หักล้าง: <span className="font-semibold text-slate-800">&ldquo;{line.offsetRemark || 'ไม่ได้ระบุเหตุผล'}&rdquo;</span>
+                    </p>
+                    <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-500">
+                      <span>
+                        {line.offsetCounterpartRef ? `คู่กับ ${line.offsetCounterpartRef}${line.offsetCounterpartDate ? ` (${formatDMY(line.offsetCounterpartDate.slice(0, 10))})` : ''}` : 'หักล้างรายการธนาคาร'}
+                        {line.offsetBy ? ` · โดย ${line.offsetBy}` : ''}
+                      </span>
+                      {onRequestUndoOffset && line.offsetMatchId && (
+                        <button
+                          type="button"
+                          disabled={locked}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onRequestUndoOffset({
+                              matchId: line.offsetMatchId!,
+                              num: line.offsetNum ?? 1,
+                              ref: line.ref,
+                              amount: line.amount,
+                              remark: line.offsetRemark ?? null,
+                            });
+                          }}
+                          className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          ยกเลิกหักล้าง
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {!isOffset && blocked && <p className="mt-1 flex items-start gap-1 text-[11px] text-red-600"><Lock size={12} className="mt-0.5 shrink-0" />{line.closedReason || 'งวดปิดแล้ว'}</p>}
               </div>
             </label>;
           })}

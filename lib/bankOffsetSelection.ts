@@ -18,6 +18,12 @@ export function bankOffsetSelection(sourceLineId: number | null, lookup: BankOff
   const outTotal = (source?.direction === 'OUT' ? source.amount : 0) + (candidate?.direction === 'OUT' ? candidate.amount : 0);
   let problem: string | null = current?.error || null;
   if (!problem && (!source || !candidate)) problem = 'เลือกเงินเข้าและเงินออกอย่างละ 1 รายการ';
+  if (!problem && (source?.isOffset || candidate?.isOffset)) {
+    const offsetLine = source?.isOffset ? source : candidate;
+    problem = offsetLine?.offsetRemark
+      ? `รายการนี้ถูกหักล้างไปแล้ว (หมายเหตุ: ${offsetLine.offsetRemark})`
+      : 'รายการนี้ถูกหักล้างไปแล้ว ไม่สามารถเลือกซ้ำได้';
+  }
   if (!problem && (source?.isPeriodClosed || candidate?.isPeriodClosed)) {
     problem = source?.closedReason || candidate?.closedReason || 'รายการอยู่ในงวดที่ปิดแล้ว';
   }

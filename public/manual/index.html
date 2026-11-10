@@ -307,143 +307,22 @@
   .rule-tag.info { background: #fef3c7; color: #92400e; }
   .rule-tag.pass { background: #dcfce7; color: #166534; }
 
-  /* ---------- Screen Guide Box & Mockups ---------- */
-  .screen-guide-box {
-    margin: 12px 0 6px;
-    border: 1px solid #bfdbfe;
-    border-radius: 12px;
-    background: #f8fafc;
-    overflow: hidden;
-  }
-  .screen-guide-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 8px 12px;
-    font-size: 13px;
-    font-weight: 700;
-    color: #1d4ed8;
-    background: #eff6ff;
-    border-bottom: 1px solid #dbeafe;
-  }
-  .screen-guide-tabs {
-    display: inline-flex;
-    gap: 4px;
-    background: #dbeafe;
-    padding: 2px;
-    border-radius: 6px;
-  }
-  .guide-tab-btn {
-    border: none;
-    background: transparent;
-    color: #1e40af;
-    padding: 3px 8px;
-    border-radius: 5px;
-    font-size: 11.5px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-  .guide-tab-btn:hover {
-    background: rgba(255, 255, 255, 0.6);
-  }
-  .guide-tab-btn.active {
-    background: #ffffff;
-    color: #1d4ed8;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-  .screen-guide-body {
-    padding: 12px 14px;
-    background: #ffffff;
-  }
-  .screen-img-container {
-    position: relative;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    overflow: hidden;
-    background: #f1f5f9;
-  }
-  .screen-img-container img {
-    display: block;
-    width: 100%;
-    height: auto;
-  }
-  .screen-img-badge {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    background: rgba(15, 23, 42, 0.82);
-    color: #ffffff;
-    padding: 3px 9px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    backdrop-filter: blur(4px);
-    z-index: 2;
-  }
-  .screen-guide-steps {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 8px;
-    margin-top: 10px;
-  }
-  .screen-step-mini {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 8px 10px;
-    font-size: 12px;
-    color: var(--text-2);
-    line-height: 1.45;
-  }
-  .screen-step-mini b {
-    display: block;
-    color: #1e3a5f;
-    margin-bottom: 2px;
-    font-size: 12.5px;
-  }
-  .screen-workflow-mock {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin: 10px 0;
-    padding: 10px;
-    background: #f8fafc;
-    border: 1px dashed #cbd5e1;
-    border-radius: 8px;
-  }
-  .mock-flow-step {
-    background: #ffffff;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    padding: 6px 10px;
-    font-size: 11.5px;
-    text-align: center;
-    color: #475569;
-  }
-  .mock-flow-step span {
-    display: block;
-    font-weight: 700;
-    color: #0f172a;
-    font-size: 12px;
-  }
-  .mock-flow-step.mock-flow-lock {
-    border-color: #a7f3d0;
-    background: #ecfdf5;
-  }
-  .mock-flow-step.mock-flow-lock span {
-    color: #047857;
-  }
-  .mock-flow-arrow {
-    color: #94a3b8;
-    font-weight: 700;
-    font-size: 14px;
-  }
+  /* ---------- Current application screenshots ---------- */
+  .screens { margin: 18px 0 10px; display: grid; gap: 16px; }
+  .screen { margin: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .screen-heading { padding: 10px 12px; background: var(--accent-soft); font-size: 14px; font-weight: 700; color: var(--accent); }
+  .screen-open { display: block; width: 100%; padding: 0; border: 0; background: var(--surface-2); cursor: zoom-in; }
+  .screen-open img { display: block; width: 100%; height: auto; }
+  .screen figcaption { padding: 10px 12px; font-size: 14px; color: var(--text-2); }
+  .screen figcaption b { color: var(--text); }
+  .screen-hint { display: block; margin-top: 4px; font-size: 12px; color: var(--text-2); }
+  .capture-note { margin-top: 14px; font-size: 14px; color: var(--text-2); }
+  .screen-dialog { width: min(1600px, 96vw); max-width: 96vw; max-height: 94vh; padding: 16px; border: 1px solid var(--border); border-radius: 14px; color: var(--text); }
+  .screen-dialog::backdrop { background: rgba(15, 23, 42, .75); }
+  .screen-dialog header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+  .screen-dialog h2 { margin: 0; font-size: 18px; }
+  .screen-dialog img { display: block; width: 100%; height: auto; }
+  .screen-dialog p { margin: 10px 0 0; font-size: 14px; }
 
   /* ---------- FAQ ---------- */
   .faq { display: grid; gap: 10px; }
@@ -594,6 +473,8 @@
     </div>
   </section>
 
+  <p class="capture-note">ภาพประกอบอ้างอิงหน้าจอโปรแกรมจริง อัปเดตเมื่อ 10 พ.ย. 2569 โดยแทนยอดเงิน เลขบัญชี เลขเอกสาร และข้อมูลระบุตัวตนด้วย XXXX หรือข้อมูลตัวอย่าง แต่ละภาพระบุเลขขั้นตอน จุดที่ต้องดู และสิ่งที่ควรเห็น คลิกภาพเพื่อขยาย ภาพตัวอย่างใช้สิทธิ์ Dev ซึ่งเห็นทั้งสองฝั่ง เมนูและปุ่มของคุณจะแสดงตามสิทธิ์ AP / AR / Admin / Master ช่อง “ทำขั้นนี้แล้ว” ใช้บันทึกความคืบหน้าการอ่านคู่มือในเบราว์เซอร์นี้</p>
+
   <section class="block" id="guide">
     <div class="guide-head">
       <div>
@@ -670,7 +551,7 @@
         </div></details>
       <details><summary>รายการพักของงวดที่ปิดแล้ว สามารถนำมาจับคู่ได้หรือไม่</summary>
         <div>
-          <p><b>จับคู่ได้</b> — รายการพักของงวดที่ปิดแล้วสามารถจับคู่กับ Statement ของงวดที่ยังเปิดอยู่ได้ทันที โดยยอดจะถูกบันทึกเป็น "จับคู่ข้ามงวด" ซึ่งจะไม่กระทบยอดคงเหลือของงวดที่ปิดไปแล้ว (แต่หากต้องการยกเลิกคู่นี้ภายหลัง จะต้องให้ Admin หรือ Master เปิดงวดเดิมคืนก่อน)</p>
+          <p><b>จับคู่ได้</b>  รายการพักของงวดที่ปิดแล้วสามารถจับคู่กับ Statement ของงวดที่ยังเปิดอยู่ได้ทันที โดยยอดจะถูกบันทึกเป็น "จับคู่ข้ามงวด" ซึ่งจะไม่กระทบยอดคงเหลือของงวดที่ปิดไปแล้ว (แต่หากต้องการยกเลิกคู่นี้ภายหลัง จะต้องให้ Admin หรือ Master เปิดงวดเดิมคืนก่อน)</p>
         </div></details>
       <details><summary>การปิดบัญชีธนาคาร (Inactive) มีผลอย่างไร</summary>
         <div>
@@ -693,6 +574,12 @@
   </footer>
 </main>
 
+<dialog id="screenPreview" class="screen-dialog" aria-labelledby="screenPreviewTitle" aria-describedby="screenPreviewCaption">
+  <header><h2 id="screenPreviewTitle">ภาพหน้าจอ</h2><button type="button" class="btn" id="closeScreenPreview" autofocus>ปิดภาพ (Esc)</button></header>
+  <img id="screenPreviewImage" alt="">
+  <p id="screenPreviewCaption"></p>
+</dialog>
+
 <script>
 (function () {
   var ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 17 17 7"/><path d="M7 7h10v10"/></svg>';
@@ -705,6 +592,7 @@
     return [
       {
         title: 'เข้าสู่ระบบและดูภาพรวม',
+        screens: ['dashboard'],
         where: 'เมนู ภาพรวม',
         href: '/dashboard',
         body: '<ol>' +
@@ -723,11 +611,12 @@
       },
       {
         title: 'ดึงข้อมูลจาก BC365',
+        screens: ['import-gl'],
         where: 'เมนู นำเข้าข้อมูล',
         href: '/import',
         body: '<ol>' +
           '<li>เลือก <b>รายการบัญชี (BC365)</b></li>' +
-          '<li>กด ' + b('ดึงข้อมูลบัญชีทั้งหมดจาก BC365') + ' แล้วรอจนเสร็จ</li>' +
+          '<li>กด ' + b('ดึงข้อมูลทั้งหมด') + ' แล้วรอจนเสร็จ</li>' +
           '</ol>' +
           '<div class="note info">ถ้าแก้เอกสารใน BC365 แล้วอยากเห็นผลเร็ว ให้กด ' + b('ดึงข้อมูลใหม่จาก BC365') + ' ที่หน้ากระทบยอดแทน</div>',
         conditions: {
@@ -741,6 +630,7 @@
       },
       {
         title: 'นำเข้าไฟล์ธนาคาร',
+        screens: ['import-source', 'import-account', 'import-upload'],
         where: 'เมนู นำเข้าข้อมูล',
         href: '/import',
         body: '<ol>' +
@@ -762,10 +652,11 @@
       },
       {
         title: 'เริ่มกระทบยอด',
+        screens: ['reconcile-start', 'reconcile-period'],
         where: 'เมนู กระทบยอด',
         href: '/reconcile',
         body: '<ol>' +
-          '<li>กด ' + b('เริ่มกระทบยอด') + '</li>' +
+          '<li>กด ' + b('เริ่มกระทบยอดใหม่') + '</li>' +
           '<li>เลือกธนาคาร บัญชี และไฟล์ที่นำเข้าไว้ หรือกำหนดวันที่เอง</li>' +
           '<li>ถ้าระบบถาม <b>ยอดยกมา BC365</b> ให้กรอกยอดคงเหลือใน BC ของวันก่อนเริ่มงวด</li>' +
           '</ol>' +
@@ -781,6 +672,7 @@
       },
       {
         title: 'จับคู่รายการ',
+        screens: ['reconcile-workspace', 'match-assistant'],
         where: 'เมนู กระทบยอด',
         href: '/reconcile',
         body: '<ol>' +
@@ -793,35 +685,8 @@
           '<li>' + b('ต้องรวมหลายรายการ') + ' เลือกคู่ที่ต้องรวมหลายรายการ ควรตรวจก่อนกดจับคู่</li>' +
           '<li>' + b('ผู้ช่วยจับคู่') + ' หาคู่ที่วันที่ไม่ตรงกัน ควรตรวจก่อนยืนยัน</li>' +
           '</ul>' +
-          '<div class="note">ถ้ายอดไม่เท่ากัน ปุ่มจะเปลี่ยนเป็น ' + b('จับคู่และพักส่วนต่าง') + ' และต้องเขียนหมายเหตุ ถ้ากดปุ่มไม่ได้ ให้อ่านข้อความสีเหลืองข้างยอดเงิน</div>' +
-          '<div class="screen-guide-box">' +
-            '<div class="screen-guide-head">' +
-              '<span>📍 ตำแหน่งปุ่ม "ผู้ช่วยจับคู่" บนหน้าจอ</span>' +
-              '<div class="screen-guide-tabs">' +
-                '<button type="button" class="guide-tab-btn active" data-view="static">📷 ภาพชี้พิกัด</button>' +
-                '<button type="button" class="guide-tab-btn" data-view="gif">🎬 คลิปสาธิต (GIF)</button>' +
-              '</div>' +
-            '</div>' +
-            '<div class="screen-guide-body">' +
-              '<div class="screen-view-item screen-view-static" style="display:block">' +
-                '<div class="screen-img-container">' +
-                  '<span class="screen-img-badge">✨ ปุ่มอยู่แถบเครื่องมือเหนือตาราง</span>' +
-                  '<img src="img/match-assistant-guide.png" alt="ตำแหน่งปุ่มผู้ช่วยจับคู่บนแถบเครื่องมือ" loading="lazy">' +
-                '</div>' +
-              '</div>' +
-              '<div class="screen-view-item screen-view-gif" style="display:none">' +
-                '<div class="screen-img-container">' +
-                  '<span class="screen-img-badge">🎬 คลิปเคลื่อนไหวสาธิตการทำงาน</span>' +
-                  '<img src="img/match-assistant-demo.gif" alt="คลิปสาธิตผู้ช่วยจับคู่" loading="lazy">' +
-                '</div>' +
-              '</div>' +
-              '<div class="screen-guide-steps">' +
-                '<div class="screen-step-mini"><b>1. ปุ่มอยู่ตรงไหน</b>อยู่บนแถบเครื่องมือเหนือตารางธนาคาร (ปุ่มสีขาวประกายม่วง ✨)</div>' +
-                '<div class="screen-step-mini"><b>2. สแกนหาคู่ข้ามวัน</b>ระบบช่วยค้นหาคู่ที่ยอดตรงกันแต่คนละวัน (🟢 มั่นใจสูง / 🟡 ปานกลาง)</div>' +
-                '<div class="screen-step-mini"><b>3. กดยืนยัน Match</b>ตรวจรายละเอียดแล้วกดปุ่ม "ยอมรับ Match" เพื่อบันทึกทันที</div>' +
-              '</div>' +
-            '</div>' +
-          '</div>',
+          '<div class="note">ถ้ายอดไม่เท่ากัน ปุ่มจะเปลี่ยนเป็น ' + b('จับคู่และพักส่วนต่าง') + ' และต้องเขียนหมายเหตุ ถ้ากดปุ่มไม่ได้ ให้อ่านข้อความสีเหลืองข้างยอดเงิน</div>',
+
         conditions: {
           title: 'เงื่อนไขที่จะจับคู่รายการ (Matching Rules)',
           body: '<ul>' +
@@ -836,19 +701,22 @@
       },
       {
         title: 'รายการที่ยังไม่มีคู่',
+        screens: ['reconcile-workspace', 'bank-offset'],
         where: 'เมนู กระทบยอด',
         href: '/reconcile',
         body: '<ul>' +
           '<li>' + b('พักรายการ') + ' เก็บรายการ BC365 ไว้จับคู่ทีหลัง พักได้เฉพาะรายการ BC365</li>' +
           '<li>' + b('ระบุเป็น JV ปรับปรุง') + ' ใช้กับ JV ที่บันทึกใน BC365 แล้ว</li>' +
-          '<li>' + b('หักล้างรายการ BC365') + ' ใช้กับรายการเงินเข้าและเงินออกใน BC365 ที่หักกันเอง</li>' +
+          '<li>' + b('หักล้างรายการ BC365') + ' ใช้กับรายการเงินเข้าและเงินออกใน BC365 ที่หักกันเอง ไม่มีเงินผ่านธนาคาร</li>' +
+          '<li>' + b('หักล้างธนาคาร') + ' ใช้กับรายการเงินเข้าและเงินออกใน Statement บัญชีเดียวกันที่หักลบกันเอง เช่น เช็คเด้ง หรือตัดเงินแล้วโอนคืน</li>' +
           '</ul>',
         conditions: {
           title: 'เงื่อนไขการพักรายการ และการหักล้าง (Suspense & Offset)',
           body: '<ul>' +
             '<li><span class="rule-tag forbid">ห้ามพักรายการธนาคาร</span> <b>พักได้เฉพาะรายการฝั่ง BC365 เท่านั้น</b> ห้ามพัก Statement ธนาคารเด็ดขาด เพราะเป็นเอกสารหลักฐานกฎหมายภายนอก</li>' +
             '<li><span class="rule-tag req">การพักรายการ (Suspense)</span> ต้องระบุหมายเหตุเหตุผลทุกครั้ง เช่น รอใบเสร็จ, รอตัดเช็ค, รอยืนยันยอด</li>' +
-            '<li><span class="rule-tag req">การหักล้าง (Offset)</span> ต้องเป็นรายการ BC365 ในบัญชีเดียวกัน มียอดเงินเข้าและเงินออกหักลบกันสุทธิเป็น <b>0.00 บาทพอดี</b> และไม่มีเงินผ่านธนาคาร</li>' +
+            '<li><span class="rule-tag req">การหักล้าง BC365</span> ต้องเป็นรายการ BC365 ในบัญชีเดียวกัน มียอดเงินเข้าและเงินออกหักลบกันสุทธิเป็น <b>0.00 บาทพอดี</b> และไม่มีเงินผ่านธนาคาร</li>' +
+            '<li><span class="rule-tag pass">การหักล้างธนาคาร (Bank Offset)</span> ใช้กับรายการเงินเข้าและเงินออกใน Statement บัญชีเดียวกันที่หักลบกันเอง เช่น เช็คเด้ง หรือตัดเงินแล้วโอนคืนในบัญชีเดียวกัน</li>' +
             '<li><span class="rule-tag pass">การกลับรายการ (Reversal)</span> รายการที่มี Source Code = REVERSAL เลขที่เอกสารเดียวกันและยอดตรงข้าม ระบบจะหักล้างให้อัตโนมัติ</li>' +
             '<li><span class="rule-tag req">JV ปรับปรุง</span> ใช้กับรายการปรับปรุงยอดหรือค่าธรรมเนียมที่ลงบันทึกใน BC365 เรียบร้อยแล้ว</li>' +
             '</ul>'
@@ -856,50 +724,17 @@
       },
       {
         title: 'ตรวจยอดคงเหลือและสถานะงวด',
+        screens: ['period-summary'],
         where: 'เมนู กระทบยอด',
         href: '/reconcile',
         body: '<ol>' +
-          '<li>แถบด้านบนมี <b>การ์ดติดตามสถานะงวด (Period Workflow)</b> แสดงว่า AP และ AR ยืนยันแล้วหรือยัง</li>' +
-          '<li>กดป้ายผลต่างหรือการ์ดสถานะเพื่อเปิดหน้าต่าง <b>ยอดคงเหลือและพิสูจน์ยอด</b></li>' +
+          '<li>ที่แถบด้านบน กดปุ่ม <b>ยอดพักโอน</b> เพื่อเปิดหน้าต่าง <b>สรุปยอดคงเหลือ</b></li>' +
+          '<li>ดูส่วน <b>ยืนยันงานและปิดงวด</b> เพื่อตรวจว่า AP และ AR ยืนยันแล้วหรือยัง</li>' +
           '<li>ดูว่ายอดคงเหลือธนาคารกับ BC365 ตรงกันไหม แถวสีเหลืองคือวันที่ยอดไม่ตรง</li>' +
           '<li>ถ้ายังมีผลต่าง ให้บันทึก JV ใน BC365 ดึงข้อมูลใหม่ แล้วกด ' + b('ระบุเป็น JV ปรับปรุง') + '</li>' +
           '</ol>' +
-          '<div class="note">ถ้าทีม ' + s.other + ' ยังไม่นำเข้า' + s.otherDir + ' ยอดคงเหลือจะยังไม่ครบ ระบบจะขึ้นเตือนสีเหลือง</div>' +
-          '<div class="screen-guide-box">' +
-            '<div class="screen-guide-head">' +
-              '<span>📍 ตำแหน่ง "ป้ายผลต่าง" และขั้นตอนปิดงวด</span>' +
-              '<div class="screen-guide-tabs">' +
-                '<button type="button" class="guide-tab-btn active" data-view="static">📷 ภาพชี้พิกัด</button>' +
-                '<button type="button" class="guide-tab-btn" data-view="gif">🎬 คลิปสาธิต (GIF)</button>' +
-              '</div>' +
-            '</div>' +
-            '<div class="screen-guide-body">' +
-              '<div class="screen-view-item screen-view-static" style="display:block">' +
-                '<div class="screen-img-container">' +
-                  '<span class="screen-img-badge">ป้ายผลต่าง (BalanceBadge) อยู่ตรงกลางแถบด้านบนสุด</span>' +
-                  '<img src="img/period-close-guide.png" alt="ตำแหน่งป้ายผลต่างตรงกลางแถบด้านบน" loading="lazy">' +
-                '</div>' +
-              '</div>' +
-              '<div class="screen-view-item screen-view-gif" style="display:none">' +
-                '<div class="screen-img-container">' +
-                  '<span class="screen-img-badge">🎬 คลิปเคลื่อนไหวสาธิตการยืนยันและปิดงวด</span>' +
-                  '<img src="img/period-close-demo.gif" alt="คลิปสาธิตขั้นตอนยืนยันและปิดงวด" loading="lazy">' +
-                '</div>' +
-              '</div>' +
-              '<div class="screen-workflow-mock">' +
-                '<div class="mock-flow-step"><span>1. คลิกป้ายผลต่าง</span>ตรงกลางแถบด้านบน</div>' +
-                '<div class="mock-flow-arrow">➔</div>' +
-                '<div class="mock-flow-step"><span>2. AP / AR ยืนยันงาน</span>กดปุ่มในหน้าต่างยอดคงเหลือ</div>' +
-                '<div class="mock-flow-arrow">➔</div>' +
-                '<div class="mock-flow-step mock-flow-lock"><span>3. ปิดงวดอัตโนมัติ 🔒</span>เมื่อครบ 2 ฝั่ง + ผลต่างเป็น 0</div>' +
-              '</div>' +
-              '<div class="screen-guide-steps">' +
-                '<div class="screen-step-mini"><b>1. ป้ายผลต่างอยู่ตรงไหน</b>อยู่กึ่งกลางแถบด้านบนสุด (BalanceBadge) คลิกเพื่อเปิดหน้าต่างยอดคงเหลือ</div>' +
-                '<div class="screen-step-mini"><b>2. AP/AR กดยืนยัน</b>ตรวจสอบงานฝั่งตนเอง แล้วกดปุ่ม "ยืนยันงาน AP" หรือ "ยืนยันงาน AR"</div>' +
-                '<div class="screen-step-mini"><b>3. ปิดงวดอัตโนมัติ 🔒</b>เมื่อยืนยันครบ 2 ฝั่งและผลต่างสุทธิเป็น 0.00 บาท ระบบจะล็อกทันที</div>' +
-              '</div>' +
-            '</div>' +
-          '</div>',
+          '<div class="note">ถ้าทีม ' + s.other + ' ยังไม่นำเข้า' + s.otherDir + ' ยอดคงเหลือจะยังไม่ครบ ระบบจะขึ้นเตือนสีเหลือง</div>',
+
         conditions: {
           title: 'เงื่อนไขความถูกต้องของยอดคงเหลือและสถานะงวด',
           body: '<ul>' +
@@ -911,6 +746,7 @@
       },
       {
         title: 'ยืนยันงาน ' + s.code,
+        screens: ['period-summary'],
         where: 'เมนู กระทบยอด ในหน้าต่างยอดคงเหลือ',
         href: '/reconcile',
         body: '<ol>' +
@@ -919,8 +755,8 @@
           '<li>เขียนหมายเหตุ ติ๊กช่องรับทราบว่าได้ตรวจสอบแล้ว แล้วกด ' + b('ยืนยัน') + '</li>' +
           '<li>หลังยืนยัน จะแก้ไขงาน' + s.dir + 'ไม่ได้ ถ้าต้องแก้ ให้กด ' + b('เปิดงานฝั่งนี้อีกครั้ง') + '</li>' +
           '</ol>' +
-          '<div class="note info">เมื่อทั้ง AP และ AR ยืนยันครบทั้งสองฝั่ง และยอดผลต่างสุทธิเป็นศูนย์ (หรืออธิบายได้ครบ) ระบบจะทำการ<b>ปิดงวดและล็อกงวดให้อัตโนมัติ</b> ถ้าปิดงวดแล้วต้องแก้ ให้แจ้ง Admin หรือ Master</div>' +
-          '<div class="note">💡 <b>ดูภาพชี้ตำแหน่งปุ่มและแอนิเมชันปิดงวด:</b> ดูได้ที่ขั้นตอนที่ 7 ด้านบน (คลิกป้ายผลต่างตรงกลางแถบด้านบน)</div>',
+          '<div class="note info">เมื่อทั้ง AP และ AR ยืนยันครบทั้งสองฝั่ง และผลต่างหลังปรับปรุงเป็นศูนย์ ระบบจะทำการ<b>ปิดงวดและล็อกงวดให้อัตโนมัติ</b> ถ้าปิดงวดแล้วต้องแก้ ให้แจ้ง Admin หรือ Master</div>' +
+          '<div class="note">เปิดปุ่ม <b>ยอดพักโอน</b> ที่แถบด้านบน แล้วตรวจสถานะฝั่งตนเองในหน้าต่าง <b>สรุปยอดคงเหลือ</b></div>',
         conditions: {
           title: 'เงื่อนไขที่จะยืนยันงาน และการปิดงวดอัตโนมัติ',
           body: '<ul>' +
@@ -944,6 +780,7 @@
       },
       {
         title: 'ยกเลิกการจับคู่',
+        screens: ['history'],
         where: 'เมนู ประวัติการจับคู่',
         href: '/reconcile/history',
         body: '<ol>' +
@@ -964,15 +801,16 @@
       },
       {
         title: 'จัดการรายการพักและหาคู่ใน statement',
+        screens: ['suspense'],
         where: 'เมนู รายการพัก',
         href: '/suspense',
         body: '<p><b>1. หาคู่ใน statement จากหน้ารายการพักได้ทันที (วิธีแนะนำ)</b></p>' +
           '<ol>' +
           '<li>ระบบตรวจหา statement บัญชีเดียวกันทุกเดือนที่ยอดตรงกันให้รายการพักอัตโนมัติ โดยมีป้ายใต้รายการ:' +
             '<ul>' +
-            '<li><span class="part">เขียว</span> <b>น่าจะตรงกับ statement วันที่...</b> — ระบบพบคู่ที่มีความมั่นใจสูง แนะนำให้จับคู่</li>' +
-            '<li><span class="part">เหลือง</span> <b>พบยอดนี้ใน statement N รายการ</b> — พบคู่ที่ยอดตรงกันหลายรายการ ให้เปิดเลือก</li>' +
-            '<li><span class="part">เทา</span> <b>ยังไม่พบยอดนี้ใน statement</b> — ยังไม่มีรายการที่ยอดตรงกัน</li>' +
+            '<li><span class="part">เขียว</span> <b>น่าจะตรงกับ statement วันที่...</b> ระบบพบคู่ที่มีความมั่นใจสูง แนะนำให้จับคู่</li>' +
+            '<li><span class="part">เหลือง</span> <b>พบยอดนี้ใน statement N รายการ</b> พบคู่ที่ยอดตรงกันหลายรายการ ให้เปิดเลือก</li>' +
+            '<li><span class="part">เทา</span> <b>ยังไม่พบยอดนี้ใน statement</b> ยังไม่มีรายการที่ยอดตรงกัน</li>' +
             '</ul>' +
           '</li>' +
           '<li>คลิกที่ป้ายเพื่อเปิดหน้าต่าง <b>หาคู่ใน statement</b></li>' +
@@ -1001,6 +839,7 @@
       },
       {
         title: 'ดูรายงาน',
+        screens: ['reports'],
         where: 'เมนู รายงาน',
         href: '/reports',
         body: '<ol>' +
@@ -1066,7 +905,7 @@
       desc: 'สำหรับ Admin ในระบบกลาง ทำได้ทุกอย่าง',
       can: [
         'ทำงานได้ทั้งเงินเข้าและเงินออก',
-        'เลือกได้ว่าจะนำเข้าเงินเข้า เงินออก หรือทั้งสองอย่าง',
+        'นำเข้า Statement ทั้งไฟล์ได้ทั้งเงินเข้าและเงินออก',
         'ให้สิทธิ์หรือปิดสิทธิ์พนักงาน รวมถึงสิทธิ์ MASTER',
         'เพิ่มบัญชีธนาคาร เปิดหรือปิดบัญชี',
         'ยืนยันงานแทน AP และ AR',
@@ -1081,27 +920,29 @@
       steps: [
         {
           title: 'ให้สิทธิ์พนักงาน',
+        screens: ['work-roles'],
           where: 'เมนู สิทธิ์ยืนยันงาน',
           href: '/master-data/work-roles',
           body: '<ol>' +
-            '<li>กด ' + b('เพิ่มหรือเปลี่ยนสิทธิ์') + '</li>' +
+            '<li>กด ' + b('กำหนดสิทธิ์') + ' (หรือกด ' + b('เปลี่ยนสิทธิ์') + ' ในแถวของพนักงาน)</li>' +
             '<li>ค้นหาพนักงานด้วยรหัส EMP หรือชื่อ</li>' +
             '<li>เลือกสิทธิ์ AP AR หรือ MASTER แล้วเลือก เปิดสิทธิ์ หรือ ปิดสิทธิ์</li>' +
             '<li>เขียนเหตุผล แล้วบันทึก</li>' +
             '</ol>' +
-            '<div class="note">พนักงาน AP และ AR ต้องเป็น User ในระบบกลาง ถ้าเป็น Admin จะเห็นทุกอย่าง หลังเปลี่ยนสิทธิ์ พนักงานต้องออกจากระบบแล้วเข้าใหม่</div>',
+            '<div class="note">พนักงาน AP และ AR ต้องเป็น User ในระบบกลาง ถ้าเป็น Admin จะเห็นทุกอย่าง หลังเปลี่ยนสิทธิ์ ให้พนักงานโหลดหน้าใหม่เพื่ออัปเดตเมนู</div>',
           conditions: {
             title: 'เงื่อนไขการให้สิทธิ์พนักงาน (Work Roles)',
             body: '<ul>' +
               '<li><span class="rule-tag req">ผู้มีสิทธิ์ให้</span> เฉพาะผู้ที่มีสิทธิ์ Admin หรือ Master เท่านั้น</li>' +
               '<li><span class="rule-tag forbid">ข้อห้าม Master</span> Master ไม่สามารถเปลี่ยนสิทธิ์ MASTER ของตนเองได้ (เพื่อป้องกันการล็อกตัวเองออกจากระบบ)</li>' +
               '<li><span class="rule-tag req">สถานะพนักงาน</span> พนักงานต้องมีบัญชีเป็น User ในระบบกลาง TRW (หากเป็น Admin ในระบบกลางจะได้รับสิทธิ์เต็มโดยอัตโนมัติอยู่แล้ว)</li>' +
-              '<li><span class="rule-tag info">การมีผล</span> หลังบันทึกเปลี่ยนสิทธิ์ พนักงานต้องออกจากระบบแล้วเข้าสู่ระบบใหม่</li>' +
+              '<li><span class="rule-tag info">การมีผล</span> สิทธิ์ใหม่มีผลในการเรียกใช้งานครั้งถัดไป ให้พนักงานโหลดหน้าใหม่เพื่ออัปเดตเมนู</li>' +
               '</ul>'
           }
         },
         {
           title: 'จัดการบัญชีธนาคาร',
+        screens: ['bank-accounts'],
           where: 'เมนู จัดการข้อมูล แท็บ บัญชีธนาคาร',
           href: '/master-data/bank-accounts',
           body: '<ol>' +
@@ -1121,17 +962,18 @@
         },
         {
           title: 'นำเข้าข้อมูล',
+        screens: ['import-gl', 'import-account', 'import-upload'],
           where: 'เมนู นำเข้าข้อมูล',
           href: '/import',
           body: '<ol>' +
             '<li>ดึงข้อมูลจาก BC365 เหมือน AP และ AR</li>' +
-            '<li>ตอนนำเข้าไฟล์ธนาคาร ต้องเลือกว่าจะนำเข้า เงินเข้า เงินออก หรือทั้งสองอย่าง</li>' +
+            '<li>เลือกธนาคารและบัญชี ตรวจข้อความ “นำเข้าทั้งไฟล์” ก่อนเลือกไฟล์ Statement</li>' +
             '</ol>' +
             '<div class="note">ถ้านำเข้าแค่อย่างเดียว ยอดคงเหลือจะยังไม่ครบจนกว่าจะนำเข้าอีกอย่าง และระบบจะดึงชื่อผู้โอน/ผู้รับเงินมาแสดงให้โดยอัตโนมัติ</div>',
           conditions: {
             title: 'เงื่อนไขการนำเข้าข้อมูลสำหรับ Admin/Master',
             body: '<ul>' +
-              '<li><span class="rule-tag req">สิทธิ์เต็ม</span> สามารถเลือกนำเข้าเฉพาะเงินเข้า, เฉพาะเงินออก หรือทั้งสองอย่างพร้อมกันได้</li>' +
+              '<li><span class="rule-tag req">สิทธิ์เต็ม</span> นำเข้า Statement ทั้งเงินเข้าและเงินออกในไฟล์เดียวกันได้ โดยตรวจบัญชีและข้อมูลตัวอย่างก่อนยืนยัน</li>' +
               '<li><span class="rule-tag info">ความครบถ้วน</span> หากนำเข้าเพียงฝั่งเดียว ยอดคงเหลือสิ้นงวดจะยังไม่ครบจนกว่าจะนำเข้าอีกฝั่ง</li>' +
               '<li><span class="rule-tag pass">ดึงชื่อผู้โอนอัตโนมัติ</span> ระบบตรวจจับชื่อผู้โอน/ผู้รับเงินและเลขอ้างอิงจาก Statement ให้โดยอัตโนมัติ</li>' +
               '</ul>'
@@ -1139,6 +981,7 @@
         },
         {
           title: 'กระทบยอด',
+        screens: ['reconcile-period', 'reconcile-workspace', 'match-assistant'],
           where: 'เมนู กระทบยอด',
           href: '/reconcile',
           body: '<p>ทำเหมือนคู่มือ AP แต่เห็นทั้งเงินเข้าและเงินออก</p>' +
@@ -1153,6 +996,7 @@
         },
         {
           title: 'จัดการรายการพักและหาคู่ใน statement',
+        screens: ['suspense'],
           where: 'เมนู รายการพัก',
           href: '/suspense',
           body: '<ol>' +
@@ -1174,6 +1018,7 @@
         },
         {
           title: 'ติดตามการยืนยันงาน',
+        screens: ['period-summary'],
           where: 'เมนู กระทบยอด ในหน้าต่างยอดคงเหลือ',
           href: '/reconcile',
           body: '<ol>' +
@@ -1192,11 +1037,12 @@
         },
         {
           title: 'เปิดงวดที่ปิดแล้ว',
+        screens: ['period-summary'],
           where: 'เมนู กระทบยอด',
           href: '/reconcile',
           body: '<ol>' +
             '<li>งวดที่ปิดแล้วจะมีรูปกุญแจที่แถบด้านบน กดเพื่อเปิดหน้าต่างยอดคงเหลือ</li>' +
-            '<li>กด ' + b('เปิดงวดรวมอีกครั้ง') + ' เขียนเหตุผล ติ๊กช่องรับทราบ แล้วกด ' + b('ยืนยัน') + '</li>' +
+            '<li>กด ' + b('เปิดงวดอีกครั้ง') + ' เขียนเหตุผล ติ๊กช่องรับทราบ แล้วกด ' + b('ยืนยัน') + '</li>' +
             '</ol>' +
             '<div class="note">เมื่อเปิดงวด การยืนยันของ AP และ AR จะถูกล้าง ทั้งสองทีมต้องยืนยันใหม่</div>',
           conditions: {
@@ -1210,6 +1056,7 @@
         },
         {
           title: 'ลบไฟล์ธนาคารที่ผิด',
+        screens: ['statements'],
           where: 'เมนู จัดการข้อมูล แท็บ รายการธนาคาร',
           href: '/master-data/bank-statement',
           body: '<ol>' +
@@ -1229,6 +1076,7 @@
         },
         {
           title: 'ดูรายงาน',
+        screens: ['reports'],
           where: 'เมนู รายงาน',
           href: '/reports',
           body: '<ol>' +
@@ -1257,6 +1105,108 @@
     ]),
     steps: ROLES.admin.steps
   };
+
+  // Application screenshots with data anonymized for the user manual.
+  var SCREENS = {
+    "dashboard": [
+        "สรุปประจำเดือน",
+        "เลือกเดือน ฝั่งเงินเข้า/เงินออก และธนาคารที่แถบตัวกรองด้านบน",
+        "เห็นจำนวนรายการ จับคู่แล้ว ค้างอยู่ และผลต่างของมุมมองที่เลือก"
+    ],
+    "import-gl": [
+        "ดึงข้อมูลจาก BC365",
+        "เลือก “รายการบัญชี (BC365)” แล้วใช้ปุ่ม “ดึงข้อมูลทั้งหมด” ด้านขวาล่าง",
+        "ภาพนี้อยู่ก่อนกดดึงข้อมูล รอข้อความแจ้งผลหลังระบบทำงานเสร็จ"
+    ],
+    "import-source": [
+        "เลือกประเภทข้อมูลและธนาคาร",
+        "เลือก “รายการเดินบัญชีธนาคาร” แล้วเลือกธนาคารก่อนกด “ถัดไป”",
+        "แถบขั้นตอนด้านบนแสดงว่าอยู่ขั้นประเภทข้อมูล"
+    ],
+    "import-account": [
+        "เลือกบัญชีที่จะนำเข้า",
+        "ตรวจชื่อและเลขบัญชีบนการ์ดให้ตรงกับไฟล์ Statement",
+        "เลือกบัญชีแล้วจึงกด “ถัดไป” ได้ ข้อความฝั่งที่จะนำเข้าขึ้นตามสิทธิ์"
+    ],
+    "import-upload": [
+        "เลือกไฟล์และตรวจตัวอย่าง",
+        "ลากไฟล์ลงกรอบด้านซ้าย หรือคลิกเพื่อเลือกไฟล์ .xlsx, .xls, .csv",
+        "ภาพนี้ยังไม่ได้เลือกไฟล์ เมื่อเลือกแล้วจะแสดงตัวอย่าง 5 รายการแรกทางขวา"
+    ],
+    "reconcile-start": [
+        "เริ่มต้นกระทบยอดธนาคาร",
+        "กด “เริ่มกระทบยอดใหม่” ที่กลางหน้าจอหรือมุมขวาบน",
+        "เปิดหน้าต่างสำหรับเลือกบัญชีและช่วงวันที่"
+    ],
+    "reconcile-period": [
+        "กำหนดบัญชี ไฟล์ และช่วงวันที่",
+        "เลือกบัญชีและไฟล์ที่นำเข้าไว้ ตรวจจากวันที่/ถึงวันที่ ก่อนกด “เริ่มกระทบยอด”",
+        "ตัวอย่างการเลือกไฟล์และช่วงวันที่ โดยปิดข้อมูลด้วย XXXX ช่องรวม BC365 อีก 7 วันอยู่ใต้ช่วงวันที่"
+    ],
+    "reconcile-workspace": [
+        "พื้นที่ทำงานกระทบยอด",
+        "ธนาคารอยู่ซ้าย BC365 อยู่ขวา ผู้ช่วยจับคู่อยู่แถบบน ปุ่มจับคู่และพักรายการอยู่แถบล่าง",
+        "ตรวจยอดที่เลือกทั้งสองฝั่งก่อนบันทึก ปุ่ม “ยอดพักโอน” ด้านบนเปิดสรุปยอดคงเหลือ"
+    ],
+    "match-assistant": [
+        "ผู้ช่วยจับคู่",
+        "เปิด “ผู้ช่วยจับคู่” เลือกช่วงวัน แล้วตรวจบัญชี วันที่ ยอดเงิน และเหตุผลบนการ์ด",
+        "กด “ยืนยันจับคู่” เฉพาะคู่ที่ตรวจแล้ว รายการต่างบัญชีใช้เพื่อตรวจสอบและยืนยันจับคู่ไม่ได้"
+    ],
+    "bank-offset": [
+        "หักล้างรายการธนาคาร",
+        "เปิด “หักล้างธนาคาร” จากแถบล่าง เลือกรายการเงินเข้าและเงินออกในบัญชีเดียวกัน",
+        "ภาพนี้ยังไม่ได้เลือกครบสองฝั่ง ปุ่มยืนยันหักล้างจึงยังใช้ไม่ได้"
+    ],
+    "period-summary": [
+        "สรุปยอดคงเหลือและสถานะ AP/AR",
+        "เปิดปุ่ม “ยอดพักโอน” ที่แถบบน ดูสถานะในส่วน “ยืนยันงานและปิดงวด” และสลับแท็บ “สรุป” / “รายวัน”",
+        "ภาพตัวอย่างยังไม่ยืนยันทั้งสองฝั่งและยังขาดยอดยกมา BC365 จึงยังไม่ใช่งวดที่ปิดแล้ว"
+    ],
+    "history": [
+        "ประวัติการจับคู่",
+        "ค้นหาเลขเอกสาร รายละเอียด หรือยอดเงิน แล้วกรองช่วงวันที่ ธนาคาร และประเภทงาน",
+        "คลิกกลุ่มเพื่อดูรายละเอียดก่อนเลือกส่งกลับ รายการงวดปิดต้องเปิดงวดก่อน"
+    ],
+    "suspense": [
+        "รายการที่พักไว้",
+        "เลือกบัญชีและฝั่งงาน ตรวจรายการกับป้ายแนะนำคู่ใน Statement ใต้รายละเอียด",
+        "เลือกคืนไปจับคู่ หรือเปิดหาคู่ใน Statement ตามงานที่ต้องการ"
+    ],
+    "statements": [
+        "รายการธนาคารและไฟล์ที่นำเข้า",
+        "เลือกธนาคาร แล้วคลิกไฟล์ที่ต้องการตรวจสอบ",
+        "ภาพนี้เป็นรายการไฟล์ก่อนเปิดรายละเอียด ตรวจชื่อไฟล์และช่วงวันที่ก่อนดำเนินการลบ"
+    ],
+    "bank-accounts": [
+        "บัญชีธนาคาร",
+        "ใช้ช่องค้นหาและตัวกรองธนาคาร กด “เพิ่มบัญชี” ที่มุมขวาบน หรือเปิด/ปิดบัญชีที่แถวรายการ",
+        "ตรวจสถานะ Active / Inactive ของบัญชีที่ผูกไว้"
+    ],
+    "work-roles": [
+        "สิทธิ์พนักงาน",
+        "กด “กำหนดสิทธิ์” ที่มุมขวาบน หรือ “เปลี่ยนสิทธิ์” ในแถวพนักงาน",
+        "ตารางแสดงรหัสพนักงาน ฝั่งงาน สถานะ และผู้แก้ไขล่าสุด"
+    ],
+    "reports": [
+        "รายงานการกระทบยอด",
+        "เลือก AR/AP สถานะ ธนาคาร บัญชี และช่วงวันที่ แล้วกด “ดาวน์โหลด Excel” ที่มุมขวาบน",
+        "ภาพนี้ยังไม่มีรายการตามตัวกรองที่เลือก เปลี่ยนช่วงวันที่หรือสถานะเพื่อดูข้อมูลที่ต้องการ"
+    ]
+};
+
+  function renderScreens(step, number) {
+    if (!step.screens) return '';
+    return '<div class="screens">' + step.screens.map(function (key, i) {
+      var screen = SCREENS[key];
+      var label = 'ขั้นตอน ' + number + ' · ภาพ ' + (i + 1) + '/' + step.screens.length + '  ' + screen[0];
+      return '<figure class="screen"><div class="screen-heading">' + label + '</div>' +
+        '<button type="button" class="screen-open" data-screen="' + key + '" data-caption="' + label + '" aria-haspopup="dialog" aria-label="ขยายภาพ: ' + label + '">' +
+        '<img src="/manual/img/current-' + key + '.webp?v=masked-1" alt="' + screen[0] + '  ' + screen[1] + '" width="1904" height="963" loading="lazy" decoding="async"></button>' +
+        '<figcaption><b>ดูตรงนี้:</b> ' + screen[1] + '<br><b>สิ่งที่ควรเห็น:</b> ' + screen[2] +
+        '<span class="screen-hint">ภาพหน้าจอโปรแกรม · ข้อมูลตัวอย่าง / XXXX · คลิกภาพเพื่อขยาย</span></figcaption></figure>';
+    }).join('') + '</div>';
+  }
 
   var STORE_KEY = 'arb-manual-progress';
   var ROLE_KEY = 'arb-manual-role';
@@ -1311,7 +1261,7 @@
       return '<article class="step' + (done[i] ? ' is-done' : '') + '" id="step-' + n + '">' +
         '<div class="step-head"><div class="step-num">' + n + '</div>' +
         '<div class="step-title"><div class="where">' + s.where + '</div><h3>' + s.title + '</h3></div></div>' +
-        '<div class="step-body">' + s.body + condHtml + '</div>' +
+        '<div class="step-body">' + s.body + renderScreens(s, n) + condHtml + '</div>' +
         '<div class="step-foot">' +
           '<a class="go" href="' + s.href + '" target="_blank" rel="noopener">เปิดหน้านี้' + ARROW + '</a>' +
           '<label class="check"><input type="checkbox" data-step="' + i + '"' + (done[i] ? ' checked' : '') + '> ทำขั้นนี้แล้ว</label>' +
@@ -1353,16 +1303,14 @@
   });
 
   el('steps').addEventListener('click', function (e) {
-    var tabBtn = e.target.closest('.guide-tab-btn');
-    if (tabBtn) {
-      var box = tabBtn.closest('.screen-guide-box');
-      if (box) {
-        var view = tabBtn.getAttribute('data-view');
-        box.querySelectorAll('.guide-tab-btn').forEach(function (b) { b.classList.toggle('active', b === tabBtn); });
-        box.querySelectorAll('.screen-view-item').forEach(function (item) {
-          item.style.display = item.classList.contains('screen-view-' + view) ? 'block' : 'none';
-        });
-      }
+    var screenButton = e.target.closest('[data-screen]');
+    if (screenButton) {
+      var key = screenButton.getAttribute('data-screen');
+      el('screenPreviewTitle').textContent = screenButton.getAttribute('data-caption');
+      el('screenPreviewImage').src = '/manual/img/current-' + key + '.webp?v=masked-1';
+      el('screenPreviewImage').alt = SCREENS[key][0];
+      el('screenPreviewCaption').textContent = SCREENS[key][1] + ' · ' + SCREENS[key][2];
+      el('screenPreview').showModal();
       return;
     }
     var a = e.target.closest('[data-switch]');
@@ -1370,6 +1318,13 @@
     e.preventDefault();
     render(a.getAttribute('data-switch'));
     el('guide').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  el('closeScreenPreview').addEventListener('click', function () { el('screenPreview').close(); });
+  el('screenPreview').addEventListener('click', function (event) {
+    if (event.target !== event.currentTarget) return;
+    var bounds = event.currentTarget.getBoundingClientRect();
+    if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) event.currentTarget.close();
   });
 
   el('resetBtn').addEventListener('click', function () {

@@ -8,6 +8,7 @@ import { RECONCILE_ROLES } from '../../../../lib/roles';
 import { badRequest, parseDateRange } from '../../../../lib/apiInput';
 import { glAmount, glDirection } from '../../../../lib/glAmount';
 import { bankAccountColumnsReady, statementSenderColumnsReady } from '../../../../lib/bankAccountDb';
+import { reconcileExtrasReady } from '../../../../lib/reconcileExtrasDb';
 import { extractSenderFromText } from '../../../../lib/bankParsers/senderExtractor';
 import { cancelledGlEntryNos } from '../../../../lib/cancelledGl';
 // กัน Next.js cache response ของ route นี้ไว้ (ต้องเป็นข้อมูลสดทุกครั้ง เพราะ filter วันที่/ธนาคารเปลี่ยนได้ตลอด)
@@ -48,9 +49,10 @@ export async function GET(req: NextRequest) {
     }
 
     const pool = await getPool();
-    const [accountReady, hasSender] = await Promise.all([
+    const [accountReady, hasSender, extrasReady] = await Promise.all([
       bankAccountColumnsReady(),
       statementSenderColumnsReady(),
+      reconcileExtrasReady(),
     ]);
     const byAccount = accountReady && Boolean(bankAccountNo);
 
@@ -62,21 +64,50 @@ export async function GET(req: NextRequest) {
     // ฝั่ง bank ยังรวมแถวที่ BankAccountNo เป็น NULL (ไฟล์ที่นำเข้าก่อนระบบแยกตามบัญชี) ไว้ด้วย
     // ถ้าตัดทิ้งตรงๆ รายการพวกนั้นจะหายไปจากหน้าจอโดยไม่มีใครรู้ และไม่มีทางกระทบยอดได้อีกเลย
     // แทนที่จะซ่อน ให้นับจำนวนส่งกลับไปให้หน้าจอขึ้นป้ายเตือนให้ไประบุบัญชีย้อนหลังแทน
+    // รวมรายการที่หักล้างไปแล้ว (OFFSET) มาแสดงเป็นสีเทาพร้อมหมายเหตุ เพื่อให้อีกฝั่งรับรู้ว่าถูกหักล้างไปแล้วเพราะอะไร
     const bankAccountScope = byAccount
-      ? `AND (BankAccountNo = @bankAccountNo OR (BankAccountNo IS NULL${bankCode ? ' AND BankCode = @bankCode' : ''}))`
+      ? `AND (b.BankAccountNo = @bankAccountNo OR (b.BankAccountNo IS NULL${bankCode ? ' AND b.BankCode = @bankCode' : ''}))`
       : bankCode
-      ? 'AND BankCode = @bankCode'
+      ? 'AND b.BankCode = @bankCode'
       : '';
     const bankQuery = bankRequest.query(`
-      SELECT LineId, BankCode, ${accountReady ? 'BankAccountNo' : 'NULL AS BankAccountNo'},
-             TranDate, Description, Debit, Credit, ChequeNo, RawDescription,
-             ${hasSender ? 'SenderBank, SenderAccountNo, SenderAccountName' : 'NULL AS SenderBank, NULL AS SenderAccountNo, NULL AS SenderAccountName'}
-      FROM BankStatementLine
-      WHERE MatchStatus = 'UNMATCHED'
+      SELECT b.LineId, b.BankCode, ${accountReady ? 'b.BankAccountNo' : 'NULL AS BankAccountNo'},
+             b.TranDate, b.Description, b.Debit, b.Credit, b.ChequeNo, b.RawDescription,
+             UPPER(b.MatchStatus) AS MatchStatus,
+             ${hasSender ? 'b.SenderBank, b.SenderAccountNo, b.SenderAccountName' : 'NULL AS SenderBank, NULL AS SenderAccountNo, NULL AS SenderAccountName'},
+             om.OffsetMatchId, om.OffsetNum, om.OffsetRemark, om.OffsetBy, om.OffsetAt,
+             om.CounterpartLineId, om.CounterpartDate, om.CounterpartChequeNo, om.CounterpartDescription
+      FROM BankStatementLine b
+      OUTER APPLY (
+        SELECT TOP 1
+          rm.MatchId AS OffsetMatchId,
+          rml.Num AS OffsetNum,
+          ${extrasReady ? 'rm.Remark' : 'CAST(NULL AS NVARCHAR(500))'} AS OffsetRemark,
+          rm.CreatedBy AS OffsetBy,
+          rm.CreatedAt AS OffsetAt,
+          bc.LineId AS CounterpartLineId,
+          bc.TranDate AS CounterpartDate,
+          bc.ChequeNo AS CounterpartChequeNo,
+          bc.Description AS CounterpartDescription
+        FROM ReconciliationMatchLine rml
+        JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE' AND rm.MatchType = 'OFFSET'
+        OUTER APPLY (
+          SELECT TOP 1 b2.LineId, b2.TranDate, b2.ChequeNo, b2.Description
+          FROM ReconciliationMatchLine rml2
+          JOIN BankStatementLine b2 ON b2.LineId = rml2.BankLineId
+          WHERE rml2.MatchId = rm.MatchId AND rml2.Num = rml.Num
+            AND rml2.SourceType = 'BANK' AND rml2.Status = 'ACTIVE'
+            AND rml2.BankLineId <> b.LineId
+        ) bc
+        WHERE b.MatchStatus = 'OFFSET'
+          AND rml.SourceType = 'BANK' AND rml.BankLineId = b.LineId AND rml.Status = 'ACTIVE'
+        ORDER BY rm.MatchId DESC
+      ) om
+      WHERE b.MatchStatus IN ('UNMATCHED', 'OFFSET')
         ${bankAccountScope}
-        ${fromDate ? 'AND TranDate >= @from' : ''}
-        ${toDate ? 'AND TranDate <= @to' : ''}
-      ORDER BY TranDate DESC, LineId DESC
+        ${fromDate ? 'AND b.TranDate >= @from' : ''}
+        ${toDate ? 'AND b.TranDate <= @to' : ''}
+      ORDER BY b.TranDate DESC, b.LineId DESC
     `);
 
     const glRequest = pool.request();
@@ -85,17 +116,44 @@ export async function GET(req: NextRequest) {
     if (fromDate) glRequest.input('from', sql.Date, fromDate);
     if (glToDate) glRequest.input('to', sql.Date, glToDate);
     // ฝั่ง GL กรองแบบเข้มงวดได้ เพราะทุกแถวมี Bank_Account_No เสมอ (BC365 บังคับ) ไม่มีเคส NULL
+    // รวมรายการที่หักล้างกันเอง (MatchType = 'OFFSET') มาแสดงเป็นสีเทาพร้อมหมายเหตุเช่นเดียวกับฝั่ง Bank
     const glQuery = glRequest.query(`
       SELECT e.Entry_No, m.BankCode, e.Bank_Account_No,
              COALESCE(NULLIF(LTRIM(RTRIM(m.BankAccountName)), N''), e.Bank_Account_Name) AS BankAccountName,
-             e.Posting_Date, e.Document_No, e.Source_Code, e.Debit_Amount_LCY, e.Credit_Amount_LCY
+             e.Posting_Date, e.Document_No, e.Source_Code, e.Debit_Amount_LCY, e.Credit_Amount_LCY,
+             om.OffsetMatchId, om.OffsetNum, om.OffsetRemark, om.OffsetBy, om.OffsetAt,
+             om.CounterpartEntryNo, om.CounterpartDate, om.CounterpartDocNo
       FROM BankAccountLedgerEntries e
       JOIN BankAccountMapping m ON m.BankAccountNo = e.Bank_Account_No
+      OUTER APPLY (
+        SELECT TOP 1
+          rm.MatchId AS OffsetMatchId,
+          rml.Num AS OffsetNum,
+          ${extrasReady ? 'rm.Remark' : 'CAST(NULL AS NVARCHAR(500))'} AS OffsetRemark,
+          rm.CreatedBy AS OffsetBy,
+          rm.CreatedAt AS OffsetAt,
+          gc.Entry_No AS CounterpartEntryNo,
+          gc.Posting_Date AS CounterpartDate,
+          gc.Document_No AS CounterpartDocNo
+        FROM ReconciliationMatchLine rml
+        JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE' AND rm.MatchType = 'OFFSET'
+        OUTER APPLY (
+          SELECT TOP 1 g2.Entry_No, g2.Posting_Date, g2.Document_No
+          FROM ReconciliationMatchLine rml2
+          JOIN BankAccountLedgerEntries g2 ON g2.Entry_No = rml2.GLEntryNo
+          WHERE rml2.MatchId = rm.MatchId AND rml2.Num = rml.Num
+            AND rml2.SourceType = 'GL' AND rml2.Status = 'ACTIVE'
+            AND rml2.GLEntryNo <> e.Entry_No
+        ) gc
+        WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No AND rml.Status = 'ACTIVE'
+        ORDER BY rm.MatchId DESC
+      ) om
       WHERE m.BankCode IS NOT NULL
         AND NOT EXISTS (
               SELECT 1 FROM ReconciliationMatchLine rml
               JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE'
               WHERE rml.SourceType = 'GL' AND rml.GLEntryNo = e.Entry_No AND rml.Status = 'ACTIVE'
+                AND rm.MatchType <> 'OFFSET'
             )
         ${byAccount ? 'AND e.Bank_Account_No = @bankAccountNo' : ''}
         ${bankCode ? 'AND m.BankCode = @bankCode' : ''}
@@ -124,6 +182,13 @@ export async function GET(req: NextRequest) {
       const rawAmount = credit !== null ? credit : (debit !== null ? debit : 0);
       const amount = Number.isFinite(rawAmount) ? Math.abs(rawAmount) : 0;
 
+      const isOffset = String(r.MatchStatus ?? 'UNMATCHED').toUpperCase() === 'OFFSET';
+      const counterpartRef = r.CounterpartLineId
+        ? r.CounterpartChequeNo && r.CounterpartChequeNo !== '0'
+          ? `Chq ${r.CounterpartChequeNo}`
+          : `L-${r.CounterpartLineId}`
+        : null;
+
       return {
         id: `bank-${r.LineId}`,
         lineId: Number(r.LineId),
@@ -138,6 +203,14 @@ export async function GET(req: NextRequest) {
         senderAccountNo,
         senderAccountName,
         amount,
+        isOffset,
+        offsetMatchId: isOffset && r.OffsetMatchId !== null && r.OffsetMatchId !== undefined ? Number(r.OffsetMatchId) : null,
+        offsetNum: isOffset && r.OffsetNum !== null && r.OffsetNum !== undefined ? Number(r.OffsetNum) : null,
+        offsetRemark: isOffset ? (r.OffsetRemark ?? null) : null,
+        offsetBy: isOffset ? (r.OffsetBy ?? null) : null,
+        offsetCounterpartRef: isOffset ? counterpartRef : null,
+        offsetCounterpartDate: isOffset && r.CounterpartDate ? r.CounterpartDate : null,
+        offsetCounterpartDescription: isOffset ? (r.CounterpartDescription ?? null) : null,
       };
     });
 
@@ -192,24 +265,35 @@ export async function GET(req: NextRequest) {
         null,
     }));
 
-    const toGlLine = (r: (typeof glResult.recordset)[number]) => ({
-      id: `gl-${r.Entry_No}`,
-      entryNo: Number(r.Entry_No),
-      bankCode: r.BankCode,
-      accountNo: r.Bank_Account_No,
-      accountName: r.BankAccountName,
-      date: r.Posting_Date,
-      ref: r.Document_No,
-      direction: glDirection(r),
-      description: r.Document_No,
-      amount: glAmount(r),
-    });
+    const toGlLine = (r: (typeof glResult.recordset)[number]) => {
+      const isOffset = r.OffsetMatchId !== null && r.OffsetMatchId !== undefined;
+      return {
+        id: `gl-${r.Entry_No}`,
+        entryNo: Number(r.Entry_No),
+        bankCode: r.BankCode,
+        accountNo: r.Bank_Account_No,
+        accountName: r.BankAccountName,
+        date: r.Posting_Date,
+        ref: r.Document_No,
+        direction: glDirection(r),
+        description: r.Document_No,
+        amount: glAmount(r),
+        isOffset,
+        offsetMatchId: isOffset ? Number(r.OffsetMatchId) : null,
+        offsetNum: isOffset && r.OffsetNum !== null && r.OffsetNum !== undefined ? Number(r.OffsetNum) : null,
+        offsetRemark: isOffset ? (r.OffsetRemark ?? null) : null,
+        offsetBy: isOffset ? (r.OffsetBy ?? null) : null,
+        offsetCounterpartRef: isOffset ? (r.CounterpartDocNo ?? (r.CounterpartEntryNo ? `#${r.CounterpartEntryNo}` : null)) : null,
+        offsetCounterpartDate: isOffset && r.CounterpartDate ? r.CounterpartDate : null,
+        offsetCounterpartDescription: isOffset ? (r.CounterpartDocNo ?? null) : null,
+      };
+    };
     const glLines = glResult.recordset
-      .filter((r) => !cancelled.has(Number(r.Entry_No)))
+      .filter((r) => !cancelled.has(Number(r.Entry_No)) || (r.OffsetMatchId !== null && r.OffsetMatchId !== undefined))
       .map(toGlLine);
 
     // รายการฝั่ง bank ที่ยังไม่ได้ระบุบัญชี — หน้าจอเอาไปขึ้นป้ายเตือน (ดู ActiveWorkspace.tsx)
-    const unassignedBankLines = byAccount ? bankLines.filter((l) => l.accountNo === null).length : 0;
+    const unassignedBankLines = byAccount ? bankLines.filter((l) => !l.isOffset && l.accountNo === null).length : 0;
 
     return NextResponse.json({
       bankLines,

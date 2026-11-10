@@ -77,29 +77,47 @@ export async function GET(req: NextRequest) {
     }
 
     // 2) ค้นหารายการอีกฝั่งในบัญชีเดียวกันที่ยอดเงินเท่ากันพอดี (ต่างไม่เกินครึ่งสตางค์)
-    const candidatesQuery = oppositeDirection === 'IN'
-      ? `
-        SELECT LineId, BankCode, BankAccountNo, TranDate, Description, Debit, Credit, Balance,
-               ChequeNo, Channel, RawDescription, SenderBank, SenderAccountNo, SenderAccountName
-        FROM BankStatementLine
-        WHERE MatchStatus = 'UNMATCHED'
-          AND LineId <> @lineId
-          AND Credit IS NOT NULL
-          AND ABS(Credit - @amount) < 0.005
-          ${sRow.BankAccountNo ? 'AND BankAccountNo = @bankAccountNo' : 'AND BankCode = @bankCode'}
-        ORDER BY TranDate, LineId
-      `
-      : `
-        SELECT LineId, BankCode, BankAccountNo, TranDate, Description, Debit, Credit, Balance,
-               ChequeNo, Channel, RawDescription, SenderBank, SenderAccountNo, SenderAccountName
-        FROM BankStatementLine
-        WHERE MatchStatus = 'UNMATCHED'
-          AND LineId <> @lineId
-          AND Debit IS NOT NULL
-          AND ABS(Debit - @amount) < 0.005
-          ${sRow.BankAccountNo ? 'AND BankAccountNo = @bankAccountNo' : 'AND BankCode = @bankCode'}
-        ORDER BY TranDate, LineId
-      `;
+    //    รวมรายการที่ถูกหักล้างไปแล้ว (OFFSET) มาด้วยเพื่อแสดงเป็นแถวสีเทา (ไม่ให้กด) พร้อมหมายเหตุที่อีกฝั่งเขียนไว้
+    const amountCondition = oppositeDirection === 'IN'
+      ? 'b.Credit IS NOT NULL AND ABS(b.Credit - @amount) < 0.005'
+      : 'b.Debit IS NOT NULL AND ABS(b.Debit - @amount) < 0.005';
+    const candidatesQuery = `
+      SELECT b.LineId, b.BankCode, b.BankAccountNo, b.TranDate, b.Description, b.Debit, b.Credit, b.Balance,
+             b.ChequeNo, b.Channel, b.RawDescription, b.SenderBank, b.SenderAccountNo, b.SenderAccountName,
+             UPPER(b.MatchStatus) AS MatchStatus,
+             om.OffsetMatchId, om.OffsetNum, om.OffsetRemark, om.OffsetBy,
+             om.CounterpartLineId, om.CounterpartDate, om.CounterpartChequeNo, om.CounterpartDescription
+      FROM BankStatementLine b
+      OUTER APPLY (
+        SELECT TOP 1
+          rm.MatchId AS OffsetMatchId,
+          rml.Num AS OffsetNum,
+          rm.Remark AS OffsetRemark,
+          rm.CreatedBy AS OffsetBy,
+          bc.LineId AS CounterpartLineId,
+          bc.TranDate AS CounterpartDate,
+          bc.ChequeNo AS CounterpartChequeNo,
+          bc.Description AS CounterpartDescription
+        FROM ReconciliationMatchLine rml
+        JOIN ReconciliationMatch rm ON rm.MatchId = rml.MatchId AND rm.Status = 'ACTIVE' AND rm.MatchType = 'OFFSET'
+        OUTER APPLY (
+          SELECT TOP 1 b2.LineId, b2.TranDate, b2.ChequeNo, b2.Description
+          FROM ReconciliationMatchLine rml2
+          JOIN BankStatementLine b2 ON b2.LineId = rml2.BankLineId
+          WHERE rml2.MatchId = rm.MatchId AND rml2.Num = rml.Num
+            AND rml2.SourceType = 'BANK' AND rml2.Status = 'ACTIVE'
+            AND rml2.BankLineId <> b.LineId
+        ) bc
+        WHERE b.MatchStatus = 'OFFSET'
+          AND rml.SourceType = 'BANK' AND rml.BankLineId = b.LineId AND rml.Status = 'ACTIVE'
+        ORDER BY rm.MatchId DESC
+      ) om
+      WHERE b.MatchStatus IN ('UNMATCHED', 'OFFSET')
+        AND b.LineId <> @lineId
+        AND ${amountCondition}
+        ${sRow.BankAccountNo ? 'AND b.BankAccountNo = @bankAccountNo' : 'AND b.BankCode = @bankCode'}
+      ORDER BY CASE WHEN b.MatchStatus = 'UNMATCHED' THEN 0 ELSE 1 END, b.TranDate, b.LineId
+    `;
 
     const candidatesReq = pool
       .request()
@@ -133,6 +151,12 @@ export async function GET(req: NextRequest) {
         }
 
         const amount = c.Credit !== null ? Number(c.Credit) : Number(c.Debit);
+        const isOffset = String(c.MatchStatus ?? 'UNMATCHED').toUpperCase() === 'OFFSET';
+        const counterpartRef = c.CounterpartLineId
+          ? c.CounterpartChequeNo && c.CounterpartChequeNo !== '0'
+            ? `Chq ${c.CounterpartChequeNo}`
+            : `L-${c.CounterpartLineId}`
+          : null;
         return {
           lineId: Number(c.LineId),
           bankCode: c.BankCode,
@@ -151,6 +175,18 @@ export async function GET(req: NextRequest) {
           senderAccountName: c.SenderAccountName,
           isPeriodClosed,
           closedReason,
+          ...(isOffset
+            ? {
+                isOffset: true,
+                offsetMatchId: c.OffsetMatchId !== null && c.OffsetMatchId !== undefined ? Number(c.OffsetMatchId) : null,
+                offsetNum: c.OffsetNum !== null && c.OffsetNum !== undefined ? Number(c.OffsetNum) : 1,
+                offsetRemark: c.OffsetRemark ?? null,
+                offsetBy: c.OffsetBy ?? null,
+                offsetCounterpartRef: counterpartRef,
+                offsetCounterpartDate: c.CounterpartDate ? isoDate(c.CounterpartDate) : null,
+                offsetCounterpartDescription: c.CounterpartDescription ?? null,
+              }
+            : {}),
         };
       })
     );

@@ -62,6 +62,24 @@ describe('bank offset dialog layout', () => {
     state.values = [1, closed, 2, 'ธนาคารตัดคืน', '', '', 0, false];
     const html = render(); expect(html).toContain('งวดปิดแล้ว'); expect(html).toContain('disabled="" aria-label="เลือกเงินออก');
   });
+  it('renders already-offset items in grey, disabled, with the other side remark', () => {
+    const withOffset = data();
+    withOffset.candidates.push({
+      ...asCandidate({ ...source, lineId: 9, direction: 'OUT', description: 'Correction for Clearing Cheque Deposit' }),
+      isOffset: true,
+      offsetMatchId: 405,
+      offsetRemark: 'อย่าลืมใส่',
+      offsetBy: 'ap_user',
+      offsetCounterpartRef: 'Chq 00000000',
+      offsetCounterpartDate: '2026-10-05',
+    });
+    state.values = [1, withOffset, null, '', '', '', 0, false];
+    const html = render();
+    expect(html).toContain('หักล้างแล้ว #405');
+    expect(html).toContain('อย่าลืมใส่');
+    expect(html).toContain('คู่กับ Chq 00000000 (05/10/2026)');
+    expect(html).toContain('cursor-not-allowed bg-slate-100/90 text-slate-400');
+  });
   it('locks both selectors and the reason during submission', () => {
     state.values = [1, data(), 2, 'ธนาคารตัดคืน', '', '', 0, false];
     const html = render({ busy: true });

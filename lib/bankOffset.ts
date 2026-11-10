@@ -26,12 +26,22 @@ export type BankOffsetCandidate = {
   senderAccountName: string | null;
   isPeriodClosed?: boolean;
   closedReason?: string | null;
+  isOffset?: boolean;
+  offsetMatchId?: number | null;
+  offsetNum?: number | null;
+  offsetRemark?: string | null;
+  offsetBy?: string | null;
+  offsetCounterpartRef?: string | null;
+  offsetCounterpartDate?: string | null;
+  offsetCounterpartDescription?: string | null;
 };
 
 export type BankOffsetValidationInput = {
   amount: number;
   direction: WorkDirection;
   bankAccountNo?: string | null;
+  isOffset?: boolean;
+  offsetRemark?: string | null;
 };
 
 /**
@@ -46,6 +56,15 @@ export function validateBankOffsetPair(
   target: BankOffsetValidationInput,
   remark?: string | null
 ): { ok: true } | { ok: false; error: string } {
+  if (source.isOffset || target.isOffset) {
+    const offsetLine = source.isOffset ? source : target;
+    return {
+      ok: false,
+      error: offsetLine.offsetRemark
+        ? `รายการนี้ถูกหักล้างไปแล้ว (หมายเหตุ: ${offsetLine.offsetRemark})`
+        : 'รายการนี้ถูกหักล้างไปแล้ว ไม่สามารถเลือกซ้ำได้',
+    };
+  }
   if (source.direction === target.direction) {
     return { ok: false, error: 'รายการที่นำมาหักล้างต้องอยู่คนละฝั่ง (เงินเข้ากับเงินออก)' };
   }

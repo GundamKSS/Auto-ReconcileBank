@@ -113,4 +113,71 @@ describe('GET /api/reconcile/bank-offset-candidates', () => {
     expect(body.candidates[0].amount).toBe(200000);
     expect(body.candidates[0].isPeriodClosed).toBe(false);
   });
+
+  it('includes already-offset candidates with offsetRemark and counterpart info', async () => {
+    const sourceLine = {
+      LineId: 102,
+      BankCode: 'SCB',
+      BankAccountNo: 'TW_SCB_C1',
+      TranDate: new Date('2026-10-06T00:00:00Z'),
+      Description: 'Clearing Cheque Deposit',
+      Debit: null,
+      Credit: 55404.6,
+      Balance: 500000,
+      ChequeNo: '00000000',
+      Channel: 'CHQ',
+      RawDescription: 'Clearing Cheque Deposit',
+      SenderBank: null,
+      SenderAccountNo: null,
+      SenderAccountName: null,
+      MatchStatus: 'UNMATCHED',
+    };
+
+    const offsetCandidateLine = {
+      LineId: 99,
+      BankCode: 'SCB',
+      BankAccountNo: 'TW_SCB_C1',
+      TranDate: new Date('2026-10-05T00:00:00Z'),
+      Description: 'Correction for Clearing Cheque Deposit',
+      Debit: 55404.6,
+      Credit: null,
+      Balance: 444595.4,
+      ChequeNo: '00000000',
+      Channel: 'CHQ',
+      RawDescription: 'Correction for Clearing Cheque Deposit',
+      SenderBank: null,
+      SenderAccountNo: null,
+      SenderAccountName: null,
+      MatchStatus: 'OFFSET',
+      OffsetMatchId: 405,
+      OffsetNum: 1,
+      OffsetRemark: 'อย่าลืมใส่',
+      OffsetBy: 'ap_staff',
+      CounterpartLineId: 101,
+      CounterpartDate: new Date('2026-10-05T00:00:00Z'),
+      CounterpartChequeNo: '00000000',
+      CounterpartDescription: 'Clearing Cheque Deposit',
+    };
+
+    h.query
+      .mockResolvedValueOnce({ recordset: [sourceLine] })
+      .mockResolvedValueOnce({ recordset: [offsetCandidateLine] });
+
+    const req = new NextRequest('http://localhost/api/reconcile/bank-offset-candidates?lineId=102');
+    const res = await GET(req);
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.candidates).toHaveLength(1);
+    expect(body.candidates[0]).toMatchObject({
+      lineId: 99,
+      isOffset: true,
+      offsetMatchId: 405,
+      offsetNum: 1,
+      offsetRemark: 'อย่าลืมใส่',
+      offsetBy: 'ap_staff',
+      offsetCounterpartRef: 'Chq 00000000',
+      offsetCounterpartDate: '2026-10-05',
+    });
+  });
 });
